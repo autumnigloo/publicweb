@@ -33,7 +33,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="ui">🌋 Volcano Train &nbsp;|&nbsp; 3D Scene</div>
+<div id="ui">🌋 Volcano Train &nbsp;|&nbsp; Arrow keys: orbit/zoom &nbsp;|&nbsp; C/X: height</div>
 <a href="../index.html" id="back">← Back</a>
 <script>
 const canvas = document.getElementById('c');
@@ -48,6 +48,15 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 resize();
+
+// ─── Camera controls ──────────────────────────────────────────────────────
+let camTheta = 0;
+let camRadius = 12;
+let camY = 5.5;
+let camCenterY = 2.0;
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key] = true; e.preventDefault(); });
+window.addEventListener('keyup',   e => { keys[e.key] = false; });
 
 // ─── Shader source ────────────────────────────────────────────────────────────
 const vsSource = `
@@ -305,6 +314,76 @@ function makeTrain() {
   return {pos,nor,col,idx};
 }
 
+function makeTrack() {
+  const pos=[], nor=[], col=[], idx=[];
+  const N = 400;
+  const trackHW = 0.14;
+  const railH = 0.03;
+  const railColor = [0.35, 0.3, 0.25];
+  const tieColor  = [0.4, 0.28, 0.18];
+
+  const samples = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const p = trainPathPoint(t);
+    const p2 = trainPathPoint((i + 1) / N % 1 + (i === N ? -1/N : 0));
+    // forward vector
+    let fx = p2.x-p.x, fy = p2.y-p.y, fz = p2.z-p.z;
+    const fl = Math.hypot(fx,fy,fz)||1;
+    fx/=fl; fy/=fl; fz/=fl;
+    // right = forward × up([0,1,0])
+    let rx = -fz, ry = 0, rz = fx;
+    const rl = Math.hypot(rx,ry,rz)||1;
+    rx/=rl; ry/=rl; rz/=rl;
+    // up = right × forward
+    const ux = ry*fz-rz*fy, uy = rz*fx-rx*fz, uz = rx*fy-ry*fx;
+    samples.push({x: p.x, y: p.y, z: p.z, rx, ry, rz, ux, uy, uz});
+  }
+
+  function addRailSeg(a, b, side, color) {
+    const sa = samples[a], sb = samples[b];
+    const ax = sa.x + side*trackHW*sa.rx, ay = sa.y + railH*sa.uy, az = sa.z + side*trackHW*sa.rz;
+    const bx = sb.x + side*trackHW*sb.rx, by = sb.y + railH*sb.uy, bz = sb.z + side*trackHW*sb.rz;
+    const w = 0.025;
+    const base = pos.length/3;
+    for (const [px,py,pz,ux2,uy2,uz2] of [
+      [ax - w*sa.rx, ay, az - w*sa.rz, sa.ux, sa.uy, sa.uz],
+      [ax + w*sa.rx, ay, az + w*sa.rz, sa.ux, sa.uy, sa.uz],
+      [bx + w*sb.rx, by, bz + w*sb.rz, sb.ux, sb.uy, sb.uz],
+      [bx - w*sb.rx, by, bz - w*sb.rz, sb.ux, sb.uy, sb.uz],
+    ]) {
+      pos.push(px, py, pz);
+      nor.push(ux2, uy2, uz2);
+      col.push(...color);
+    }
+    idx.push(base,base+1,base+2, base,base+2,base+3);
+  }
+
+  for (let i = 0; i < N; i++) {
+    addRailSeg(i, i+1, -1, railColor);
+    addRailSeg(i, i+1,  1, railColor);
+    if (i % 8 === 0) {
+      const s = samples[i];
+      const base = pos.length/3;
+      const lx = s.x - trackHW*1.1*s.rx, lz = s.z - trackHW*1.1*s.rz;
+      const rx2 = s.x + trackHW*1.1*s.rx, rz2 = s.z + trackHW*1.1*s.rz;
+      const hw2 = 0.03;
+      for (const [px,py,pz] of [
+        [lx - hw2*s.rx, s.y, lz - hw2*s.rz],
+        [rx2 - hw2*s.rx, s.y, rz2 - hw2*s.rz],
+        [rx2 + hw2*s.rx, s.y, rz2 + hw2*s.rz],
+        [lx + hw2*s.rx, s.y, lz + hw2*s.rz],
+      ]) {
+        pos.push(px,py,pz);
+        nor.push(s.ux,s.uy,s.uz);
+        col.push(...tieColor);
+      }
+      idx.push(base,base+1,base+2, base,base+2,base+3);
+    }
+  }
+  return {pos,nor,col,idx};
+}
+
 // ─── Upload geometry ──────────────────────────────────────────────────────────
 function upload(geom) {
   const buf = {
@@ -377,6 +456,7 @@ const pPosBuf = pBuf.pos;
 const volcanoBuf = upload(makeVolcano());
 const terrainBuf = upload(makeTerrain());
 const trainBuf   = upload(makeTrain());
+const trackBuf   = upload(makeTrack());
 
 // ─── Train path along volcano ─────────────────────────────────────────────────
 // Spiral from base (y≈0.3, r≈4) up to crater (y≈4.5, r≈0.5) then descend inside
@@ -431,17 +511,22 @@ function frame(now) {
 
   trainT = (trainT + dt*0.04) % 1.0;
 
-  // Camera slowly orbits
-  const camTheta = elapsed * 0.12;
-  const camR = 12;
-  const eye = [camR*Math.cos(camTheta), 5.5, camR*Math.sin(camTheta)];
+  // Camera controls
+  const camSpeed = 1.2, zoomSpeed = 4, ySpeed = 2;
+  if (keys['ArrowLeft'])  camTheta  -= camSpeed * dt;
+  if (keys['ArrowRight']) camTheta  += camSpeed * dt;
+  if (keys['ArrowUp'])    camRadius  = Math.max(4, camRadius - zoomSpeed * dt);
+  if (keys['ArrowDown'])  camRadius += zoomSpeed * dt;
+  if (keys['c'] || keys['C']) { camY += ySpeed * dt; camCenterY += ySpeed * dt; }
+  if (keys['x'] || keys['X']) { camY -= ySpeed * dt; camCenterY -= ySpeed * dt; }
+  const eye = [camRadius * Math.cos(camTheta), camY, camRadius * Math.sin(camTheta)];
 
   const sky = skyColor(elapsed);
   gl.clearColor(...sky);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
 
   perspective(proj, Math.PI/3.5, canvas.width/canvas.height, 0.1, 200);
-  lookAt(view, eye, [0,2,0], [0,1,0]);
+  lookAt(view, eye, [0, camCenterY, 0], [0,1,0]);
   multiply(vp, proj, view);
 
   gl.uniform3fv(uLight, [0.6, 1.0, 0.4]);
@@ -458,24 +543,36 @@ function frame(now) {
   gl.uniformMatrix4fv(uMVP, false, mvp);
   draw(volcanoBuf, model);
 
-  // Train
-  const pt = trainPathPoint(trainT);
-  const pt2 = trainPathPoint((trainT+0.005)%1);
-  const dx=pt2.x-pt.x, dz2=pt2.z-pt.z;
-  const facing = Math.atan2(dx, dz2);
-  // Build train model matrix: translate then rotate
+  // Tracks
   identity(model);
-  model[12]=pt.x; model[13]=pt.y+0.15; model[14]=pt.z;
-  // rotate around Y
-  const cy=Math.cos(facing), sy=Math.sin(facing);
-  // Apply rotation into model (manual multiply for rotation)
-  const tx=model[12],ty=model[13],tz=model[14];
-  identity(tmp);
-  tmp[0]=cy; tmp[8]=sy; tmp[2]=-sy; tmp[10]=cy;
-  tmp[12]=tx; tmp[13]=ty; tmp[14]=tz;
-  multiply(mvp, vp, tmp);
+  multiply(mvp, vp, model);
   gl.uniformMatrix4fv(uMVP, false, mvp);
-  draw(trainBuf, tmp);
+  draw(trackBuf, model);
+
+  // Train - 3D orientation
+  const pt = trainPathPoint(trainT);
+  const pt2 = trainPathPoint((trainT + 0.002) % 1);
+  // Forward vector
+  let fx = pt2.x - pt.x, fy = pt2.y - pt.y, fz = pt2.z - pt.z;
+  const fl = Math.hypot(fx, fy, fz);
+  fx /= fl; fy /= fl; fz /= fl;
+  // Right = forward × worldUp ([0,1,0])
+  let rx = -fz, ry = 0, rz = fx;
+  const rl = Math.hypot(rx, ry, rz) || 1;
+  rx /= rl; ry /= rl; rz /= rl;
+  // Up = right × forward
+  const ux = ry*fz - rz*fy, uy = rz*fx - rx*fz, uz = rx*fy - ry*fx;
+  // Build column-major model matrix
+  const trainY = pt.y + 0.15;
+  model.fill(0);
+  model[0]=fx;  model[1]=fy;  model[2]=fz;   // col 0 = forward
+  model[4]=ux;  model[5]=uy;  model[6]=uz;   // col 1 = up
+  model[8]=rx;  model[9]=ry;  model[10]=rz;  // col 2 = right
+  model[12]=pt.x; model[13]=trainY; model[14]=pt.z;
+  model[15]=1;
+  multiply(mvp, vp, model);
+  gl.uniformMatrix4fv(uMVP, false, mvp);
+  draw(trainBuf, model);
 
   // Smoke puffs from chimney - update positions
   for(let i=0;i<PARTICLES;i++) {
@@ -486,13 +583,24 @@ function frame(now) {
     pPos[i*3+2] += pVel[i*3+2]*dt;
     pVel[i*3+1] -= 2.5*dt; // gravity
   }
-  // Update particle quads
+  // Extract camera right and up from view matrix
+  const camRight = [view[0], view[4], view[8]];
+  const camUp    = [view[1], view[5], view[9]];
+  // Update particle quads with billboard positioning
   const newPos = [];
   for(let i=0;i<PARTICLES;i++) {
     const px=pPos[i*3], py=pPos[i*3+1], pz=pPos[i*3+2];
     const life = Math.max(0, pLife[i]);
-    const s2 = 0.05 + life*0.08;
-    newPos.push(px-s2,py-s2,pz, px+s2,py-s2,pz, px+s2,py+s2,pz, px-s2,py+s2,pz);
+    const s = 0.05 + life*0.08;
+    const [crx,cry,crz] = camRight;
+    const [cux,cuy,cuz] = camUp;
+    // bl, br, tr, tl
+    newPos.push(
+      px - s*crx - s*cux, py - s*cry - s*cuy, pz - s*crz - s*cuz,
+      px + s*crx - s*cux, py + s*cry - s*cuy, pz + s*crz - s*cuz,
+      px + s*crx + s*cux, py + s*cry + s*cuy, pz + s*crz + s*cuz,
+      px - s*crx + s*cux, py - s*cry + s*cuy, pz - s*crz + s*cuz,
+    );
   }
   gl.bindBuffer(gl.ARRAY_BUFFER, pPosBuf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(newPos), gl.DYNAMIC_DRAW);

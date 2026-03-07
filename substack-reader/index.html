@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Substack Reader</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 11pt;
+      background: #f0f0f0;
+    }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      background: #fff;
+      border-bottom: 1px solid #ddd;
+      padding: 10px 16px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    #back {
+      color: #999;
+      text-decoration: none;
+      font-size: 13px;
+      white-space: nowrap;
+      padding: 6px 2px;
+    }
+    #back:hover { color: #333; }
+
+    #url-input {
+      flex: 1;
+      padding: 7px 12px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+    }
+    #url-input:focus {
+      outline: none;
+      border-color: #FF6719;
+    }
+
+    #fetch-btn {
+      padding: 7px 18px;
+      background: #FF6719;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+    #fetch-btn:hover { background: #d95510; }
+    #fetch-btn:disabled { background: #f0a070; cursor: default; }
+
+    #select-btn {
+      padding: 7px 14px;
+      background: #f4f4f4;
+      color: #333;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      white-space: nowrap;
+      display: none;
+    }
+    #select-btn:hover { background: #e8e8e8; }
+
+    #status {
+      color: #888;
+      font-size: 12px;
+      white-space: nowrap;
+      min-width: 60px;
+      text-align: right;
+    }
+
+    /* ── Page / article container ── */
+    #page {
+      max-width: 760px;
+      margin: 28px auto;
+      background: #fff;
+      padding: 48px 60px;
+      border: 1px solid #ddd;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      min-height: 280px;
+    }
+
+    #placeholder {
+      text-align: center;
+      color: #aaa;
+      padding: 80px 0;
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    /* ── Article typography ── */
+    #content {
+      font-family: Arial, sans-serif;
+      font-size: 11pt;
+      line-height: 1.7;
+      color: #111;
+    }
+
+    #content h1 {
+      font-family: Arial, sans-serif;
+      font-size: 20pt;
+      font-weight: bold;
+      line-height: 1.25;
+      margin-bottom: 10px;
+    }
+
+    #content .post-subtitle {
+      font-family: Arial, sans-serif;
+      font-size: 13pt;
+      color: #555;
+      margin-bottom: 6px;
+    }
+
+    #content .post-meta {
+      font-family: Arial, sans-serif;
+      font-size: 10pt;
+      color: #888;
+      margin-bottom: 24px;
+    }
+
+    #content hr {
+      border: none;
+      border-top: 1px solid #e0e0e0;
+      margin: 20px 0 24px;
+    }
+
+    /* All h2-h6 treated as bold section headers at body size */
+    #content h2, #content h3,
+    #content h4, #content h5, #content h6 {
+      font-family: Arial, sans-serif;
+      font-size: 11pt;
+      font-weight: bold;
+      margin-top: 20px;
+      margin-bottom: 5px;
+    }
+
+    #content p {
+      margin-bottom: 10px;
+    }
+
+    #content ul, #content ol {
+      margin: 0 0 10px 24px;
+    }
+    #content li { margin-bottom: 4px; }
+
+    #content blockquote {
+      border-left: 3px solid #ddd;
+      padding-left: 16px;
+      color: #555;
+      margin: 0 0 10px 0;
+    }
+
+    #content figure {
+      margin: 24px 0;
+      text-align: center;
+    }
+    #content figure img {
+      max-width: 100%;
+      display: block;
+      margin: 0 auto;
+    }
+    #content figcaption {
+      text-align: center;
+      font-style: italic;
+      color: #666;
+      font-size: 11pt;
+      margin-top: 6px;
+    }
+
+    #content a { color: #1a73e8; }
+
+    #content strong, #content b { font-weight: bold; }
+    #content em, #content i { font-style: italic; }
+
+    #content table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-bottom: 10px;
+    }
+    #content td, #content th {
+      border: 1px solid #ddd;
+      padding: 6px 10px;
+      font-size: 11pt;
+    }
+    #content th { background: #f5f5f5; font-weight: bold; }
+
+    #content pre, #content code {
+      font-family: 'Courier New', monospace;
+      font-size: 10pt;
+    }
+    #content pre {
+      background: #f6f6f6;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 12px;
+      overflow-x: auto;
+      margin-bottom: 10px;
+    }
+
+    @media (max-width: 840px) {
+      #page { margin: 12px; padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <a href="../index.html" id="back">← Back</a>
+  <input id="url-input" type="url"
+    placeholder="https://name.substack.com/p/article-slug">
+  <button id="fetch-btn">Fetch</button>
+  <button id="select-btn">Select All</button>
+  <span id="status"></span>
+</div>
+
+<div id="page">
+  <div id="placeholder">
+    Paste a Substack article URL and click <strong>Fetch</strong>.<br>
+    Then use <strong>Select All</strong> to copy the clean text into Google Docs.
+  </div>
+  <div id="content" style="display:none"></div>
+</div>
+
+<script>
+const PROXY = 'https://api.allorigins.win/raw?url=';
+
+document.getElementById('fetch-btn').addEventListener('click', fetchArticle);
+document.getElementById('url-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') fetchArticle();
+});
+document.getElementById('select-btn').addEventListener('click', () => {
+  const el = document.getElementById('content');
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+});
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+async function fetchArticle() {
+  const rawUrl = document.getElementById('url-input').value.trim();
+  if (!rawUrl) { setStatus('No URL.'); return; }
+
+  const btn = document.getElementById('fetch-btn');
+  btn.disabled = true;
+  setStatus('Loading…');
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('content').style.display = 'none';
+  document.getElementById('select-btn').style.display = 'none';
+
+  try {
+    const res = await fetch(PROXY + encodeURIComponent(rawUrl));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    const node = extractArticle(doc, rawUrl);
+    if (!node) {
+      setStatus('Not found.');
+      document.getElementById('placeholder').style.display = 'block';
+      document.getElementById('placeholder').innerHTML =
+        '⚠️ Could not extract article content.<br>The page may require a login or is dynamically rendered.';
+      return;
+    }
+
+    const content = document.getElementById('content');
+    content.innerHTML = '';
+    content.appendChild(node);
+    content.style.display = 'block';
+    document.getElementById('select-btn').style.display = '';
+    setStatus('✓ Done');
+  } catch (err) {
+    setStatus('Error');
+    console.error(err);
+    document.getElementById('placeholder').style.display = 'block';
+    document.getElementById('placeholder').textContent = 'Fetch error: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Main extraction ──────────────────────────────────────────────────────────
+
+function extractArticle(doc, sourceUrl) {
+  // 1. Locate the article body
+  const bodySelectors = [
+    '.available-content',
+    '.post-content',
+    'div.body.markup',
+    '.markup',
+    'article .body',
+    'article',
+  ];
+  let root = null;
+  for (const sel of bodySelectors) {
+    const el = doc.querySelector(sel);
+    if (el && el.textContent.trim().length > 150) { root = el; break; }
+  }
+  if (!root) return null;
+
+  root = root.cloneNode(true);
+
+  // 2. Strip noisy elements
+  const noiseSelectors = [
+    'script', 'style', 'noscript',
+    'button', 'input', 'form',
+    'footer', '.footer',
+    '.paywall', '.paywall-prompt',
+    '.subscription-widget-wrap', '.subscription-widget', '.subscribe-widget',
+    '.subscribe-cta', '.post-footer', '.post-footer-cta',
+    '.post-ufi', '.ufi', '[class*="ufi-"]',
+    '.share-dialog', '.like-button-container', '.comment-button-wrap',
+    '.comment-section', '.comments',
+    '[data-component-name="SubscribeWidget"]',
+    '[data-component-name="PaywallExplainer"]',
+    '.pencraft',
+  ];
+  for (const sel of noiseSelectors) {
+    root.querySelectorAll(sel).forEach(el => el.remove());
+  }
+
+  // 3. Remove "thanks for reading" and subscribe-prompt blocks
+  const thanksPatterns = [
+    /^thanks? (for|you for) reading/i,
+    /subscribe to (read|continue)/i,
+    /this post is for (paid )?subscribers/i,
+    /already a (paid )?subscriber/i,
+    /upgrade (your )?subscription/i,
+    /^support my work/i,
+  ];
+  const toRemove = [];
+  root.querySelectorAll('p, div, section').forEach(el => {
+    if (!root.contains(el)) return; // already removed ancestor
+    const t = el.textContent.trim();
+    if (t.length < 600 && thanksPatterns.some(rx => rx.test(t))) {
+      toRemove.push(el);
+    }
+  });
+  toRemove.forEach(el => { if (root.contains(el)) el.remove(); });
+
+  // 4. Fix images — remove trackers, get best src, wrap in figure
+  root.querySelectorAll('img').forEach(img => {
+    const w = parseInt(img.getAttribute('width') || '0');
+    const h = parseInt(img.getAttribute('height') || '0');
+    if ((w > 0 && w <= 2) || (h > 0 && h <= 2)) { img.remove(); return; }
+
+    // Pick highest-res from srcset
+    const srcset = img.getAttribute('srcset');
+    if (srcset) {
+      const entries = srcset.split(',')
+        .map(s => s.trim().split(/\s+/))
+        .filter(p => p[0]);
+      if (entries.length) {
+        // Take the last (usually largest) entry
+        img.src = entries[entries.length - 1][0];
+      }
+      img.removeAttribute('srcset');
+      img.removeAttribute('sizes');
+    }
+
+    img.loading = 'lazy';
+    img.style.maxWidth = '100%';
+    img.style.display = 'block';
+    img.style.margin = '0 auto';
+
+    // Wrap naked images in <figure>
+    if (img.parentElement && img.parentElement.tagName !== 'FIGURE') {
+      const fig = document.createElement('figure');
+      img.replaceWith(fig);
+      fig.appendChild(img);
+    }
+  });
+
+  // 5. Style figures and captions
+  root.querySelectorAll('figure').forEach(fig => {
+    fig.style.margin = '24px 0';
+    fig.style.textAlign = 'center';
+    const cap = fig.querySelector('figcaption');
+    if (cap) cap.style.textAlign = 'center';
+  });
+
+  // 6. Flatten headings — h2–h6 → h3 (bold, body size via CSS)
+  root.querySelectorAll('h2, h4, h5, h6').forEach(h => {
+    const h3 = document.createElement('h3');
+    h3.innerHTML = h.innerHTML;
+    h.replaceWith(h3);
+  });
+
+  // 7. Drop empty block elements
+  root.querySelectorAll('p, div, section').forEach(el => {
+    if (!el.textContent.trim() && !el.querySelector('img, figure, iframe')) {
+      el.remove();
+    }
+  });
+
+  // 8. Build title block from page <head>
+  const wrapper = document.createElement('div');
+
+  const titleEl = doc.querySelector('h1.post-title, [class*="post-title"] h1, h1');
+  const subtitleEl = doc.querySelector('[class*="subtitle"]:not(h1), .post-subtitle');
+  const authorEl = doc.querySelector('[class*="byline"], [class*="author"]');
+
+  if (titleEl) {
+    const h1 = document.createElement('h1');
+    h1.textContent = titleEl.textContent.trim();
+    wrapper.appendChild(h1);
+  }
+
+  if (subtitleEl) {
+    const sub = document.createElement('p');
+    sub.className = 'post-subtitle';
+    sub.textContent = subtitleEl.textContent.trim();
+    wrapper.appendChild(sub);
+  }
+
+  if (authorEl) {
+    const meta = document.createElement('p');
+    meta.className = 'post-meta';
+    meta.textContent = authorEl.textContent.trim();
+    wrapper.appendChild(meta);
+  }
+
+  if (titleEl || subtitleEl) {
+    wrapper.appendChild(document.createElement('hr'));
+  }
+
+  wrapper.appendChild(root);
+  return wrapper;
+}
+</script>
+</body>
+</html>
