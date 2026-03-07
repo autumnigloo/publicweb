@@ -419,23 +419,42 @@ function extractArticle(doc, sourceUrl) {
   });
 
   // 5. Style figures and captions
-  // Convert figcaption → <p> with inline styles so centering survives paste into Google Docs
-  root.querySelectorAll('figcaption').forEach(cap => {
-    const p = document.createElement('p');
-    p.innerHTML = cap.innerHTML;
-    p.style.cssText = 'text-align:center;font-style:italic;color:#666;margin:2px 0 0 0;line-height:1.3;';
-    cap.replaceWith(p);
-  });
+  // Convert each figure → layout-table so Google Docs keeps image+caption together with no gap
   root.querySelectorAll('figure').forEach(fig => {
-    fig.style.cssText = 'margin:24px 0;text-align:center;display:block;';
-    // Remove paragraph spacing on any <p> inside a figure that wraps an image
-    fig.querySelectorAll('p').forEach(p => {
-      if (p.querySelector('img')) p.style.margin = '0';
-    });
+    const img = fig.querySelector('img');
+    if (!img) { fig.remove(); return; }
+
+    const cap = fig.querySelector('figcaption');
+
+    const table = document.createElement('table');
+    table.setAttribute('role', 'presentation');
+    table.setAttribute('cellspacing', '0');
+    table.setAttribute('cellpadding', '0');
+    table.setAttribute('border', '0');
+    table.style.cssText = 'margin:20px auto;border:0;';
+
+    const td = document.createElement('td');
+    td.style.cssText = 'padding:0;margin:0;line-height:1.2;text-align:center;';
+
+    img.style.cssText = 'display:block;margin:0 auto;border:0;max-width:100%;';
+    td.appendChild(img);
+
+    if (cap) {
+      const div = document.createElement('div');
+      div.innerHTML = cap.innerHTML;
+      div.style.cssText = 'margin:0;padding:2px 0 0;line-height:1.3;text-align:center;font-style:italic;color:#666;';
+      td.appendChild(div);
+    }
+
+    const tr = document.createElement('tr');
+    tr.appendChild(td);
+    table.appendChild(tr);
+    fig.replaceWith(table);
   });
 
   // 6. Flatten headings — h1–h2, h4–h6 → h3 (bold, body size via CSS)
-  root.querySelectorAll('h1, h2, h4, h5, h6').forEach(h => {
+  // Only collapse h1/h2 → h3; leave h4–h6 alone
+  root.querySelectorAll('h1, h2').forEach(h => {
     const h3 = document.createElement('h3');
     h3.innerHTML = h.innerHTML;
     h.replaceWith(h3);
