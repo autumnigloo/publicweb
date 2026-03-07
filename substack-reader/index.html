@@ -64,7 +64,7 @@
     #fetch-btn:hover { background: #d95510; }
     #fetch-btn:disabled { background: #f0a070; cursor: default; }
 
-    #select-btn {
+    #copy-btn {
       padding: 7px 14px;
       background: #f4f4f4;
       color: #333;
@@ -76,7 +76,7 @@
       white-space: nowrap;
       display: none;
     }
-    #select-btn:hover { background: #e8e8e8; }
+    #copy-btn:hover { background: #e8e8e8; }
 
     #status {
       color: #888;
@@ -141,11 +141,11 @@
       margin: 20px 0 24px;
     }
 
-    /* All h2-h6 treated as bold section headers at body size */
+    /* All h2-h6 treated as bold section headers */
     #content h2, #content h3,
     #content h4, #content h5, #content h6 {
       font-family: Arial, sans-serif;
-      font-size: 11pt;
+      font-size: 14px;
       font-weight: bold;
       margin-top: 20px;
       margin-bottom: 5px;
@@ -226,32 +226,60 @@
   <input id="url-input" type="url"
     placeholder="https://name.substack.com/p/article-slug">
   <button id="fetch-btn">Fetch</button>
-  <button id="select-btn">Select All</button>
+  <button id="copy-btn">Copy</button>
   <span id="status"></span>
 </div>
 
 <div id="page">
   <div id="placeholder">
     Paste a Substack article URL and click <strong>Fetch</strong>.<br>
-    Then use <strong>Select All</strong> to copy the clean text into Google Docs.
+    Then use <strong>Copy</strong> to copy the clean text into Google Docs.
   </div>
   <div id="content" style="display:none"></div>
 </div>
 
 <script>
-const PROXY = 'https://api.allorigins.win/raw?url=';
+const PROXIES = [
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
+
+async function fetchViaProxy(url) {
+  for (const proxy of PROXIES) {
+    try {
+      const res = await fetch(proxy(url), { signal: AbortSignal.timeout(10000) });
+      if (res.ok) return res.text();
+    } catch (e) {
+      // try next proxy
+    }
+  }
+  throw new Error('All proxies failed. The site may block scraping.');
+}
 
 document.getElementById('fetch-btn').addEventListener('click', fetchArticle);
 document.getElementById('url-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') fetchArticle();
 });
-document.getElementById('select-btn').addEventListener('click', () => {
+document.getElementById('copy-btn').addEventListener('click', async () => {
   const el = document.getElementById('content');
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
+  const btn = document.getElementById('copy-btn');
+  try {
+    // Prefer rich HTML copy so formatting pastes into Google Docs
+    const blob = new Blob([el.innerHTML], { type: 'text/html' });
+    await navigator.clipboard.write([new ClipboardItem({ 'text/html': blob })]);
+  } catch (e) {
+    // Fallback: select all + execCommand
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand('copy');
+    sel.removeAllRanges();
+  }
+  btn.textContent = 'Copied!';
+  setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
 });
 
 function setStatus(msg) {
@@ -267,12 +295,10 @@ async function fetchArticle() {
   setStatus('Loading…');
   document.getElementById('placeholder').style.display = 'none';
   document.getElementById('content').style.display = 'none';
-  document.getElementById('select-btn').style.display = 'none';
+  document.getElementById('copy-btn').style.display = 'none';
 
   try {
-    const res = await fetch(PROXY + encodeURIComponent(rawUrl));
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const html = await res.text();
+    const html = await fetchViaProxy(rawUrl);
     const doc = new DOMParser().parseFromString(html, 'text/html');
 
     const node = extractArticle(doc, rawUrl);
@@ -288,7 +314,7 @@ async function fetchArticle() {
     content.innerHTML = '';
     content.appendChild(node);
     content.style.display = 'block';
-    document.getElementById('select-btn').style.display = '';
+    document.getElementById('copy-btn').style.display = 'inline-block';
     setStatus('✓ Done');
   } catch (err) {
     setStatus('Error');
@@ -393,11 +419,15 @@ function extractArticle(doc, sourceUrl) {
   });
 
   // 5. Style figures and captions
+  // Convert figcaption → <p> with inline styles so centering survives paste into Google Docs
+  root.querySelectorAll('figcaption').forEach(cap => {
+    const p = document.createElement('p');
+    p.innerHTML = cap.innerHTML;
+    p.style.cssText = 'text-align:center;font-style:italic;color:#666;margin-top:6px;';
+    cap.replaceWith(p);
+  });
   root.querySelectorAll('figure').forEach(fig => {
-    fig.style.margin = '24px 0';
-    fig.style.textAlign = 'center';
-    const cap = fig.querySelector('figcaption');
-    if (cap) cap.style.textAlign = 'center';
+    fig.style.cssText = 'margin:24px 0;text-align:center;display:block;';
   });
 
   // 6. Flatten headings — h2–h6 → h3 (bold, body size via CSS)
