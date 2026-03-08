@@ -51,9 +51,24 @@
       flex: 1;
       display: flex;
       padding: 20px;
+      gap: 20px;
       min-height: 0;
     }
-    #editor {
+    .panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .panel-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .editor-box {
       flex: 1;
       background: #fff;
       border: 2px solid #ddd;
@@ -67,13 +82,18 @@
       outline: none;
       min-height: 300px;
     }
-    #editor:empty::before {
-      content: 'Paste your text here (Ctrl+V). Links will be automatically cleaned up.';
+    .editor-box:empty::before {
       color: #aaa;
       pointer-events: none;
     }
-    #editor:focus { border-color: #4a90d9; }
-    #editor a {
+    #editor-left:empty::before {
+      content: 'Paste plain-text URLs here. They will be linkified and cleaned.';
+    }
+    #editor-right:empty::before {
+      content: 'Paste HTML with links here. Titles will be cleaned and publishers appended.';
+    }
+    .editor-box:focus { border-color: #4a90d9; }
+    .editor-box a {
       color: #1a73e8;
       text-decoration: underline;
     }
@@ -188,7 +208,14 @@
   </div>
 
   <div id="editor-wrap">
-    <div id="editor" contenteditable="true"></div>
+    <div class="panel">
+      <div class="panel-label">URL Linkifier</div>
+      <div id="editor-left" class="editor-box" contenteditable="true"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-label">Title Cleaner</div>
+      <div id="editor-right" class="editor-box" contenteditable="true"></div>
+    </div>
   </div>
 
   <!-- Settings Modal -->
@@ -200,7 +227,7 @@
       </div>
       <div id="modal-body">
         <p class="settings-desc">
-          <strong>Line 1:</strong> Publisher names to strip from titles, separated by <code>,,,</code>. Each name is automatically matched with separators (<code>|</code> <code>-</code> <code>–</code> <code>—</code> <code>\</code>) and case variants.<br>
+          <strong>Line 1:</strong> Publisher names to strip from titles, separated by <code>,,,</code>. Each name is automatically matched with separators (<code>|</code> <code>-</code> <code>&ndash;</code> <code>&mdash;</code> <code>\</code>) and case variants.<br>
           <strong>Remaining lines:</strong> Domain mappings as <code>domain=Name</code> (e.g. <code>nytimes.com=NYT</code>).
         </p>
         <textarea id="config-input" spellcheck="false"></textarea>
@@ -216,23 +243,6 @@
   </div>
 
 <script>
-// ── CORS proxies (same approach as sibling projects) ──
-const PROXIES = [
-  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-];
-
-async function fetchViaProxy(url) {
-  for (const proxy of PROXIES) {
-    try {
-      const res = await fetch(proxy(url), { signal: AbortSignal.timeout(10000) });
-      if (res.ok) return await res.text();
-    } catch { /* try next */ }
-  }
-  throw new Error('All proxies failed for ' + url);
-}
-
 // ── Settings persistence ──
 const DEFAULT_CONFIG = `The New York Times,,,NYT,,,The Washington Post,,,Washington Post,,,The Guardian,,,BBC News,,,BBC,,,Reuters,,,AP News,,,The Associated Press,,,Bloomberg,,,Financial Times,,,FT,,,The Wall Street Journal,,,WSJ,,,POLITICO,,,Politico,,,The Atlantic,,,The Verge,,,Ars Technica,,,Wired,,,WIRED,,,TechCrunch,,,MIT Technology Review,,,The Information,,,Axios,,,Time,,,TIME,,,The Economist,,,NPR,,,Vox,,,404 Media,,,Semafor,,,The Register,,,Fortune,,,CNBC,,,CNN,,,NBC News,,,CBS News,,,ABC News,,,Los Angeles Times,,,The Hill,,,Slate,,,Slate Magazine,,,New Scientist,,,Nature,,,Science,,,Science | AAAS,,,The New Yorker,,,ProPublica,,,Rest of World,,,Foreign Affairs,,,Foreign Policy,,,The Intercept,,,The Daily Beast,,,Quartz,,,Business Insider,,,Insider,,,MarketWatch,,,Yahoo News,,,Yahoo Finance,,,HuffPost,,,BuzzFeed News,,,Engadget,,,Gizmodo,,,Mashable,,,ZDNet,,,PCMag,,,Tom's Hardware,,,AnandTech,,,VentureBeat,,,Protocol,,,Motherboard,,,IEEE Spectrum,,,Google DeepMind,,,DeepMind,,,Google AI,,,Google,,,The Keyword,,,OpenAI,,,Anthropic,,,Meta AI,,,Meta,,,Microsoft Research,,,Microsoft,,,Google Research
 nytimes.com=NYT
@@ -306,26 +316,21 @@ research.microsoft.com=Microsoft Research
 blogs.microsoft.com=Microsoft
 research.google=Google Research`;
 
-const SEPARATORS = ['|', '-', '–', '—', '\\'];
+const SEPARATORS = ['|', '-', '\u2013', '\u2014', '\\'];
 
 function buildSuffixes(names) {
   const suffixes = [];
   for (const name of names) {
-    // Add the name itself as a suffix (for cases like "Science | AAAS")
     suffixes.push(name);
-    // Add uppercase variant if different
     const upper = name.toUpperCase();
     if (upper !== name) suffixes.push(upper);
-    // Generate "separator + name" combos with flexible whitespace
     for (const sep of SEPARATORS) {
       suffixes.push(` ${sep} ${name}`);
       suffixes.push(` ${sep} ${upper}`);
-      // Also handle no trailing space or single space variants
       suffixes.push(`${sep} ${name}`);
       suffixes.push(`${sep} ${upper}`);
     }
   }
-  // Sort longest first so we match the most specific suffix
   suffixes.sort((a, b) => b.length - a.length);
   return suffixes;
 }
@@ -384,7 +389,6 @@ document.getElementById('reset-defaults-btn').addEventListener('click', () => {
 });
 
 document.getElementById('clear-cache-btn').addEventListener('click', () => {
-  titleCache.clear();
   localStorage.removeItem('link-cleaner-config');
   configText = DEFAULT_CONFIG;
   configInput.value = configText;
@@ -394,37 +398,7 @@ document.getElementById('clear-cache-btn').addEventListener('click', () => {
   }, 1500);
 });
 
-// ── Title fetching with cache ──
-const titleCache = new Map();
-
-async function fetchTitle(url) {
-  if (titleCache.has(url)) return titleCache.get(url);
-  const html = await fetchViaProxy(url);
-  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (!match) throw new Error('No <title> found');
-  // Decode HTML entities
-  const txt = document.createElement('textarea');
-  txt.innerHTML = match[1].trim();
-  const title = txt.value;
-  titleCache.set(url, title);
-  return title;
-}
-
-function cleanTitle(rawTitle) {
-  const { names } = parseConfig(configText);
-  const suffixes = buildSuffixes(names);
-  let title = rawTitle;
-  for (const suffix of suffixes) {
-    if (title.endsWith(suffix)) {
-      title = title.slice(0, -suffix.length);
-      // Trim any leftover whitespace or separators at the end
-      title = title.replace(/[\s|–—\-\\]+$/, '');
-      break;
-    }
-  }
-  return title.trim();
-}
-
+// ── Shared utilities ──
 function stripUtmParams(url) {
   try {
     const u = new URL(url);
@@ -438,28 +412,54 @@ function stripUtmParams(url) {
   }
 }
 
-function findPublicationName(url) {
+function cleanTitle(rawTitle) {
+  const { names, mappings } = parseConfig(configText);
+  const mappingNames = mappings.map(m => m.name).filter(Boolean);
+  const allNames = [...new Set([...names, ...mappingNames])];
+  const suffixes = buildSuffixes(allNames);
+  let title = rawTitle;
+  for (const suffix of suffixes) {
+    if (title.endsWith(suffix)) {
+      title = title.slice(0, -suffix.length);
+      title = title.replace(/[\s|\u2013\u2014\-\\]+$/, '');
+      break;
+    }
+  }
+  return title.trim();
+}
+
+function getPublicationLabel(url) {
   let hostname;
-  try { hostname = new URL(url).hostname; } catch { return null; }
+  try { hostname = new URL(url).hostname; } catch { return 'TODO ' + url; }
   const { mappings } = parseConfig(configText);
   for (const m of mappings) {
     if (hostname === m.domain || hostname.endsWith('.' + m.domain)) {
       return m.name || null;
     }
   }
-  return null;
+  const domain = hostname.replace(/^www\./, '');
+  return 'TODO ' + domain;
 }
 
-// ── Bare URL linkification ──
-const URL_RE = /(?:https?:\/\/)[^\s<>"')\]]+/g;
+// ── LEFT panel: URL Linkifier ──
+const editorLeft = document.getElementById('editor-left');
+const statusEl = document.getElementById('status');
+const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
 
-function linkifyBareUrls() {
-  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+editorLeft.addEventListener('paste', e => {
+  const html = e.clipboardData.getData('text/html');
+  const plain = e.clipboardData.getData('text/plain');
+
+  e.preventDefault();
+  document.execCommand('insertHTML', false, html || plain);
+
+  // Linkify bare URLs in text nodes
+  const walker = document.createTreeWalker(editorLeft, NodeFilter.SHOW_TEXT);
   const textNodes = [];
   while (walker.nextNode()) textNodes.push(walker.currentNode);
 
+  let count = 0;
   for (const node of textNodes) {
-    // Skip text already inside a link
     if (node.parentElement.closest('a')) continue;
     const text = node.textContent;
     if (!URL_RE.test(text)) continue;
@@ -472,10 +472,12 @@ function linkifyBareUrls() {
       if (match.index > lastIdx) {
         frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
       }
+      const cleanUrl = stripUtmParams(match[0].replace(/\s+$/, ''));
       const a = document.createElement('a');
-      a.href = match[0];
-      a.textContent = match[0];
+      a.href = cleanUrl;
+      a.textContent = cleanUrl;
       frag.appendChild(a);
+      count++;
       lastIdx = URL_RE.lastIndex;
     }
     if (lastIdx < text.length) {
@@ -483,73 +485,62 @@ function linkifyBareUrls() {
     }
     node.parentNode.replaceChild(frag, node);
   }
-}
 
-// ── Paste handler ──
-const editor = document.getElementById('editor');
-const statusEl = document.getElementById('status');
+  // Also strip UTM from any existing <a> tags that were pasted as HTML
+  for (const a of editorLeft.querySelectorAll('a[href]')) {
+    const url = stripUtmParams(a.href.replace(/\s+$/, ''));
+    a.href = url;
+    count++;
+  }
 
-editor.addEventListener('paste', e => {
-  const html = e.clipboardData.getData('text/html');
-  const plain = e.clipboardData.getData('text/plain');
-
-  e.preventDefault();
-
-  // Insert the HTML (or plain text fallback)
-  document.execCommand('insertHTML', false, html || plain);
-
-  // Convert bare URLs in text nodes into <a> elements
-  linkifyBareUrls();
-
-  // Now process all links in the editor
-  processLinks();
+  if (count) statusEl.textContent = `Linkified ${count} URL(s)`;
 });
 
-async function processLinks() {
-  // Gather all <a> elements currently in the editor
-  const links = Array.from(editor.querySelectorAll('a[href]'));
-  const httpLinks = links.filter(a => {
-    const h = a.href;
-    return h.startsWith('http://') || h.startsWith('https://');
-  });
+// ── RIGHT panel: Title Cleaner ──
+const editorRight = document.getElementById('editor-right');
+
+editorRight.addEventListener('paste', e => {
+  const html = e.clipboardData.getData('text/html');
+  if (!html) return;
+
+  e.preventDefault();
+  document.execCommand('insertHTML', false, html);
+
+  const links = Array.from(editorRight.querySelectorAll('a[href]'));
+  const httpLinks = links.filter(a =>
+    a.href.startsWith('http://') || a.href.startsWith('https://')
+  );
 
   if (httpLinks.length === 0) return;
 
-  statusEl.textContent = `Processing ${httpLinks.length} link(s)…`;
+  for (const a of httpLinks) {
+    // Strip UTM params
+    const url = stripUtmParams(a.href.replace(/\s+$/, ''));
+    a.href = url;
 
-  let done = 0;
-  let failed = 0;
+    // Clean up the link title text
+    a.textContent = cleanTitle(a.textContent.trim());
 
-  await Promise.all(httpLinks.map(async a => {
-    try {
-      const url = stripUtmParams(a.href);
-      a.href = url;
-      const rawTitle = await fetchTitle(url);
-      const cleaned = cleanTitle(rawTitle);
-
-      // Replace link text with cleaned title
-      a.textContent = cleaned;
-
-      // Add publication name in parentheses after the link
-      const pubName = findPublicationName(url);
-      if (pubName) {
-        const span = document.createElement('span');
-        span.textContent = ` (${pubName})`;
-        a.insertAdjacentElement('afterend', span);
+    // Ensure there's a space after the link
+    if (a.nextSibling && a.nextSibling.nodeType === Node.TEXT_NODE) {
+      if (!a.nextSibling.textContent.startsWith(' ')) {
+        a.nextSibling.textContent = ' ' + a.nextSibling.textContent;
       }
-
-      done++;
-    } catch (err) {
-      failed++;
-      console.warn('Failed to fetch title for', a.href, err);
+    } else {
+      a.insertAdjacentText('afterend', ' ');
     }
-    statusEl.textContent = `Processed ${done + failed}/${httpLinks.length}` +
-      (failed ? ` (${failed} failed)` : '') + '…';
-  }));
 
-  statusEl.textContent = `Done — ${done} link(s) updated` +
-    (failed ? `, ${failed} failed` : '');
-}
+    // Add publication label in parentheses
+    const label = getPublicationLabel(url);
+    if (label) {
+      const span = document.createElement('span');
+      span.textContent = `(${label})`;
+      a.nextSibling.after(span);
+    }
+  }
+
+  statusEl.textContent = `Cleaned ${httpLinks.length} link(s)`;
+});
 </script>
 </body>
 </html>
