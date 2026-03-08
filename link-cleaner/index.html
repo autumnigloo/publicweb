@@ -208,7 +208,7 @@
       <div id="modal-footer">
         <div class="footer-left">
           <button id="reset-defaults-btn">Reset to defaults</button>
-          <button id="clear-cache-btn">Clear title cache</button>
+          <button id="clear-cache-btn">Clear all & reset</button>
         </div>
         <button id="save-settings-btn">Save &amp; Close</button>
       </div>
@@ -234,7 +234,7 @@ async function fetchViaProxy(url) {
 }
 
 // ── Settings persistence ──
-const DEFAULT_CONFIG = `The New York Times,,,NYT,,,The Washington Post,,,Washington Post,,,The Guardian,,,BBC News,,,BBC,,,Reuters,,,AP News,,,The Associated Press,,,Bloomberg,,,Financial Times,,,FT,,,The Wall Street Journal,,,WSJ,,,POLITICO,,,Politico,,,The Atlantic,,,The Verge,,,Ars Technica,,,Wired,,,WIRED,,,TechCrunch,,,MIT Technology Review,,,The Information,,,Axios,,,Time,,,TIME,,,The Economist,,,NPR,,,Vox,,,404 Media,,,Semafor,,,The Register,,,Fortune,,,CNBC,,,CNN,,,NBC News,,,CBS News,,,ABC News,,,Los Angeles Times,,,The Hill,,,Slate,,,Slate Magazine,,,New Scientist,,,Nature,,,Science,,,Science | AAAS,,,The New Yorker,,,ProPublica,,,Rest of World,,,Foreign Affairs,,,Foreign Policy,,,The Intercept,,,The Daily Beast,,,Quartz,,,Business Insider,,,Insider,,,MarketWatch,,,Yahoo News,,,Yahoo Finance,,,HuffPost,,,BuzzFeed News,,,Engadget,,,Gizmodo,,,Mashable,,,ZDNet,,,PCMag,,,Tom's Hardware,,,AnandTech,,,VentureBeat,,,Protocol,,,Motherboard,,,IEEE Spectrum
+const DEFAULT_CONFIG = `The New York Times,,,NYT,,,The Washington Post,,,Washington Post,,,The Guardian,,,BBC News,,,BBC,,,Reuters,,,AP News,,,The Associated Press,,,Bloomberg,,,Financial Times,,,FT,,,The Wall Street Journal,,,WSJ,,,POLITICO,,,Politico,,,The Atlantic,,,The Verge,,,Ars Technica,,,Wired,,,WIRED,,,TechCrunch,,,MIT Technology Review,,,The Information,,,Axios,,,Time,,,TIME,,,The Economist,,,NPR,,,Vox,,,404 Media,,,Semafor,,,The Register,,,Fortune,,,CNBC,,,CNN,,,NBC News,,,CBS News,,,ABC News,,,Los Angeles Times,,,The Hill,,,Slate,,,Slate Magazine,,,New Scientist,,,Nature,,,Science,,,Science | AAAS,,,The New Yorker,,,ProPublica,,,Rest of World,,,Foreign Affairs,,,Foreign Policy,,,The Intercept,,,The Daily Beast,,,Quartz,,,Business Insider,,,Insider,,,MarketWatch,,,Yahoo News,,,Yahoo Finance,,,HuffPost,,,BuzzFeed News,,,Engadget,,,Gizmodo,,,Mashable,,,ZDNet,,,PCMag,,,Tom's Hardware,,,AnandTech,,,VentureBeat,,,Protocol,,,Motherboard,,,IEEE Spectrum,,,Google DeepMind,,,DeepMind,,,Google AI,,,Google,,,The Keyword,,,OpenAI,,,Anthropic,,,Meta AI,,,Meta,,,Microsoft Research,,,Microsoft,,,Google Research
 nytimes.com=NYT
 washingtonpost.com=WaPo
 theguardian.com=Guardian
@@ -294,7 +294,17 @@ zdnet.com=ZDNet
 pcmag.com=PCMag
 tomshardware.com=Tom's Hardware
 venturebeat.com=VentureBeat
-spectrum.ieee.org=IEEE Spectrum`;
+spectrum.ieee.org=IEEE Spectrum
+deepmind.google=DeepMind
+blog.google=Google
+ai.google=Google AI
+openai.com=OpenAI
+anthropic.com=Anthropic
+ai.meta.com=Meta AI
+about.fb.com=Meta
+research.microsoft.com=Microsoft Research
+blogs.microsoft.com=Microsoft
+research.google=Google Research`;
 
 const SEPARATORS = ['|', '-', '–', '—', '\\'];
 
@@ -375,9 +385,12 @@ document.getElementById('reset-defaults-btn').addEventListener('click', () => {
 
 document.getElementById('clear-cache-btn').addEventListener('click', () => {
   titleCache.clear();
-  document.getElementById('clear-cache-btn').textContent = 'Cache cleared!';
+  localStorage.removeItem('link-cleaner-config');
+  configText = DEFAULT_CONFIG;
+  configInput.value = configText;
+  document.getElementById('clear-cache-btn').textContent = 'Cleared!';
   setTimeout(() => {
-    document.getElementById('clear-cache-btn').textContent = 'Clear title cache';
+    document.getElementById('clear-cache-btn').textContent = 'Clear all & reset';
   }, 1500);
 });
 
