@@ -257,8 +257,15 @@ async function fetchViaProxy(url) {
   throw new Error('All proxies failed. The site may block scraping.');
 }
 
+const urlInput = document.getElementById('url-input');
+
+// Persist URL across reloads
+const savedUrl = localStorage.getItem('substack-url');
+if (savedUrl) urlInput.value = savedUrl;
+urlInput.addEventListener('input', () => localStorage.setItem('substack-url', urlInput.value));
+
 document.getElementById('fetch-btn').addEventListener('click', fetchArticle);
-document.getElementById('url-input').addEventListener('keydown', e => {
+urlInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') fetchArticle();
 });
 document.getElementById('copy-btn').addEventListener('click', async () => {
