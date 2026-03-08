@@ -73,7 +73,10 @@
       pointer-events: none;
     }
     #editor:focus { border-color: #4a90d9; }
-    #editor a { color: #1a73e8; }
+    #editor a {
+      color: #1a73e8;
+      text-decoration: underline;
+    }
 
     /* ── Settings modal ── */
     #modal-overlay {
@@ -90,9 +93,8 @@
     #modal {
       background: #fff;
       border-radius: 12px;
-      width: 100%;
-      max-width: 900px;
-      height: 90vh;
+      width: calc(100% - 40px);
+      height: calc(100vh - 40px);
       display: flex;
       flex-direction: column;
       box-shadow: 0 20px 60px rgba(0,0,0,0.3);
@@ -113,8 +115,10 @@
     #modal-close:hover { color: #333; }
     #modal-body {
       flex: 1;
-      overflow-y: auto;
+      overflow: hidden;
       padding: 24px;
+      display: flex;
+      flex-direction: column;
     }
 
     /* ── Settings content ── */
@@ -161,6 +165,17 @@
       cursor: pointer;
     }
     #save-settings-btn:hover { background: #1557b0; }
+    .footer-left { display: flex; gap: 8px; margin-right: auto; }
+    .footer-left button {
+      padding: 8px 16px;
+      background: #f0f0f0;
+      color: #555;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .footer-left button:hover { background: #e0e0e0; color: #333; }
   </style>
 </head>
 <body>
@@ -185,12 +200,16 @@
       </div>
       <div id="modal-body">
         <p class="settings-desc">
-          <strong>Line 1:</strong> Title cleanup regex (removes suffixes like "| NYT" or " - BBC News").<br>
+          <strong>Line 1:</strong> Publisher names to strip from titles, separated by <code>,,,</code>. Each name is automatically matched with separators (<code>|</code> <code>-</code> <code>–</code> <code>—</code> <code>\</code>) and case variants.<br>
           <strong>Remaining lines:</strong> Domain mappings as <code>domain=Name</code> (e.g. <code>nytimes.com=NYT</code>).
         </p>
         <textarea id="config-input" spellcheck="false"></textarea>
       </div>
       <div id="modal-footer">
+        <div class="footer-left">
+          <button id="reset-defaults-btn">Reset to defaults</button>
+          <button id="clear-cache-btn">Clear title cache</button>
+        </div>
         <button id="save-settings-btn">Save &amp; Close</button>
       </div>
     </div>
@@ -215,18 +234,77 @@ async function fetchViaProxy(url) {
 }
 
 // ── Settings persistence ──
-const DEFAULT_CONFIG = String.raw`\s*[\|\-–—]\s*[^|\-–—]+$
+const DEFAULT_CONFIG = `The New York Times,,,NYT,,,The Washington Post,,,Washington Post,,,The Guardian,,,BBC News,,,BBC,,,Reuters,,,AP News,,,The Associated Press,,,Bloomberg,,,Financial Times,,,FT,,,The Wall Street Journal,,,WSJ,,,POLITICO,,,Politico,,,The Atlantic,,,The Verge,,,Ars Technica,,,Wired,,,WIRED,,,TechCrunch,,,MIT Technology Review,,,The Information,,,Axios,,,Time,,,TIME,,,The Economist,,,NPR,,,Vox,,,404 Media,,,Semafor,,,The Register,,,Fortune,,,CNBC,,,CNN,,,NBC News,,,CBS News,,,ABC News,,,Los Angeles Times,,,The Hill,,,Slate,,,Slate Magazine,,,New Scientist,,,Nature,,,Science,,,Science | AAAS
 nytimes.com=NYT
 washingtonpost.com=Washington Post
 theguardian.com=The Guardian
 bbc.com=BBC
 bbc.co.uk=BBC
 reuters.com=Reuters
-apnews.com=AP`;
+apnews.com=AP
+bloomberg.com=Bloomberg
+ft.com=FT
+wsj.com=WSJ
+politico.com=Politico
+politico.eu=Politico
+theatlantic.com=The Atlantic
+theverge.com=The Verge
+arstechnica.com=Ars Technica
+wired.com=Wired
+techcrunch.com=TechCrunch
+technologyreview.com=MIT Technology Review
+theinformation.com=The Information
+axios.com=Axios
+time.com=Time
+economist.com=The Economist
+npr.org=NPR
+vox.com=Vox
+404media.co=404 Media
+semafor.com=Semafor
+theregister.com=The Register
+fortune.com=Fortune
+cnbc.com=CNBC
+cnn.com=CNN
+nbcnews.com=NBC News
+cbsnews.com=CBS News
+abcnews.go.com=ABC News
+latimes.com=LA Times
+thehill.com=The Hill
+slate.com=Slate
+newscientist.com=New Scientist
+nature.com=Nature
+science.org=Science`;
+
+const SEPARATORS = ['|', '-', '–', '—', '\\'];
+
+function buildSuffixes(names) {
+  const suffixes = [];
+  for (const name of names) {
+    // Add the name itself as a suffix (for cases like "Science | AAAS")
+    suffixes.push(name);
+    // Add uppercase variant if different
+    const upper = name.toUpperCase();
+    if (upper !== name) suffixes.push(upper);
+    // Generate "separator + name" combos with flexible whitespace
+    for (const sep of SEPARATORS) {
+      suffixes.push(` ${sep} ${name}`);
+      suffixes.push(` ${sep} ${upper}`);
+      // Also handle no trailing space or single space variants
+      suffixes.push(`${sep} ${name}`);
+      suffixes.push(`${sep} ${upper}`);
+    }
+  }
+  // Sort longest first so we match the most specific suffix
+  suffixes.sort((a, b) => b.length - a.length);
+  return suffixes;
+}
 
 function parseConfig(text) {
   const lines = text.split('\n');
-  const regex = (lines[0] || '').trim();
+  const names = (lines[0] || '')
+    .split(',,,')
+    .map(s => s.trim())
+    .filter(Boolean);
   const mappings = lines.slice(1)
     .map(line => line.trim())
     .filter(line => line && line.includes('='))
@@ -234,7 +312,7 @@ function parseConfig(text) {
       const idx = line.indexOf('=');
       return { domain: line.slice(0, idx).trim(), name: line.slice(idx + 1).trim() };
     });
-  return { regex, mappings };
+  return { names, mappings };
 }
 
 function loadConfig() {
@@ -270,6 +348,18 @@ document.getElementById('settings-btn').addEventListener('click', openSettings);
 document.getElementById('modal-close').addEventListener('click', closeSettings);
 overlay.addEventListener('click', e => { if (e.target === overlay) closeSettings(); });
 
+document.getElementById('reset-defaults-btn').addEventListener('click', () => {
+  configInput.value = DEFAULT_CONFIG;
+});
+
+document.getElementById('clear-cache-btn').addEventListener('click', () => {
+  titleCache.clear();
+  document.getElementById('clear-cache-btn').textContent = 'Cache cleared!';
+  setTimeout(() => {
+    document.getElementById('clear-cache-btn').textContent = 'Clear title cache';
+  }, 1500);
+});
+
 // ── Title fetching with cache ──
 const titleCache = new Map();
 
@@ -287,14 +377,18 @@ async function fetchTitle(url) {
 }
 
 function cleanTitle(rawTitle) {
-  const { regex } = parseConfig(configText);
-  if (!regex) return rawTitle;
-  try {
-    const re = new RegExp(regex);
-    return rawTitle.replace(re, '').trim();
-  } catch {
-    return rawTitle;
+  const { names } = parseConfig(configText);
+  const suffixes = buildSuffixes(names);
+  let title = rawTitle;
+  for (const suffix of suffixes) {
+    if (title.endsWith(suffix)) {
+      title = title.slice(0, -suffix.length);
+      // Trim any leftover whitespace or separators at the end
+      title = title.replace(/[\s|–—\-\\]+$/, '');
+      break;
+    }
   }
+  return title.trim();
 }
 
 function stripUtmParams(url) {
@@ -322,18 +416,56 @@ function findPublicationName(url) {
   return null;
 }
 
+// ── Bare URL linkification ──
+const URL_RE = /(?:https?:\/\/)[^\s<>"')\]]+/g;
+
+function linkifyBareUrls() {
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+  for (const node of textNodes) {
+    // Skip text already inside a link
+    if (node.parentElement.closest('a')) continue;
+    const text = node.textContent;
+    if (!URL_RE.test(text)) continue;
+    URL_RE.lastIndex = 0;
+
+    const frag = document.createDocumentFragment();
+    let lastIdx = 0;
+    let match;
+    while ((match = URL_RE.exec(text)) !== null) {
+      if (match.index > lastIdx) {
+        frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
+      }
+      const a = document.createElement('a');
+      a.href = match[0];
+      a.textContent = match[0];
+      frag.appendChild(a);
+      lastIdx = URL_RE.lastIndex;
+    }
+    if (lastIdx < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+    }
+    node.parentNode.replaceChild(frag, node);
+  }
+}
+
 // ── Paste handler ──
 const editor = document.getElementById('editor');
 const statusEl = document.getElementById('status');
 
 editor.addEventListener('paste', e => {
   const html = e.clipboardData.getData('text/html');
-  if (!html) return; // let plain text paste happen normally
+  const plain = e.clipboardData.getData('text/plain');
 
   e.preventDefault();
 
-  // Insert the raw HTML first
-  document.execCommand('insertHTML', false, html);
+  // Insert the HTML (or plain text fallback)
+  document.execCommand('insertHTML', false, html || plain);
+
+  // Convert bare URLs in text nodes into <a> elements
+  linkifyBareUrls();
 
   // Now process all links in the editor
   processLinks();
