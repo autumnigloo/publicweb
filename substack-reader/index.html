@@ -145,7 +145,7 @@
     #content h2, #content h3,
     #content h4, #content h5, #content h6 {
       font-family: Arial, sans-serif;
-      font-size: 14px;
+      font-size: 14pt;
       font-weight: bold;
       margin-top: 20px;
       margin-bottom: 5px;
@@ -422,12 +422,12 @@ function extractArticle(doc, sourceUrl) {
   root.querySelectorAll('h1, h2').forEach(h => {
     const h3 = document.createElement('h3');
     h3.innerHTML = h.innerHTML;
-    h3.style.cssText = 'font-family:Arial,sans-serif;font-size:14px;font-weight:bold;';
+    h3.style.cssText = 'font-family:Arial,sans-serif;font-size:14pt;font-weight:bold;';
     h.replaceWith(h3);
   });
   // Also apply inline style to existing h3s
   root.querySelectorAll('h3').forEach(h => {
-    h.style.cssText = 'font-family:Arial,sans-serif;font-size:14px;font-weight:bold;';
+    h.style.cssText = 'font-family:Arial,sans-serif;font-size:14pt;font-weight:bold;';
   });
 
   // 7. Drop empty block elements
