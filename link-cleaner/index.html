@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Link Cleaner</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top bar ── */
+    #topbar {
+      background: #fff;
+      border-bottom: 1px solid #ddd;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      flex-shrink: 0;
+    }
+    #back { color: #999; text-decoration: none; font-size: 13px; }
+    #back:hover { color: #333; }
+    #topbar h1 { font-size: 16px; font-weight: 600; color: #333; }
+    #settings-btn {
+      margin-left: auto;
+      padding: 7px 16px;
+      background: #4a5568;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #settings-btn:hover { background: #2d3748; }
+    #status {
+      font-size: 12px;
+      color: #888;
+      margin-left: 12px;
+    }
+
+    /* ── Editor area ── */
+    #editor-wrap {
+      flex: 1;
+      display: flex;
+      padding: 20px;
+      min-height: 0;
+    }
+    #editor {
+      flex: 1;
+      background: #fff;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      padding: 24px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #222;
+      overflow-y: auto;
+      outline: none;
+      min-height: 300px;
+    }
+    #editor:empty::before {
+      content: 'Paste your text here (Ctrl+V). Links will be automatically cleaned up.';
+      color: #aaa;
+      pointer-events: none;
+    }
+    #editor:focus { border-color: #4a90d9; }
+    #editor a { color: #1a73e8; }
+
+    /* ── Settings modal ── */
+    #modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #modal-overlay.open { display: flex; }
+    #modal {
+      background: #fff;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 900px;
+      height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    #modal-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    #modal-header h2 { font-size: 18px; font-weight: 600; color: #333; }
+    #modal-close {
+      background: none; border: none; font-size: 24px;
+      color: #999; cursor: pointer; padding: 4px 8px;
+    }
+    #modal-close:hover { color: #333; }
+    #modal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+
+    /* ── Settings content ── */
+    .settings-desc {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+    .settings-desc code {
+      background: #f0f0f0;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+    #config-input {
+      width: 100%;
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      resize: none;
+    }
+    #config-input:focus { outline: none; border-color: #4a90d9; }
+
+    #modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    #save-settings-btn {
+      padding: 8px 24px;
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    #save-settings-btn:hover { background: #1557b0; }
+  </style>
+</head>
+<body>
+
+  <div id="topbar">
+    <a id="back" href="../index.html">&larr; Back</a>
+    <h1>Link Cleaner</h1>
+    <span id="status"></span>
+    <button id="settings-btn">Settings</button>
+  </div>
+
+  <div id="editor-wrap">
+    <div id="editor" contenteditable="true"></div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="modal-overlay">
+    <div id="modal">
+      <div id="modal-header">
+        <h2>Settings</h2>
+        <button id="modal-close">&times;</button>
+      </div>
+      <div id="modal-body">
+        <p class="settings-desc">
+          <strong>Line 1:</strong> Title cleanup regex (removes suffixes like "| NYT" or " - BBC News").<br>
+          <strong>Remaining lines:</strong> Domain mappings as <code>domain=Name</code> (e.g. <code>nytimes.com=NYT</code>).
+        </p>
+        <textarea id="config-input" spellcheck="false"></textarea>
+      </div>
+      <div id="modal-footer">
+        <button id="save-settings-btn">Save &amp; Close</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ── CORS proxies (same approach as sibling projects) ──
+const PROXIES = [
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
+
+async function fetchViaProxy(url) {
+  for (const proxy of PROXIES) {
+    try {
+      const res = await fetch(proxy(url), { signal: AbortSignal.timeout(10000) });
+      if (res.ok) return await res.text();
+    } catch { /* try next */ }
+  }
+  throw new Error('All proxies failed for ' + url);
+}
+
+// ── Settings persistence ──
+const DEFAULT_CONFIG = String.raw`\s*[\|\-–—]\s*[^|\-–—]+$
+nytimes.com=NYT
+washingtonpost.com=Washington Post
+theguardian.com=The Guardian
+bbc.com=BBC
+bbc.co.uk=BBC
+reuters.com=Reuters
+apnews.com=AP`;
+
+function parseConfig(text) {
+  const lines = text.split('\n');
+  const regex = (lines[0] || '').trim();
+  const mappings = lines.slice(1)
+    .map(line => line.trim())
+    .filter(line => line && line.includes('='))
+    .map(line => {
+      const idx = line.indexOf('=');
+      return { domain: line.slice(0, idx).trim(), name: line.slice(idx + 1).trim() };
+    });
+  return { regex, mappings };
+}
+
+function loadConfig() {
+  return localStorage.getItem('link-cleaner-config') || DEFAULT_CONFIG;
+}
+
+function saveConfig(text) {
+  localStorage.setItem('link-cleaner-config', text);
+}
+
+let configText = loadConfig();
+
+// ── Settings modal UI ──
+const overlay = document.getElementById('modal-overlay');
+const configInput = document.getElementById('config-input');
+
+function openSettings() {
+  configInput.value = configText;
+  overlay.classList.add('open');
+}
+
+function closeSettings() {
+  overlay.classList.remove('open');
+}
+
+document.getElementById('save-settings-btn').addEventListener('click', () => {
+  configText = configInput.value;
+  saveConfig(configText);
+  closeSettings();
+});
+
+document.getElementById('settings-btn').addEventListener('click', openSettings);
+document.getElementById('modal-close').addEventListener('click', closeSettings);
+overlay.addEventListener('click', e => { if (e.target === overlay) closeSettings(); });
+
+// ── Title fetching with cache ──
+const titleCache = new Map();
+
+async function fetchTitle(url) {
+  if (titleCache.has(url)) return titleCache.get(url);
+  const html = await fetchViaProxy(url);
+  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (!match) throw new Error('No <title> found');
+  // Decode HTML entities
+  const txt = document.createElement('textarea');
+  txt.innerHTML = match[1].trim();
+  const title = txt.value;
+  titleCache.set(url, title);
+  return title;
+}
+
+function cleanTitle(rawTitle) {
+  const { regex } = parseConfig(configText);
+  if (!regex) return rawTitle;
+  try {
+    const re = new RegExp(regex);
+    return rawTitle.replace(re, '').trim();
+  } catch {
+    return rawTitle;
+  }
+}
+
+function stripUtmParams(url) {
+  try {
+    const u = new URL(url);
+    const keysToRemove = [...u.searchParams.keys()].filter(k =>
+      k.startsWith('utm_') || k.startsWith('ref_')
+    );
+    keysToRemove.forEach(k => u.searchParams.delete(k));
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+function findPublicationName(url) {
+  let hostname;
+  try { hostname = new URL(url).hostname; } catch { return null; }
+  const { mappings } = parseConfig(configText);
+  for (const m of mappings) {
+    if (hostname === m.domain || hostname.endsWith('.' + m.domain)) {
+      return m.name || null;
+    }
+  }
+  return null;
+}
+
+// ── Paste handler ──
+const editor = document.getElementById('editor');
+const statusEl = document.getElementById('status');
+
+editor.addEventListener('paste', e => {
+  const html = e.clipboardData.getData('text/html');
+  if (!html) return; // let plain text paste happen normally
+
+  e.preventDefault();
+
+  // Insert the raw HTML first
+  document.execCommand('insertHTML', false, html);
+
+  // Now process all links in the editor
+  processLinks();
+});
+
+async function processLinks() {
+  // Gather all <a> elements currently in the editor
+  const links = Array.from(editor.querySelectorAll('a[href]'));
+  const httpLinks = links.filter(a => {
+    const h = a.href;
+    return h.startsWith('http://') || h.startsWith('https://');
+  });
+
+  if (httpLinks.length === 0) return;
+
+  statusEl.textContent = `Processing ${httpLinks.length} link(s)…`;
+
+  let done = 0;
+  let failed = 0;
+
+  await Promise.all(httpLinks.map(async a => {
+    try {
+      const url = stripUtmParams(a.href);
+      a.href = url;
+      const rawTitle = await fetchTitle(url);
+      const cleaned = cleanTitle(rawTitle);
+
+      // Replace link text with cleaned title
+      a.textContent = cleaned;
+
+      // Add publication name in parentheses after the link
+      const pubName = findPublicationName(url);
+      if (pubName) {
+        const span = document.createElement('span');
+        span.textContent = ` (${pubName})`;
+        a.insertAdjacentElement('afterend', span);
+      }
+
+      done++;
+    } catch (err) {
+      failed++;
+      console.warn('Failed to fetch title for', a.href, err);
+    }
+    statusEl.textContent = `Processed ${done + failed}/${httpLinks.length}` +
+      (failed ? ` (${failed} failed)` : '') + '…';
+  }));
+
+  statusEl.textContent = `Done — ${done} link(s) updated` +
+    (failed ? `, ${failed} failed` : '');
+}
+</script>
+</body>
+</html>
