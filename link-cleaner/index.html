@@ -399,13 +399,10 @@ document.getElementById('clear-cache-btn').addEventListener('click', () => {
 });
 
 // ── Shared utilities ──
-function stripUtmParams(url) {
+function stripAllParams(url) {
   try {
     const u = new URL(url);
-    const keysToRemove = [...u.searchParams.keys()].filter(k =>
-      k.startsWith('utm_') || k.startsWith('ref_')
-    );
-    keysToRemove.forEach(k => u.searchParams.delete(k));
+    u.search = '';
     return u.toString();
   } catch {
     return url;
@@ -472,7 +469,7 @@ editorLeft.addEventListener('paste', e => {
       if (match.index > lastIdx) {
         frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
       }
-      const cleanUrl = stripUtmParams(match[0].replace(/\s+$/, ''));
+      const cleanUrl = stripAllParams(match[0].replace(/\s+$/, ''));
       const a = document.createElement('a');
       a.href = cleanUrl;
       a.textContent = cleanUrl;
@@ -486,10 +483,16 @@ editorLeft.addEventListener('paste', e => {
     node.parentNode.replaceChild(frag, node);
   }
 
-  // Also strip UTM from any existing <a> tags that were pasted as HTML
+  // Also strip all params from any existing <a> tags that were pasted as HTML
   for (const a of editorLeft.querySelectorAll('a[href]')) {
-    const url = stripUtmParams(a.href.replace(/\s+$/, ''));
+    const oldHref = a.href;
+    const url = stripAllParams(oldHref.replace(/\s+$/, ''));
     a.href = url;
+    // If the label was the URL itself, update it too
+    const labelTrimmed = a.textContent.trim().replace(/\s+$/, '');
+    if (labelTrimmed === oldHref || labelTrimmed === decodeURIComponent(oldHref)) {
+      a.textContent = url;
+    }
     count++;
   }
 
@@ -514,9 +517,7 @@ editorRight.addEventListener('paste', e => {
   if (httpLinks.length === 0) return;
 
   for (const a of httpLinks) {
-    // Strip UTM params
-    const url = stripUtmParams(a.href.replace(/\s+$/, ''));
-    a.href = url;
+    const url = a.href;
 
     // Clean up the link title text
     a.textContent = cleanTitle(a.textContent.trim());
