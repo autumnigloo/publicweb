@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Height Map Game</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0a12;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, monospace;
+      overflow: hidden;
+    }
+    canvas { display: block; }
+    #hud {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      pointer-events: none;
+      padding: 1.2rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      z-index: 10;
+    }
+    #formula-box {
+      background: rgba(10, 10, 18, 0.85);
+      border: 1px solid #2a2a48;
+      border-radius: 10px;
+      padding: 1rem 1.4rem;
+      max-width: 500px;
+      backdrop-filter: blur(8px);
+    }
+    #formula-box h2 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: #666;
+      margin-bottom: 0.5rem;
+    }
+    #formula-text {
+      font-size: 1.15rem;
+      color: #c0c0ff;
+      font-family: 'Courier New', monospace;
+      line-height: 1.5;
+    }
+    #params-box {
+      background: rgba(10, 10, 18, 0.85);
+      border: 1px solid #2a2a48;
+      border-radius: 10px;
+      padding: 1rem 1.4rem;
+      min-width: 200px;
+      backdrop-filter: blur(8px);
+      pointer-events: auto;
+    }
+    #params-box h2 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: #666;
+      margin-bottom: 0.5rem;
+    }
+    .param-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.3rem 0.5rem;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 1rem;
+      transition: background 0.15s;
+    }
+    .param-row.selected {
+      background: rgba(80, 80, 200, 0.2);
+      border: 1px solid #4a4a88;
+      margin: -1px;
+    }
+    .param-name {
+      color: #8888cc;
+      font-weight: 600;
+      width: 1.2rem;
+    }
+    .param-value {
+      color: #e0e0ff;
+      min-width: 3rem;
+      text-align: right;
+    }
+    .param-bar {
+      width: 80px;
+      height: 6px;
+      background: #1a1a2e;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .param-bar-fill {
+      height: 100%;
+      background: #5555aa;
+      border-radius: 3px;
+      transition: width 0.1s;
+    }
+    #level-info {
+      position: fixed;
+      bottom: 1.2rem;
+      left: 1.5rem;
+      background: rgba(10, 10, 18, 0.85);
+      border: 1px solid #2a2a48;
+      border-radius: 10px;
+      padding: 0.8rem 1.2rem;
+      backdrop-filter: blur(8px);
+      font-size: 0.85rem;
+      color: #888;
+      z-index: 10;
+    }
+    #level-info span { color: #aaa; }
+    #controls-hint {
+      position: fixed;
+      bottom: 1.2rem;
+      right: 1.5rem;
+      background: rgba(10, 10, 18, 0.85);
+      border: 1px solid #2a2a48;
+      border-radius: 10px;
+      padding: 0.8rem 1.2rem;
+      backdrop-filter: blur(8px);
+      font-size: 0.75rem;
+      color: #555;
+      line-height: 1.6;
+      z-index: 10;
+    }
+    #win-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 10, 18, 0.9);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      z-index: 100;
+      backdrop-filter: blur(4px);
+    }
+    #win-overlay.show { display: flex; }
+    #win-overlay h1 {
+      font-size: 2.5rem;
+      color: #7777ff;
+      font-weight: 300;
+      letter-spacing: 0.15em;
+      margin-bottom: 0.5rem;
+    }
+    #win-overlay p {
+      color: #888;
+      font-size: 1rem;
+      margin-bottom: 2rem;
+    }
+    #win-overlay button {
+      padding: 0.7rem 2rem;
+      background: #2a2a48;
+      border: 1px solid #4a4a88;
+      border-radius: 8px;
+      color: #c0c0ff;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #win-overlay button:hover {
+      background: #3a3a58;
+    }
+  </style>
+  <script type="module" crossorigin src="./assets/index-DZhuxJGF.js"></script>
+</head>
+<body>
+  <div id="hud">
+    <div id="formula-box">
+      <h2>Formula</h2>
+      <div id="formula-text"></div>
+    </div>
+    <div id="params-box">
+      <h2>Parameters</h2>
+      <div id="params-list"></div>
+    </div>
+  </div>
+  <div id="level-info">Level <span id="level-num">1</span> / <span id="level-total">5</span></div>
+  <div id="controls-hint">
+    ↑↓ select param &nbsp; ←→ adjust ±0.1<br>
+    W/S zoom &nbsp; A/D rotate &nbsp; Q/E height
+  </div>
+  <div id="win-overlay">
+    <h1>MATCHED</h1>
+    <p>Parameters aligned perfectly.</p>
+    <button id="next-btn">Next Level →</button>
+  </div>
+</body>
+</html>
