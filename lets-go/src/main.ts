@@ -218,7 +218,6 @@ function bindEvents() {
 
   gameSelect.addEventListener("change", () => {
     state.settings.gameId = gameSelect.value as GameId;
-    state.settings.boardMetersWide = defaultBoardWidth(state.settings.gameId);
     persistSettings();
     clearSessionCache();
     resetMatch();
