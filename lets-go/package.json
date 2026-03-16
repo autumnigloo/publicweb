@@ -1,0 +1,13 @@
+{
+  "name": "lets-go",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "../height-game/node_modules/.bin/vite",
+    "build": "../height-game/node_modules/.bin/vite build"
+  },
+  "devDependencies": {
+    "vite": "^8.0.0"
+  }
+}
