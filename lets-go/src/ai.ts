@@ -84,7 +84,7 @@ export function chooseAiMove(
         break;
       }
       const next = rule.applyMove(state, move);
-      const score = -negamax(rule, next, depth - 1, -beta, -alpha, state.currentPlayer, ctx);
+      const score = -negamax(rule, next, depth - 1, -beta, -alpha, ctx);
       if (ctx.timedOut) {
         break;
       }
@@ -125,7 +125,6 @@ function negamax(
   depth: number,
   alpha: number,
   beta: number,
-  perspective: Player,
   ctx: SearchContext
 ): number {
   if (shouldStop(ctx)) {
@@ -138,7 +137,7 @@ function negamax(
     return cached.score;
   }
   if (depth === 0 || rule.isTerminal(state)) {
-    const score = quiescence(rule, state, alpha, beta, perspective, ctx, 0);
+    const score = quiescence(rule, state, alpha, beta, ctx, 0);
     ctx.cache.set(cacheKey, { depth, score });
     return score;
   }
@@ -146,12 +145,12 @@ function negamax(
   let best = -WIN_SCORE;
   const moves = orderMoves(rule, state, rule.getLegalMoves(state), ctx.profile);
   if (moves.length === 0) {
-    return rule.evaluate(state, perspective);
+    return rule.evaluate(state, state.currentPlayer);
   }
 
   for (const move of moves) {
     const next = rule.applyMove(state, move);
-    const score = -negamax(rule, next, depth - 1, -beta, -alpha, perspective, ctx);
+    const score = -negamax(rule, next, depth - 1, -beta, -alpha, ctx);
     if (ctx.timedOut) {
       return 0;
     }
@@ -175,11 +174,10 @@ function quiescence(
   state: GameState,
   alpha: number,
   beta: number,
-  perspective: Player,
   ctx: SearchContext,
   ply: number
 ): number {
-  const standPat = rule.evaluate(state, perspective);
+  const standPat = rule.evaluate(state, state.currentPlayer);
   if (ply >= 2 || state.gameId === "tic-tac-toe") {
     return standPat;
   }
@@ -197,7 +195,7 @@ function quiescence(
       break;
     }
     const next = rule.applyMove(state, move);
-    const score = -quiescence(rule, next, -beta, -alpha, perspective, ctx, ply + 1);
+    const score = -quiescence(rule, next, -beta, -alpha, ctx, ply + 1);
     if (score >= beta) {
       return beta;
     }

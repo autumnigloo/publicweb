@@ -157,7 +157,6 @@ h1 {
 .map-layer img {
   position: absolute;
   object-fit: cover;
-  transform: translate(-50%, -50%);
 }
 
 .board {

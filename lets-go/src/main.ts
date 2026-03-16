@@ -576,13 +576,12 @@ function render() {
   boardEl.style.opacity = String(
     state.settings.mapEnabled && !state.settings.mapForeground ? state.settings.mapAlpha : 1
   );
-  playerMarker.style.left = `${state.playerMarker.x * 100}%`;
-  playerMarker.style.top = `${state.playerMarker.y * 100}%`;
   boardShell.style.aspectRatio = `${state.gameState.width} / ${state.gameState.height}`;
   boardEl.style.setProperty("--cols", String(state.gameState.width));
   boardEl.style.setProperty("--rows", String(state.gameState.height));
 
   renderMapLayer();
+  renderPlayerMarker();
   renderBoard();
   persistSession();
 }
@@ -626,21 +625,22 @@ function renderMapLayer() {
     return;
   }
 
-  const boardMetersHigh =
-    (state.settings.boardMetersWide * state.gameState.height) / state.gameState.width;
-  const zoom = chooseMapZoom(Math.max(state.settings.boardMetersWide, boardMetersHigh));
-  const center = latLonToTileFloat(state.anchor.lat, state.anchor.lon, zoom);
-  const metersPerTile = metersPerPixel(state.anchor.lat, zoom) * 256;
-  const tilesX = Math.max(1, Math.ceil(state.settings.boardMetersWide / metersPerTile) + 1);
-  const tilesY = Math.max(1, Math.ceil(boardMetersHigh / metersPerTile) + 1);
+  const geometry = getMapGeometry();
+  const { zoom, boardPixelsWide, boardPixelsHigh, centerWorld } = geometry;
+  const tileCenterX = Math.floor(centerWorld.x / 256);
+  const tileCenterY = Math.floor(centerWorld.y / 256);
+  const tilesX = Math.max(1, Math.ceil(boardPixelsWide / 256) + 1);
+  const tilesY = Math.max(1, Math.ceil(boardPixelsHigh / 256) + 1);
   const tiles: string[] = [];
 
-  for (let y = Math.floor(center.y) - tilesY; y <= Math.floor(center.y) + tilesY; y += 1) {
-    for (let x = Math.floor(center.x) - tilesX; x <= Math.floor(center.x) + tilesX; x += 1) {
-      const left = 50 + (((x - center.x) * metersPerTile) / state.settings.boardMetersWide) * 100;
-      const top = 50 + (((y - center.y) * metersPerTile) / boardMetersHigh) * 100;
-      const width = (metersPerTile / state.settings.boardMetersWide) * 100;
-      const height = (metersPerTile / boardMetersHigh) * 100;
+  for (let y = tileCenterY - tilesY; y <= tileCenterY + tilesY; y += 1) {
+    for (let x = tileCenterX - tilesX; x <= tileCenterX + tilesX; x += 1) {
+      const tileOriginX = x * 256;
+      const tileOriginY = y * 256;
+      const left = 50 + (((tileOriginX - centerWorld.x) / boardPixelsWide) * 100);
+      const top = 50 + (((tileOriginY - centerWorld.y) / boardPixelsHigh) * 100);
+      const width = (256 / boardPixelsWide) * 100;
+      const height = (256 / boardPixelsHigh) * 100;
       const wrappedX = wrapTile(x, zoom);
       const wrappedY = clamp(y, 0, 2 ** zoom - 1);
       tiles.push(
@@ -650,6 +650,36 @@ function renderMapLayer() {
   }
 
   mapLayer.innerHTML = tiles.join("");
+}
+
+function renderPlayerMarker() {
+  if (!state.anchor || !state.currentLocation) {
+    playerMarker.style.left = `${state.playerMarker.x * 100}%`;
+    playerMarker.style.top = `${state.playerMarker.y * 100}%`;
+    return;
+  }
+
+  const geometry = getMapGeometry();
+  const currentWorld = latLonToWorldPixels(
+    state.currentLocation.lat,
+    state.currentLocation.lon,
+    geometry.zoom
+  );
+  const simulatedPixelsX = state.virtualOffsetEast / geometry.metersPerPixelAtZoom;
+  const simulatedPixelsY = -state.virtualOffsetNorth / geometry.metersPerPixelAtZoom;
+  const x = clamp(
+    0.5 + (currentWorld.x - geometry.centerWorld.x + simulatedPixelsX) / geometry.boardPixelsWide,
+    0,
+    1
+  );
+  const y = clamp(
+    0.5 + (currentWorld.y - geometry.centerWorld.y + simulatedPixelsY) / geometry.boardPixelsHigh,
+    0,
+    1
+  );
+
+  playerMarker.style.left = `${x * 100}%`;
+  playerMarker.style.top = `${y * 100}%`;
 }
 
 function buildLocationText(): string {
@@ -857,12 +887,32 @@ function deserializeGameState(gameState: SerializedGameState): GameState {
   };
 }
 
-function latLonToTileFloat(lat: number, lon: number, zoom: number) {
+function latLonToWorldPixels(lat: number, lon: number, zoom: number) {
   const n = 2 ** zoom;
   const latRad = (lat * Math.PI) / 180;
   return {
-    x: ((lon + 180) / 360) * n,
-    y: ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n,
+    x: ((lon + 180) / 360) * n * 256,
+    y:
+      ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) *
+      n *
+      256,
+  };
+}
+
+function getMapGeometry() {
+  const boardMetersHigh =
+    (state.settings.boardMetersWide * state.gameState.height) / state.gameState.width;
+  const zoom = chooseMapZoom(Math.max(state.settings.boardMetersWide, boardMetersHigh));
+  const metersPerPixelAtZoom = metersPerPixel(state.anchor!.lat, zoom);
+  const boardPixelsWide = state.settings.boardMetersWide / metersPerPixelAtZoom;
+  const boardPixelsHigh = boardMetersHigh / metersPerPixelAtZoom;
+  const centerWorld = latLonToWorldPixels(state.anchor!.lat, state.anchor!.lon, zoom);
+  return {
+    zoom,
+    metersPerPixelAtZoom,
+    boardPixelsWide,
+    boardPixelsHigh,
+    centerWorld,
   };
 }
 
