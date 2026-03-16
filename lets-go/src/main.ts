@@ -220,6 +220,7 @@ function bindEvents() {
     state.settings.gameId = gameSelect.value as GameId;
     state.settings.boardMetersWide = defaultBoardWidth(state.settings.gameId);
     persistSettings();
+    clearSessionCache();
     resetMatch();
   });
 
@@ -393,25 +394,21 @@ function startGeolocation() {
 
 function updateCursorFromLocation() {
   const rule = RULES[state.settings.gameId];
-  const center = centeredCursor(state.gameState);
   const cellMeters = state.settings.boardMetersWide / rule.config.boardWidth;
   const boardMetersHigh = cellMeters * rule.config.boardHeight;
   const offset = combinedOffsetMeters();
 
-  const snappedX = clamp(
-    Math.round(offset.east / cellMeters),
-    -center.x,
-    rule.config.boardWidth - 1 - center.x
-  );
-  const snappedY = clamp(
-    Math.round(-offset.north / cellMeters),
-    -center.y,
-    rule.config.boardHeight - 1 - center.y
-  );
-
   state.boardCursor = {
-    x: clamp(center.x + snappedX, 0, rule.config.boardWidth - 1),
-    y: clamp(center.y + snappedY, 0, rule.config.boardHeight - 1),
+    x: clamp(
+      Math.floor((offset.east + state.settings.boardMetersWide / 2) / cellMeters),
+      0,
+      rule.config.boardWidth - 1
+    ),
+    y: clamp(
+      Math.floor((boardMetersHigh / 2 - offset.north) / cellMeters),
+      0,
+      rule.config.boardHeight - 1
+    ),
   };
 
   const halfSpanX = state.settings.boardMetersWide / 2;
@@ -788,6 +785,10 @@ function persistSession() {
       })),
     })
   );
+}
+
+function clearSessionCache() {
+  localStorage.removeItem(SESSION_KEY);
 }
 
 function restoreSession() {
