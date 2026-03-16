@@ -52,6 +52,17 @@ export function chooseAiMove(
 ): SearchResult {
   const rule = RULES[state.gameId];
   const startedAt = performance.now();
+  const forcedMove = findForcedMove(rule, state, profile);
+  if (forcedMove) {
+    return {
+      move: forcedMove,
+      score: WIN_SCORE,
+      depth: 1,
+      nodes: 0,
+      elapsedMs: performance.now() - startedAt,
+      timedOut: false,
+    };
+  }
   const ctx: SearchContext = {
     startedAt,
     deadline: startedAt + profile.budgetMs,
@@ -117,6 +128,65 @@ export function chooseAiMove(
     elapsedMs: performance.now() - startedAt,
     timedOut: ctx.timedOut,
   };
+}
+
+function findForcedMove(rule: RuleSet, state: GameState, profile: SearchProfile): Move | null {
+  const orderedMoves = orderMoves(rule, state, rule.getLegalMoves(state), profile);
+
+  for (const move of orderedMoves) {
+    const next = rule.applyMove(state, move);
+    if (next.winner === state.currentPlayer) {
+      return move;
+    }
+  }
+
+  let bestBlock: { move: Move; remainingThreats: number; score: number } | null = null;
+  const baselineThreats = immediateWinningMoves(rule, state, profile, state.currentPlayer * -1 as Player);
+  if (baselineThreats.length === 0) {
+    return null;
+  }
+
+  for (const move of orderedMoves) {
+    const next = rule.applyMove(state, move);
+    const remainingThreats = immediateWinningMoves(
+      rule,
+      next,
+      profile,
+      next.currentPlayer
+    ).length;
+    const score = rule.evaluate(next, state.currentPlayer);
+    if (
+      !bestBlock ||
+      remainingThreats < bestBlock.remainingThreats ||
+      (remainingThreats === bestBlock.remainingThreats && score > bestBlock.score)
+    ) {
+      bestBlock = { move, remainingThreats, score };
+    }
+    if (remainingThreats === 0) {
+      return move;
+    }
+  }
+
+  return bestBlock?.move ?? null;
+}
+
+function immediateWinningMoves(
+  rule: RuleSet,
+  state: GameState,
+  profile: SearchProfile,
+  player: Player
+): Move[] {
+  const probeState =
+    state.currentPlayer === player ? state : { ...state, currentPlayer: player };
+  const moves = orderMoves(rule, probeState, rule.getLegalMoves(probeState), profile);
+  const wins: Move[] = [];
+  for (const move of moves) {
+    const next = rule.applyMove(probeState, move);
+    if (next.winner === player) {
+      wins.push(move);
+    }
+  }
+  return wins;
 }
 
 function negamax(
