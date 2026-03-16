@@ -5,9 +5,16 @@ import { GameId, GameState, Move, Player, RULES } from "./games";
 
 interface Settings {
   gameId: GameId;
-  metersPerCell: number;
   boardMetersWide: number;
-  boardMetersTall: number;
+  mapEnabled: boolean;
+  mapAlpha: number;
+  mapForeground: boolean;
+}
+
+interface HistoryEntry {
+  gameState: GameState;
+  label: string;
+  aiLastResult: SearchResult | null;
 }
 
 interface AppState {
@@ -19,16 +26,27 @@ interface AppState {
   virtualOffsetEast: number;
   virtualOffsetNorth: number;
   boardCursor: { x: number; y: number };
+  playerMarker: { x: number; y: number };
   lastMoveLabel: string;
   aiThinking: boolean;
   aiProfile: SearchProfile;
   aiLastResult: SearchResult | null;
   geoStatus: string;
   watchId: number | null;
+  history: HistoryEntry[];
+  historyIndex: number;
 }
 
 const STORAGE_KEY = "lets-go-settings-v1";
+const SESSION_KEY = "lets-go-session-v1";
 const app = document.querySelector<HTMLDivElement>("#app");
+const isDesktopControls =
+  window.matchMedia("(pointer:fine)").matches && window.matchMedia("(hover:hover)").matches;
+const heldKeys = new Set<string>();
+
+let keyboardFrame = 0;
+let keyboardLastTs = 0;
+let aiTimer = 0;
 
 if (!app) {
   throw new Error("App root missing");
@@ -36,125 +54,111 @@ if (!app) {
 
 const savedSettings = loadSettings();
 const initialRule = RULES[savedSettings.gameId];
+const initialGameState = initialRule.createInitialState();
 
 const state: AppState = {
   settings: savedSettings,
-  gameState: initialRule.createInitialState(),
+  gameState: initialGameState,
   humanPlayer: 1,
   anchor: null,
   currentLocation: null,
   virtualOffsetEast: 0,
   virtualOffsetNorth: 0,
-  boardCursor: {
-    x: Math.floor(initialRule.config.boardWidth / 2),
-    y: Math.floor(initialRule.config.boardHeight / 2),
-  },
-  lastMoveLabel: "Walk to a square, then place your stone there.",
+  boardCursor: centeredCursor(initialGameState),
+  playerMarker: { x: 0.5, y: 0.5 },
+  lastMoveLabel: "Ready",
   aiThinking: false,
   aiProfile: measureDeviceProfile(),
   aiLastResult: null,
-  geoStatus: "Waiting for location permission",
+  geoStatus: "Waiting for GPS",
   watchId: null,
+  history: [],
+  historyIndex: 0,
 };
+
+state.history = [makeHistoryEntry(initialGameState, "Ready", null)];
+restoreSession();
 
 app.innerHTML = `
   <main class="shell">
-    <section class="hero">
-      <div>
-        <p class="eyebrow">GPS board strategy</p>
-        <h1>Let's Go</h1>
-        <p class="subtitle">
-          Your real-world movement selects the square. Re-center on your current position, walk around, and play against a time-limited search AI.
-        </p>
+    <section class="panel board-panel">
+      <div class="board-topbar">
+        <div class="title-block">
+          <h1>Let's Go</h1>
+          <div class="status-inline">
+            <strong id="game-title"></strong>
+            <span id="status-text"></span>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="map-btn">Map</button>
+          <button id="layer-btn">Overlay</button>
+          <button id="undo-btn">Undo</button>
+          <button id="redo-btn">Redo</button>
+          <button id="move-btn" class="primary">Place</button>
+        </div>
       </div>
-      <div class="hero-chip" id="profile-chip"></div>
-    </section>
-    <section class="layout">
-      <section class="panel board-panel">
-        <div class="panel-head">
-          <div>
-            <h2 id="game-title"></h2>
-            <p id="status-text"></p>
-          </div>
-          <button id="move-btn" class="primary">Place Move</button>
-        </div>
+      <div class="board-shell">
+        <div id="map-layer" class="map-layer"></div>
         <div id="board" class="board"></div>
-        <div class="board-meta">
-          <div id="cursor-text"></div>
-          <div id="move-text"></div>
-        </div>
-      </section>
-      <aside class="stack">
-        <section class="panel controls">
-          <h3>Settings</h3>
-          <label>
-            <span>Game</span>
-            <select id="game-select"></select>
-          </label>
-          <label>
-            <span>Meters per cell</span>
-            <input id="meters-range" type="range" min="5" max="60" step="1" />
-            <strong id="meters-value"></strong>
-          </label>
-          <label>
-            <span>Board width in meters</span>
-            <input id="width-range" type="range" min="30" max="600" step="10" />
-            <strong id="width-value"></strong>
-          </label>
-          <label>
-            <span>Board height in meters</span>
-            <input id="height-range" type="range" min="30" max="600" step="10" />
-            <strong id="height-value"></strong>
-          </label>
-          <div class="button-row">
-            <button id="center-btn">Use Current Spot as Center</button>
-            <button id="new-btn">New Match</button>
-          </div>
-        </section>
-        <section class="panel controls">
-          <h3>Movement</h3>
-          <p id="geo-status" class="small"></p>
-          <p id="location-text" class="small"></p>
-          <div class="button-row">
-            <button data-step="0,12">North</button>
-            <button data-step="-12,0">West</button>
-            <button data-step="12,0">East</button>
-            <button data-step="0,-12">South</button>
-          </div>
-          <p class="small">
-            The step buttons are a fallback simulator for desktop testing if GPS is unavailable.
-          </p>
-        </section>
-        <section class="panel controls">
-          <h3>AI</h3>
-          <p id="ai-text" class="small"></p>
-          <p id="analysis-text" class="small"></p>
-        </section>
-      </aside>
+        <div id="player-marker" class="player-marker" aria-hidden="true"></div>
+      </div>
+      <div class="info-strip">
+        <span id="cursor-text"></span>
+        <span id="location-text"></span>
+        <span id="analysis-text"></span>
+      </div>
+    </section>
+    <section class="panel controls">
+      <label>
+        <span>Game</span>
+        <select id="game-select"></select>
+      </label>
+      <label>
+        <span>Board width</span>
+        <input id="width-range" type="range" min="30" max="600" step="10" />
+        <strong id="width-value"></strong>
+      </label>
+      <label>
+        <span>Map alpha</span>
+        <input id="alpha-range" type="range" min="0" max="100" step="1" />
+        <strong id="alpha-value"></strong>
+      </label>
+      <div class="button-row">
+        <button id="center-btn">Center Here</button>
+        <button id="new-btn">New Match</button>
+      </div>
+      <p id="geo-status" class="small"></p>
+      <p id="move-text" class="small"></p>
+      <p id="desktop-hint" class="small"></p>
     </section>
   </main>
 `;
 
 const boardEl = document.querySelector<HTMLDivElement>("#board")!;
-const statusText = document.querySelector<HTMLParagraphElement>("#status-text")!;
-const gameTitle = document.querySelector<HTMLHeadingElement>("#game-title")!;
-const moveText = document.querySelector<HTMLDivElement>("#move-text")!;
-const cursorText = document.querySelector<HTMLDivElement>("#cursor-text")!;
+const boardShell = document.querySelector<HTMLDivElement>(".board-shell")!;
+const mapLayer = document.querySelector<HTMLDivElement>("#map-layer")!;
+const playerMarker = document.querySelector<HTMLDivElement>("#player-marker")!;
+const statusText = document.querySelector<HTMLSpanElement>("#status-text")!;
+const gameTitle = document.querySelector<HTMLElement>("#game-title")!;
+const moveText = document.querySelector<HTMLParagraphElement>("#move-text")!;
+const cursorText = document.querySelector<HTMLSpanElement>("#cursor-text")!;
 const geoStatus = document.querySelector<HTMLParagraphElement>("#geo-status")!;
-const locationText = document.querySelector<HTMLParagraphElement>("#location-text")!;
-const profileChip = document.querySelector<HTMLDivElement>("#profile-chip")!;
-const aiText = document.querySelector<HTMLParagraphElement>("#ai-text")!;
-const analysisText = document.querySelector<HTMLParagraphElement>("#analysis-text")!;
+const locationText = document.querySelector<HTMLSpanElement>("#location-text")!;
+const analysisText = document.querySelector<HTMLSpanElement>("#analysis-text")!;
 const moveButton = document.querySelector<HTMLButtonElement>("#move-btn")!;
+const mapButton = document.querySelector<HTMLButtonElement>("#map-btn")!;
+const layerButton = document.querySelector<HTMLButtonElement>("#layer-btn")!;
+const undoButton = document.querySelector<HTMLButtonElement>("#undo-btn")!;
+const redoButton = document.querySelector<HTMLButtonElement>("#redo-btn")!;
 const centerButton = document.querySelector<HTMLButtonElement>("#center-btn")!;
 const newButton = document.querySelector<HTMLButtonElement>("#new-btn")!;
 const gameSelect = document.querySelector<HTMLSelectElement>("#game-select")!;
-const metersRange = document.querySelector<HTMLInputElement>("#meters-range")!;
 const widthRange = document.querySelector<HTMLInputElement>("#width-range")!;
-const heightRange = document.querySelector<HTMLInputElement>("#height-range")!;
-const metersValue = document.querySelector<HTMLElement>("#meters-value")!;
 const widthValue = document.querySelector<HTMLElement>("#width-value")!;
-const heightValue = document.querySelector<HTMLElement>("#height-value")!;
+const alphaRange = document.querySelector<HTMLInputElement>("#alpha-range")!;
+const alphaValue = document.querySelector<HTMLElement>("#alpha-value")!;
+const desktopHint = document.querySelector<HTMLParagraphElement>("#desktop-hint")!;
 
 for (const [id, rule] of Object.entries(RULES)) {
   const option = document.createElement("option");
@@ -165,6 +169,7 @@ for (const [id, rule] of Object.entries(RULES)) {
 
 bindEvents();
 startGeolocation();
+updateCursorFromLocation();
 render();
 maybeRunAiTurn();
 
@@ -173,20 +178,37 @@ function bindEvents() {
     attemptHumanMove();
   });
 
+  mapButton.addEventListener("click", () => {
+    state.settings.mapEnabled = !state.settings.mapEnabled;
+    persistSettings();
+    render();
+  });
+
+  layerButton.addEventListener("click", () => {
+    state.settings.mapForeground = !state.settings.mapForeground;
+    persistSettings();
+    render();
+  });
+
+  undoButton.addEventListener("click", () => {
+    undoMove();
+  });
+
+  redoButton.addEventListener("click", () => {
+    redoMove();
+  });
+
   centerButton.addEventListener("click", () => {
     if (!state.currentLocation) {
-      state.geoStatus = "No live GPS fix yet. Allow location first, or use the step buttons.";
+      state.geoStatus = "No GPS fix yet";
       render();
       return;
     }
     state.anchor = state.currentLocation;
     state.virtualOffsetEast = 0;
     state.virtualOffsetNorth = 0;
-    state.boardCursor = {
-      x: Math.floor(state.gameState.width / 2),
-      y: Math.floor(state.gameState.height / 2),
-    };
-    state.lastMoveLabel = "Center calibrated. Your current real-world position is the board center.";
+    state.lastMoveLabel = "Centered";
+    updateCursorFromLocation();
     render();
   });
 
@@ -196,71 +218,154 @@ function bindEvents() {
 
   gameSelect.addEventListener("change", () => {
     state.settings.gameId = gameSelect.value as GameId;
-    const rule = RULES[state.settings.gameId];
-    state.settings.metersPerCell = rule.config.metersPerCellDefault;
-    state.settings.boardMetersWide = rule.config.boardWidth * rule.config.metersPerCellDefault;
-    state.settings.boardMetersTall = rule.config.boardHeight * rule.config.metersPerCellDefault;
+    state.settings.boardMetersWide = defaultBoardWidth(state.settings.gameId);
     persistSettings();
     resetMatch();
-  });
-
-  metersRange.addEventListener("input", () => {
-    state.settings.metersPerCell = Number(metersRange.value);
-    const rule = RULES[state.settings.gameId];
-    state.settings.boardMetersWide = state.settings.metersPerCell * rule.config.boardWidth;
-    state.settings.boardMetersTall = state.settings.metersPerCell * rule.config.boardHeight;
-    persistSettings();
-    updateCursorFromLocation();
-    render();
   });
 
   widthRange.addEventListener("input", () => {
     state.settings.boardMetersWide = Number(widthRange.value);
     persistSettings();
+    updateCursorFromLocation();
     render();
   });
 
-  heightRange.addEventListener("input", () => {
-    state.settings.boardMetersTall = Number(heightRange.value);
+  alphaRange.addEventListener("input", () => {
+    state.settings.mapAlpha = clamp(Number(alphaRange.value) / 100, 0, 1);
     persistSettings();
     render();
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-step]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const [east, north] = (button.dataset.step ?? "0,0").split(",").map(Number);
-      state.virtualOffsetEast += east;
-      state.virtualOffsetNorth += north;
-      if (!state.currentLocation) {
-        state.currentLocation = { lat: 0, lon: 0 };
-      }
-      state.geoStatus = "Using simulated movement.";
-      updateCursorFromLocation();
-      render();
-    });
-  });
+  if (isDesktopControls) {
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    document.addEventListener("keyup", onKeyUp, { capture: true });
+    window.addEventListener("blur", stopKeyboardMotion);
+  }
+}
+
+function onKeyDown(event: KeyboardEvent) {
+  const tag = (event.target as HTMLElement | null)?.tagName;
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") {
+    return;
+  }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    event.stopPropagation();
+    attemptHumanMove();
+    return;
+  }
+  if (!event.key.startsWith("Arrow")) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  heldKeys.add(event.key);
+  if (keyboardFrame === 0) {
+    keyboardLastTs = performance.now();
+    keyboardFrame = window.requestAnimationFrame(stepKeyboardMotion);
+  }
+}
+
+function onKeyUp(event: KeyboardEvent) {
+  if (!event.key.startsWith("Arrow")) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  heldKeys.delete(event.key);
+  if (heldKeys.size === 0) {
+    stopKeyboardMotion();
+  }
+}
+
+function stepKeyboardMotion(timestamp: number) {
+  const dt = Math.min(32, timestamp - keyboardLastTs);
+  keyboardLastTs = timestamp;
+  const metersPerSecond = state.settings.boardMetersWide / 4;
+  const delta = (metersPerSecond * dt) / 1000;
+
+  if (heldKeys.has("ArrowLeft")) {
+    state.virtualOffsetEast -= delta;
+  }
+  if (heldKeys.has("ArrowRight")) {
+    state.virtualOffsetEast += delta;
+  }
+  if (heldKeys.has("ArrowUp")) {
+    state.virtualOffsetNorth += delta;
+  }
+  if (heldKeys.has("ArrowDown")) {
+    state.virtualOffsetNorth -= delta;
+  }
+
+  updateCursorFromLocation();
+  render();
+
+  if (heldKeys.size > 0) {
+    keyboardFrame = window.requestAnimationFrame(stepKeyboardMotion);
+  } else {
+    keyboardFrame = 0;
+  }
+}
+
+function stopKeyboardMotion() {
+  heldKeys.clear();
+  if (keyboardFrame !== 0) {
+    window.cancelAnimationFrame(keyboardFrame);
+    keyboardFrame = 0;
+  }
 }
 
 function resetMatch() {
+  clearAiTimer();
   const rule = RULES[state.settings.gameId];
   state.gameState = rule.createInitialState();
-  state.boardCursor = {
-    x: Math.floor(rule.config.boardWidth / 2),
-    y: Math.floor(rule.config.boardHeight / 2),
-  };
-  state.lastMoveLabel = "New match started.";
   state.aiLastResult = null;
   state.aiThinking = false;
+  state.lastMoveLabel = "Ready";
+  state.history = [makeHistoryEntry(state.gameState, "Ready", null)];
+  state.historyIndex = 0;
+  state.boardCursor = centeredCursor(state.gameState);
+  updateCursorFromLocation();
   render();
   maybeRunAiTurn();
 }
 
+function undoMove() {
+  if (state.historyIndex === 0) {
+    return;
+  }
+  clearAiTimer();
+  state.aiThinking = false;
+  state.historyIndex -= 1;
+  restoreHistoryEntry(state.history[state.historyIndex]);
+  render();
+}
+
+function redoMove() {
+  if (state.historyIndex >= state.history.length - 1) {
+    return;
+  }
+  clearAiTimer();
+  state.aiThinking = false;
+  state.historyIndex += 1;
+  restoreHistoryEntry(state.history[state.historyIndex]);
+  render();
+}
+
+function restoreHistoryEntry(entry: HistoryEntry) {
+  state.gameState = cloneGameState(entry.gameState);
+  state.lastMoveLabel = entry.label;
+  state.aiLastResult = entry.aiLastResult;
+  updateCursorFromLocation();
+}
+
 function startGeolocation() {
   if (!("geolocation" in navigator)) {
-    state.geoStatus = "Geolocation not supported by this browser.";
+    state.geoStatus = "GPS unavailable";
     render();
     return;
   }
+
   state.watchId = navigator.geolocation.watchPosition(
     (position) => {
       state.currentLocation = {
@@ -269,15 +374,13 @@ function startGeolocation() {
       };
       if (!state.anchor) {
         state.anchor = state.currentLocation;
-        state.geoStatus = "Location locked. Tap 'Use Current Spot as Center' anytime to recalibrate.";
-      } else {
-        state.geoStatus = `GPS accuracy about ${Math.round(position.coords.accuracy)} m`;
       }
+      state.geoStatus = `GPS ±${Math.round(position.coords.accuracy)} m`;
       updateCursorFromLocation();
       render();
     },
     (error) => {
-      state.geoStatus = `Location error: ${error.message}`;
+      state.geoStatus = `GPS error: ${error.message}`;
       render();
     },
     {
@@ -290,37 +393,44 @@ function startGeolocation() {
 
 function updateCursorFromLocation() {
   const rule = RULES[state.settings.gameId];
-  const centerX = Math.floor(rule.config.boardWidth / 2);
-  const centerY = Math.floor(rule.config.boardHeight / 2);
-  const cellMetersX = Math.max(1, state.settings.boardMetersWide / rule.config.boardWidth);
-  const cellMetersY = Math.max(1, state.settings.boardMetersTall / rule.config.boardHeight);
-  let offset = { x: 0, y: 0 };
+  const center = centeredCursor(state.gameState);
+  const cellMeters = state.settings.boardMetersWide / rule.config.boardWidth;
+  const boardMetersHigh = cellMeters * rule.config.boardHeight;
+  const offset = combinedOffsetMeters();
 
-  if (state.anchor && state.currentLocation) {
-    const liveDelta = deltaMeters(state.anchor, state.currentLocation);
-    offset = {
-      x: clamp(
-        Math.round((liveDelta.east + state.virtualOffsetEast) / cellMetersX),
-        -centerX,
-        centerX
-      ),
-      y: clamp(
-        Math.round(-(liveDelta.north + state.virtualOffsetNorth) / cellMetersY),
-        -centerY,
-        centerY
-      ),
-    };
-  } else if (state.virtualOffsetEast !== 0 || state.virtualOffsetNorth !== 0) {
-    offset = {
-      x: clamp(Math.round(state.virtualOffsetEast / cellMetersX), -centerX, centerX),
-      y: clamp(Math.round(-state.virtualOffsetNorth / cellMetersY), -centerY, centerY),
-    };
-  }
+  const snappedX = clamp(
+    Math.round(offset.east / cellMeters),
+    -center.x,
+    rule.config.boardWidth - 1 - center.x
+  );
+  const snappedY = clamp(
+    Math.round(-offset.north / cellMeters),
+    -center.y,
+    rule.config.boardHeight - 1 - center.y
+  );
 
   state.boardCursor = {
-    x: clamp(centerX + offset.x, 0, rule.config.boardWidth - 1),
-    y: clamp(centerY + offset.y, 0, rule.config.boardHeight - 1),
+    x: clamp(center.x + snappedX, 0, rule.config.boardWidth - 1),
+    y: clamp(center.y + snappedY, 0, rule.config.boardHeight - 1),
   };
+
+  const halfSpanX = state.settings.boardMetersWide / 2;
+  const halfSpanY = boardMetersHigh / 2;
+  state.playerMarker = {
+    x: clamp((offset.east + halfSpanX) / state.settings.boardMetersWide, 0, 1),
+    y: clamp((halfSpanY - offset.north) / boardMetersHigh, 0, 1),
+  };
+}
+
+function combinedOffsetMeters() {
+  let east = state.virtualOffsetEast;
+  let north = state.virtualOffsetNorth;
+  if (state.anchor && state.currentLocation) {
+    const live = deltaMeters(state.anchor, state.currentLocation);
+    east += live.east;
+    north += live.north;
+  }
+  return { east, north };
 }
 
 function attemptHumanMove() {
@@ -328,7 +438,7 @@ function attemptHumanMove() {
     return;
   }
   if (state.gameState.currentPlayer !== state.humanPlayer) {
-    state.lastMoveLabel = "Wait for the AI to finish thinking.";
+    state.lastMoveLabel = "AI turn";
     render();
     return;
   }
@@ -343,14 +453,16 @@ function attemptHumanMove() {
     render();
     return;
   }
-  playMove(move, "You");
+  playMove(move, "You", null);
 }
 
-function playMove(move: Move, actor: string) {
+function playMove(move: Move, actor: string, result: SearchResult | null) {
   const rule = RULES[state.settings.gameId];
   const applied = rule.applyMove(state.gameState, move);
   state.gameState = applied;
-  state.lastMoveLabel = `${actor} played ${formatMove(move)}.`;
+  state.aiLastResult = result;
+  state.lastMoveLabel = `${actor} ${formatMove(move)}`;
+  pushHistory(state.gameState, state.lastMoveLabel, state.aiLastResult);
   render();
   if (!rule.isTerminal(applied)) {
     maybeRunAiTurn();
@@ -362,88 +474,135 @@ function maybeRunAiTurn() {
     render();
     return;
   }
+
+  const rule = RULES[state.settings.gameId];
   if (state.gameState.currentPlayer === state.humanPlayer) {
-    if (RULES[state.settings.gameId].getLegalMoves(state.gameState)[0]?.pass) {
-      state.lastMoveLabel = "You have no legal move. Passing turn.";
-      state.gameState = RULES[state.settings.gameId].applyMove(state.gameState, {
-        x: -1,
-        y: -1,
-        pass: true,
-      });
+    const legalMoves = rule.getLegalMoves(state.gameState);
+    if (legalMoves[0]?.pass) {
+      state.gameState = rule.applyMove(state.gameState, legalMoves[0]);
+      state.lastMoveLabel = "You pass";
+      pushHistory(state.gameState, state.lastMoveLabel, state.aiLastResult);
       render();
       maybeRunAiTurn();
     }
     return;
   }
+
   state.aiThinking = true;
-  state.lastMoveLabel = "AI is searching.";
+  state.lastMoveLabel = "AI thinking";
   render();
-  window.setTimeout(() => {
+  clearAiTimer();
+  aiTimer = window.setTimeout(() => {
     const result = chooseAiMove(state.gameState, state.aiProfile);
-    state.aiLastResult = result;
     state.aiThinking = false;
     if (result.move) {
-      playMove(result.move, "AI");
+      playMove(result.move, "AI", result);
     } else {
       const passMove = { x: -1, y: -1, pass: true };
-      state.gameState = RULES[state.settings.gameId].applyMove(state.gameState, passMove);
-      state.lastMoveLabel = "AI passes.";
+      state.gameState = rule.applyMove(state.gameState, passMove);
+      state.aiLastResult = result;
+      state.lastMoveLabel = "AI pass";
+      pushHistory(state.gameState, state.lastMoveLabel, result);
       render();
       maybeRunAiTurn();
     }
-  }, 30);
+  }, 25);
 }
 
-function invalidMoveMessage(): string {
-  if (state.settings.gameId === "connect-four") {
-    return "That column is full. Walk to a different column.";
+function clearAiTimer() {
+  if (aiTimer !== 0) {
+    window.clearTimeout(aiTimer);
+    aiTimer = 0;
   }
-  if (state.settings.gameId === "othello") {
-    return "Othello requires a square that flips at least one enemy disk.";
-  }
-  return "That square is already occupied. Walk to another square.";
+}
+
+function pushHistory(gameState: GameState, label: string, aiLastResult: SearchResult | null) {
+  const entry = makeHistoryEntry(gameState, label, aiLastResult);
+  state.history = state.history.slice(0, state.historyIndex + 1);
+  state.history.push(entry);
+  state.historyIndex = state.history.length - 1;
+}
+
+function makeHistoryEntry(
+  gameState: GameState,
+  label: string,
+  aiLastResult: SearchResult | null
+): HistoryEntry {
+  return {
+    gameState: cloneGameState(gameState),
+    label,
+    aiLastResult,
+  };
+}
+
+function cloneGameState(gameState: GameState): GameState {
+  return {
+    ...gameState,
+    cells: new Int8Array(gameState.cells),
+  };
 }
 
 function render() {
   const rule = RULES[state.settings.gameId];
+
   gameTitle.textContent = rule.config.label;
   statusText.textContent = rule.summarize(state.gameState);
-  moveText.textContent = state.lastMoveLabel;
-  cursorText.textContent = `Current square: ${state.boardCursor.x + 1}, ${state.boardCursor.y + 1}`;
-  geoStatus.textContent = state.geoStatus;
+  cursorText.textContent = `Cell ${state.boardCursor.x + 1}:${state.boardCursor.y + 1}`;
   locationText.textContent = buildLocationText();
-  profileChip.textContent = `AI budget ${state.aiProfile.budgetMs} ms • node cap ${state.aiProfile.maxNodes.toLocaleString()}`;
-  aiText.textContent = `Device benchmark ${state.aiProfile.benchmarkOps.toFixed(0)} ops/ms. Faster phones search deeper within the same budget.`;
   analysisText.textContent = buildAnalysisText();
+  geoStatus.textContent = state.geoStatus;
+  moveText.textContent = state.lastMoveLabel;
+  desktopHint.textContent = isDesktopControls
+    ? "Desktop: hold arrows to move, Enter to place."
+    : "";
+
+  gameSelect.value = state.settings.gameId;
+  widthRange.value = String(state.settings.boardMetersWide);
+  widthValue.textContent = `${state.settings.boardMetersWide} m`;
+  alphaRange.value = String(Math.round(state.settings.mapAlpha * 100));
+  alphaValue.textContent = `${Math.round(state.settings.mapAlpha * 100)}%`;
+  mapButton.textContent = state.settings.mapEnabled ? "Map On" : "Map Off";
+  layerButton.textContent = state.settings.mapForeground ? "Map Front" : "Map Back";
+
   moveButton.disabled =
     state.aiThinking ||
     state.gameState.winner !== null ||
     state.gameState.currentPlayer !== state.humanPlayer;
+  undoButton.disabled = state.historyIndex === 0 || state.aiThinking;
+  redoButton.disabled = state.historyIndex >= state.history.length - 1 || state.aiThinking;
+  mapLayer.classList.toggle("hidden", !state.settings.mapEnabled);
+  mapLayer.classList.toggle("foreground", state.settings.mapForeground);
+  mapLayer.style.opacity = String(state.settings.mapForeground ? state.settings.mapAlpha : 1);
+  boardEl.style.opacity = String(
+    state.settings.mapEnabled && !state.settings.mapForeground ? state.settings.mapAlpha : 1
+  );
+  playerMarker.style.left = `${state.playerMarker.x * 100}%`;
+  playerMarker.style.top = `${state.playerMarker.y * 100}%`;
+  boardShell.style.aspectRatio = `${state.gameState.width} / ${state.gameState.height}`;
+  boardEl.style.setProperty("--cols", String(state.gameState.width));
+  boardEl.style.setProperty("--rows", String(state.gameState.height));
 
-  gameSelect.value = state.settings.gameId;
-  metersRange.value = String(state.settings.metersPerCell);
-  widthRange.value = String(state.settings.boardMetersWide);
-  heightRange.value = String(state.settings.boardMetersTall);
-  metersValue.textContent = `${state.settings.metersPerCell} m`;
-  widthValue.textContent = `${state.settings.boardMetersWide} m`;
-  heightValue.textContent = `${state.settings.boardMetersTall} m`;
-
+  renderMapLayer();
   renderBoard();
+  persistSession();
 }
 
 function renderBoard() {
   const { width, height } = state.gameState;
-  boardEl.style.setProperty("--cols", String(width));
-  boardEl.style.setProperty("--rows", String(height));
   boardEl.innerHTML = "";
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const cell = document.createElement("button");
       cell.className = "cell";
+
       const value = state.gameState.cells[y * width + x];
-      const isCursor = x === state.boardCursor.x && y === state.boardCursor.y;
+      const isCursor =
+        state.settings.gameId === "connect-four"
+          ? x === state.boardCursor.x
+          : x === state.boardCursor.x && y === state.boardCursor.y;
       const legal = RULES[state.settings.gameId].moveFromBoardCell(state.gameState, x, y);
+
       if (value === 1) {
         cell.dataset.piece = "black";
       } else if (value === -1) {
@@ -455,36 +614,70 @@ function renderBoard() {
       if (legal) {
         cell.classList.add("legal");
       }
-      cell.addEventListener("click", () => {
-        state.boardCursor = { x, y };
-        render();
-      });
+
       boardEl.appendChild(cell);
     }
   }
 }
 
+function renderMapLayer() {
+  if (!state.settings.mapEnabled || !state.anchor) {
+    mapLayer.innerHTML = "";
+    return;
+  }
+
+  const boardMetersHigh =
+    (state.settings.boardMetersWide * state.gameState.height) / state.gameState.width;
+  const zoom = chooseMapZoom(Math.max(state.settings.boardMetersWide, boardMetersHigh));
+  const center = latLonToTileFloat(state.anchor.lat, state.anchor.lon, zoom);
+  const metersPerTile = metersPerPixel(state.anchor.lat, zoom) * 256;
+  const tilesX = Math.max(1, Math.ceil(state.settings.boardMetersWide / metersPerTile) + 1);
+  const tilesY = Math.max(1, Math.ceil(boardMetersHigh / metersPerTile) + 1);
+  const tiles: string[] = [];
+
+  for (let y = Math.floor(center.y) - tilesY; y <= Math.floor(center.y) + tilesY; y += 1) {
+    for (let x = Math.floor(center.x) - tilesX; x <= Math.floor(center.x) + tilesX; x += 1) {
+      const left = 50 + (((x - center.x) * metersPerTile) / state.settings.boardMetersWide) * 100;
+      const top = 50 + (((y - center.y) * metersPerTile) / boardMetersHigh) * 100;
+      const width = (metersPerTile / state.settings.boardMetersWide) * 100;
+      const height = (metersPerTile / boardMetersHigh) * 100;
+      const wrappedX = wrapTile(x, zoom);
+      const wrappedY = clamp(y, 0, 2 ** zoom - 1);
+      tiles.push(
+        `<img alt="" src="https://tile.openstreetmap.org/${zoom}/${wrappedX}/${wrappedY}.png" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;">`
+      );
+    }
+  }
+
+  mapLayer.innerHTML = tiles.join("");
+}
+
 function buildLocationText(): string {
-  const centerX = Math.floor(state.gameState.width / 2);
-  const centerY = Math.floor(state.gameState.height / 2);
-  const cellMetersX = Math.max(1, state.settings.boardMetersWide / state.gameState.width);
-  const cellMetersY = Math.max(1, state.settings.boardMetersTall / state.gameState.height);
-  const dx = state.boardCursor.x - centerX;
-  const dy = centerY - state.boardCursor.y;
-  const eastMeters = dx * cellMetersX;
-  const northMeters = dy * cellMetersY;
-  return `Relative to center: ${formatMeters(eastMeters)} east, ${formatMeters(
-    northMeters
-  )} north. Board footprint ${state.settings.boardMetersWide} m × ${state.settings.boardMetersTall} m.`;
+  const center = centeredCursor(state.gameState);
+  const cellMeters = state.settings.boardMetersWide / state.gameState.width;
+  const dx = state.boardCursor.x - center.x;
+  const dy = center.y - state.boardCursor.y;
+  return `${formatMeters(dx * cellMeters)} E • ${formatMeters(dy * cellMeters)} N`;
 }
 
 function buildAnalysisText(): string {
-  if (!state.aiLastResult) {
-    return "No AI move yet.";
+  if (state.gameState.winner !== null) {
+    return state.lastMoveLabel;
   }
-  return `Last search: depth ${state.aiLastResult.depth}, ${state.aiLastResult.nodes.toLocaleString()} nodes, ${Math.round(
-    state.aiLastResult.elapsedMs
-  )} ms${state.aiLastResult.timedOut ? ", budget reached" : ""}.`;
+  if (!state.aiLastResult) {
+    return `AI ${state.aiProfile.budgetMs} ms`;
+  }
+  return `AI d${state.aiLastResult.depth} • ${Math.round(state.aiLastResult.elapsedMs)} ms`;
+}
+
+function invalidMoveMessage(): string {
+  if (state.settings.gameId === "connect-four") {
+    return "Column full";
+  }
+  if (state.settings.gameId === "othello") {
+    return "Need a flipping square";
+  }
+  return "Cell occupied";
 }
 
 function formatMove(move: Move): string {
@@ -494,23 +687,35 @@ function formatMove(move: Move): string {
   if (state.settings.gameId === "connect-four") {
     return `column ${move.x + 1}`;
   }
-  return `${move.x + 1}, ${move.y + 1}`;
+  return `${move.x + 1}:${move.y + 1}`;
+}
+
+function centeredCursor(gameState: GameState) {
+  return {
+    x: Math.floor(gameState.width / 2),
+    y: Math.floor(gameState.height / 2),
+  };
+}
+
+function defaultBoardWidth(gameId: GameId): number {
+  const rule = RULES[gameId];
+  return rule.config.boardWidth * rule.config.metersPerCellDefault;
 }
 
 function loadSettings(): Settings {
   const fallback: Settings = {
     gameId: "tic-tac-toe",
-    metersPerCell: RULES["tic-tac-toe"].config.metersPerCellDefault,
-    boardMetersWide:
-      RULES["tic-tac-toe"].config.boardWidth * RULES["tic-tac-toe"].config.metersPerCellDefault,
-    boardMetersTall:
-      RULES["tic-tac-toe"].config.boardHeight *
-      RULES["tic-tac-toe"].config.metersPerCellDefault,
+    boardMetersWide: defaultBoardWidth("tic-tac-toe"),
+    mapEnabled: true,
+    mapAlpha: 0.5,
+    mapForeground: true,
   };
+
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
     return fallback;
   }
+
   try {
     const parsed = JSON.parse(raw) as Partial<Settings>;
     if (!parsed.gameId || !(parsed.gameId in RULES)) {
@@ -518,9 +723,10 @@ function loadSettings(): Settings {
     }
     return {
       gameId: parsed.gameId,
-      metersPerCell: clamp(Number(parsed.metersPerCell ?? fallback.metersPerCell), 5, 60),
       boardMetersWide: clamp(Number(parsed.boardMetersWide ?? fallback.boardMetersWide), 30, 600),
-      boardMetersTall: clamp(Number(parsed.boardMetersTall ?? fallback.boardMetersTall), 30, 600),
+      mapEnabled: parsed.mapEnabled !== false,
+      mapAlpha: clamp(Number(parsed.mapAlpha ?? fallback.mapAlpha), 0, 1),
+      mapForeground: parsed.mapForeground !== false,
     };
   } catch {
     return fallback;
@@ -529,4 +735,142 @@ function loadSettings(): Settings {
 
 function persistSettings() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings));
+}
+
+function persistSession() {
+  localStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({
+      settings: state.settings,
+      gameState: serializeGameState(state.gameState),
+      anchor: state.anchor,
+      virtualOffsetEast: state.virtualOffsetEast,
+      virtualOffsetNorth: state.virtualOffsetNorth,
+      boardCursor: state.boardCursor,
+      playerMarker: state.playerMarker,
+      lastMoveLabel: state.lastMoveLabel,
+      aiLastResult: state.aiLastResult,
+      historyIndex: state.historyIndex,
+      history: state.history.map((entry) => ({
+        gameState: serializeGameState(entry.gameState),
+        label: entry.label,
+        aiLastResult: entry.aiLastResult,
+      })),
+    })
+  );
+}
+
+function restoreSession() {
+  const raw = localStorage.getItem(SESSION_KEY);
+  if (!raw) {
+    return;
+  }
+  try {
+    const parsed = JSON.parse(raw) as {
+      settings?: Settings;
+      gameState?: SerializedGameState;
+      anchor?: LatLon | null;
+      virtualOffsetEast?: number;
+      virtualOffsetNorth?: number;
+      boardCursor?: { x: number; y: number };
+      playerMarker?: { x: number; y: number };
+      lastMoveLabel?: string;
+      aiLastResult?: SearchResult | null;
+      historyIndex?: number;
+      history?: Array<{
+        gameState: SerializedGameState;
+        label: string;
+        aiLastResult: SearchResult | null;
+      }>;
+    };
+    if (parsed.settings && parsed.settings.gameId in RULES) {
+      state.settings = {
+        ...state.settings,
+        ...parsed.settings,
+      };
+    }
+    if (parsed.gameState) {
+      state.gameState = deserializeGameState(parsed.gameState);
+    }
+    state.anchor = parsed.anchor ?? state.anchor;
+    state.virtualOffsetEast = Number(parsed.virtualOffsetEast ?? state.virtualOffsetEast);
+    state.virtualOffsetNorth = Number(parsed.virtualOffsetNorth ?? state.virtualOffsetNorth);
+    state.boardCursor = parsed.boardCursor ?? centeredCursor(state.gameState);
+    state.playerMarker = parsed.playerMarker ?? state.playerMarker;
+    state.lastMoveLabel = parsed.lastMoveLabel ?? state.lastMoveLabel;
+    state.aiLastResult = parsed.aiLastResult ?? state.aiLastResult;
+    if (parsed.history?.length) {
+      state.history = parsed.history.map((entry) => ({
+        gameState: deserializeGameState(entry.gameState),
+        label: entry.label,
+        aiLastResult: entry.aiLastResult,
+      }));
+      state.historyIndex = clamp(
+        Number(parsed.historyIndex ?? parsed.history.length - 1),
+        0,
+        parsed.history.length - 1
+      );
+    }
+  } catch {
+    localStorage.removeItem(SESSION_KEY);
+  }
+}
+
+function chooseMapZoom(boardMetersWide: number): number {
+  if (boardMetersWide <= 80) {
+    return 19;
+  }
+  if (boardMetersWide <= 160) {
+    return 18;
+  }
+  if (boardMetersWide <= 320) {
+    return 17;
+  }
+  if (boardMetersWide <= 640) {
+    return 16;
+  }
+  return 15;
+}
+
+interface SerializedGameState {
+  gameId: GameId;
+  width: number;
+  height: number;
+  cells: number[];
+  currentPlayer: Player;
+  movesMade: number;
+  winner: Player | 0 | null;
+  consecutivePasses: number;
+}
+
+function serializeGameState(gameState: GameState): SerializedGameState {
+  return {
+    ...gameState,
+    cells: Array.from(gameState.cells),
+  };
+}
+
+function deserializeGameState(gameState: SerializedGameState): GameState {
+  return {
+    ...gameState,
+    cells: new Int8Array(gameState.cells),
+  };
+}
+
+function latLonToTileFloat(lat: number, lon: number, zoom: number) {
+  const n = 2 ** zoom;
+  const latRad = (lat * Math.PI) / 180;
+  return {
+    x: ((lon + 180) / 360) * n,
+    y: ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n,
+  };
+}
+
+function metersPerPixel(lat: number, zoom: number): number {
+  return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+}
+
+function wrapTile(value: number, zoom: number): number {
+  const max = 2 ** zoom;
+  return ((value % max) + max) % max;
 }

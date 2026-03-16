@@ -40,7 +40,7 @@ export function measureDeviceProfile(): SearchProfile {
   const speed = Math.max(0.55, Math.min(benchmarkOps / 350, 2.4));
   return {
     benchmarkOps,
-    budgetMs: Math.round(Math.min(4700, Math.max(1100, 1700 + speed * 900))),
+    budgetMs: Math.round(Math.min(2000, Math.max(900, 1100 + speed * 450))),
     maxNodes: Math.round(Math.min(220000, Math.max(15000, 30000 * speed * speed))),
     gomokuMoveCap: Math.round(Math.min(18, Math.max(8, 8 + speed * 4))),
   };
