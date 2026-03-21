@@ -131,7 +131,7 @@ h1 {
   aspect-ratio: 1 / 1;
   border-radius: 22px;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(40, 28, 18, 0.9), rgba(24, 18, 13, 0.95));
+  background: #13171b;
 }
 
 .map-layer,
@@ -150,9 +150,6 @@ h1 {
   display: none;
 }
 
-.map-layer.foreground {
-  z-index: 4;
-}
 
 .map-layer img {
   position: absolute;
@@ -162,15 +159,14 @@ h1 {
 .board {
   --cols: 3;
   --rows: 3;
+  --board-alpha: 1;
   display: grid;
   grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
   grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
   gap: 0.18rem;
   padding: 0.38rem;
   z-index: 2;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.1)),
-    linear-gradient(180deg, rgba(124, 86, 49, 0.48), var(--wood));
+  background: transparent;
 }
 
 .board.dimmed {
@@ -182,8 +178,8 @@ h1 {
   min-width: 0;
   min-height: 0;
   border-radius: 12px;
-  border: 1px solid rgba(255, 240, 214, 0.08);
-  background: rgba(38, 28, 19, 0.3);
+  border: 2px solid rgba(255, 240, 214, calc(0.18 * var(--board-alpha)));
+  background: transparent;
   padding: 0;
   transition: box-shadow 120ms ease, transform 120ms ease, border-color 120ms ease;
 }
@@ -198,19 +194,21 @@ h1 {
 .cell[data-piece="black"]::after {
   background: radial-gradient(circle at 35% 30%, #676767, #111 72%);
   box-shadow: inset 0 10px 16px rgba(255, 255, 255, 0.08);
+  opacity: var(--board-alpha);
 }
 
 .cell[data-piece="white"]::after {
   background: radial-gradient(circle at 35% 30%, #fff7e7, #c5baa4 72%);
   box-shadow: inset 0 10px 16px rgba(255, 255, 255, 0.12);
+  opacity: var(--board-alpha);
 }
 
 .cell.legal {
-  border-color: rgba(239, 196, 125, 0.24);
+  border-color: rgba(239, 196, 125, calc(0.35 * var(--board-alpha)));
 }
 
 .cell.cursor {
-  box-shadow: 0 0 0 2px rgba(239, 196, 125, 0.72);
+  box-shadow: 0 0 0 2px rgba(239, 196, 125, calc(0.72 * var(--board-alpha)));
   transform: translateY(-1px);
 }
 

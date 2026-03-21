@@ -9,7 +9,6 @@ interface Settings {
   boardMetersWide: number;
   mapEnabled: boolean;
   mapAlpha: number;
-  mapForeground: boolean;
 }
 
 interface HistoryEntry {
@@ -96,7 +95,6 @@ app.innerHTML = `
         </div>
         <div class="actions">
           <button id="map-btn">Map</button>
-          <button id="layer-btn">Overlay</button>
           <button id="undo-btn">Undo</button>
           <button id="redo-btn">Redo</button>
           <button id="move-btn" class="primary">Place</button>
@@ -152,7 +150,6 @@ const locationText = document.querySelector<HTMLSpanElement>("#location-text")!;
 const analysisText = document.querySelector<HTMLSpanElement>("#analysis-text")!;
 const moveButton = document.querySelector<HTMLButtonElement>("#move-btn")!;
 const mapButton = document.querySelector<HTMLButtonElement>("#map-btn")!;
-const layerButton = document.querySelector<HTMLButtonElement>("#layer-btn")!;
 const undoButton = document.querySelector<HTMLButtonElement>("#undo-btn")!;
 const redoButton = document.querySelector<HTMLButtonElement>("#redo-btn")!;
 const centerButton = document.querySelector<HTMLButtonElement>("#center-btn")!;
@@ -184,12 +181,6 @@ function bindEvents() {
 
   mapButton.addEventListener("click", () => {
     state.settings.mapEnabled = !state.settings.mapEnabled;
-    persistSettings();
-    render();
-  });
-
-  layerButton.addEventListener("click", () => {
-    state.settings.mapForeground = !state.settings.mapForeground;
     persistSettings();
     render();
   });
@@ -568,7 +559,6 @@ function render() {
   alphaRange.value = String(Math.round(state.settings.mapAlpha * 100));
   alphaValue.textContent = `${Math.round(state.settings.mapAlpha * 100)}%`;
   mapButton.textContent = state.settings.mapEnabled ? "Map On" : "Map Off";
-  layerButton.textContent = state.settings.mapForeground ? "Map Front" : "Map Back";
 
   moveButton.disabled =
     state.aiThinking ||
@@ -577,11 +567,7 @@ function render() {
   undoButton.disabled = state.historyIndex === 0 || state.aiThinking;
   redoButton.disabled = state.historyIndex >= state.history.length - 1 || state.aiThinking;
   mapLayer.classList.toggle("hidden", !state.settings.mapEnabled);
-  mapLayer.classList.toggle("foreground", state.settings.mapForeground);
-  mapLayer.style.opacity = String(state.settings.mapForeground ? state.settings.mapAlpha : 1);
-  boardEl.style.opacity = String(
-    state.settings.mapEnabled && !state.settings.mapForeground ? state.settings.mapAlpha : 1
-  );
+  boardEl.style.setProperty("--board-alpha", String(state.settings.mapAlpha));
   boardShell.style.aspectRatio = `${state.gameState.width} / ${state.gameState.height}`;
   boardEl.style.setProperty("--cols", String(state.gameState.width));
   boardEl.style.setProperty("--rows", String(state.gameState.height));
@@ -764,7 +750,6 @@ function loadSettings(): Settings {
     boardMetersWide: defaultBoardWidth("tic-tac-toe"),
     mapEnabled: true,
     mapAlpha: 0.5,
-    mapForeground: true,
   };
 
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -782,7 +767,6 @@ function loadSettings(): Settings {
       boardMetersWide: clamp(Number(parsed.boardMetersWide ?? fallback.boardMetersWide), 20, 200000),
       mapEnabled: parsed.mapEnabled !== false,
       mapAlpha: clamp(Number(parsed.mapAlpha ?? fallback.mapAlpha), 0, 1),
-      mapForeground: parsed.mapForeground !== false,
     };
   } catch {
     return fallback;
@@ -894,11 +878,11 @@ function chooseMapZoom(boardMetersWide: number): number {
 
 function sliderToMeters(v: number): number {
   const t = v / 1000;
-  return Math.round(SLIDER_MIN_M + (SLIDER_MAX_M - SLIDER_MIN_M) * t * t);
+  return Math.round(SLIDER_MIN_M * Math.pow(SLIDER_MAX_M / SLIDER_MIN_M, t));
 }
 
 function metersToSlider(m: number): number {
-  return Math.round(1000 * Math.sqrt((m - SLIDER_MIN_M) / (SLIDER_MAX_M - SLIDER_MIN_M)));
+  return Math.round(1000 * Math.log(m / SLIDER_MIN_M) / Math.log(SLIDER_MAX_M / SLIDER_MIN_M));
 }
 
 interface SerializedGameState {
