@@ -216,7 +216,7 @@ h1 {
 }
 
 .cell.cursor {
-  background: rgba(239, 196, 125, calc(0.25 * var(--board-alpha)));
+  background: rgba(239, 196, 125, calc(0.5 * var(--board-alpha)));
 }
 
 .player-marker {

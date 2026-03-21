@@ -218,7 +218,12 @@ function bindEvents() {
   });
 
   gameSelect.addEventListener("change", () => {
-    state.settings.gameId = gameSelect.value as GameId;
+    const newGameId = gameSelect.value as GameId;
+    if (!confirm(`Switch to ${RULES[newGameId].config.label}? Current game will be lost.`)) {
+      gameSelect.value = state.settings.gameId;
+      return;
+    }
+    state.settings.gameId = newGameId;
     persistSettings();
     clearSessionCache();
     resetMatch();
