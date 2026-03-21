@@ -5,6 +5,7 @@ yarn.lock
 
 # Build output
 dist/
+!lets-go/dist/
 
 # Environment files
 .env
