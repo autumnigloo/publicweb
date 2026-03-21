@@ -328,6 +328,99 @@ function connectFourMoveFromCell(state: GameState, x: number): Move | null {
   return null;
 }
 
+function connectFourEvaluate(state: GameState, perspective: Player): number {
+  if (state.winner === perspective) return 10000000 - state.movesMade;
+  if (state.winner === -perspective) return -10000000 + state.movesMade;
+
+  const W = state.width, H = state.height;
+  let score = 0;
+
+  // Evaluate all possible 4-cell windows
+  // Horizontal windows
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x <= W - 4; x++) {
+      score += evalC4Window(state, perspective, x, y, 1, 0);
+    }
+  }
+  // Vertical windows
+  for (let y = 0; y <= H - 4; y++) {
+    for (let x = 0; x < W; x++) {
+      score += evalC4Window(state, perspective, x, y, 0, 1);
+    }
+  }
+  // Diagonal down-right
+  for (let y = 0; y <= H - 4; y++) {
+    for (let x = 0; x <= W - 4; x++) {
+      score += evalC4Window(state, perspective, x, y, 1, 1);
+    }
+  }
+  // Diagonal down-left
+  for (let y = 0; y <= H - 4; y++) {
+    for (let x = 3; x < W; x++) {
+      score += evalC4Window(state, perspective, x, y, -1, 1);
+    }
+  }
+
+  // Center column preference
+  const centerX = (W - 1) / 2;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const v = state.cells[idx(W, x, y)];
+      if (v === 0) continue;
+      const dist = Math.abs(x - centerX);
+      const bonus = Math.round((3 - dist) * 4);
+      if (v === perspective) score += bonus;
+      else score -= bonus;
+    }
+  }
+
+  return score;
+}
+
+function isPlayableCell(state: GameState, x: number, y: number): boolean {
+  return y === state.height - 1 || state.cells[idx(state.width, x, y + 1)] !== 0;
+}
+
+function evalC4Window(
+  state: GameState,
+  perspective: Player,
+  x: number, y: number,
+  dx: number, dy: number
+): number {
+  let mine = 0, theirs = 0;
+  let emptyPlayable = 0, emptyCount = 0;
+
+  for (let i = 0; i < 4; i++) {
+    const cx = x + dx * i, cy = y + dy * i;
+    const v = state.cells[idx(state.width, cx, cy)];
+    if (v === perspective) mine++;
+    else if (v === (perspective * -1 as Player)) theirs++;
+    else {
+      emptyCount++;
+      if (isPlayableCell(state, cx, cy)) emptyPlayable++;
+    }
+  }
+
+  if (mine > 0 && theirs > 0) return 0;
+
+  if (mine === 3 && emptyCount === 1) {
+    return emptyPlayable > 0 ? 9000 : 350;
+  }
+  if (theirs === 3 && emptyCount === 1) {
+    return emptyPlayable > 0 ? -9000 : -350;
+  }
+  if (mine === 2 && emptyCount === 2) {
+    return emptyPlayable >= 1 ? 400 : 60;
+  }
+  if (theirs === 2 && emptyCount === 2) {
+    return emptyPlayable >= 1 ? -400 : -60;
+  }
+  if (mine === 1 && emptyCount === 3) return 10;
+  if (theirs === 1 && emptyCount === 3) return -10;
+
+  return 0;
+}
+
 const OTHELLO_DIRS: Array<[number, number]> = [
   [-1, -1],
   [0, -1],
@@ -505,7 +598,7 @@ export const RULES: Record<GameId, RuleSet> = {
     createInitialState: () => makeEmptyState(connectFourConfig),
     getLegalMoves: connectFourLegalMoves,
     applyMove: (state, move) => applyLineMove(state, move, 4),
-    evaluate: (state, perspective) => evaluateLines(state, perspective, 4),
+    evaluate: connectFourEvaluate,
     isTerminal: (state) => state.winner !== null,
     moveFromBoardCell: (state, x) => connectFourMoveFromCell(state, x),
     summarize: summarizeSimple,

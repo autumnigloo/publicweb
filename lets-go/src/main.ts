@@ -1,6 +1,7 @@
 import "./styles.css";
 import { chooseAiMove, measureDeviceProfile, SearchProfile, SearchResult } from "./ai";
 import { clamp, deltaMeters, formatMeters, LatLon } from "./geo";
+
 import { GameId, GameState, Move, Player, RULES } from "./games";
 
 interface Settings {
@@ -39,6 +40,9 @@ interface AppState {
 
 const STORAGE_KEY = "lets-go-settings-v1";
 const SESSION_KEY = "lets-go-session-v1";
+const SLIDER_MIN_M = 20;
+const SLIDER_MAX_M = 200000;
+const activeTiles = new Map<string, HTMLImageElement>();
 const app = document.querySelector<HTMLDivElement>("#app");
 const isDesktopControls =
   window.matchMedia("(pointer:fine)").matches && window.matchMedia("(hover:hover)").matches;
@@ -116,7 +120,7 @@ app.innerHTML = `
       </label>
       <label>
         <span>Board width</span>
-        <input id="width-range" type="range" min="30" max="600" step="10" />
+        <input id="width-range" type="range" min="0" max="1000" step="1" />
         <strong id="width-value"></strong>
       </label>
       <label>
@@ -204,6 +208,9 @@ function bindEvents() {
       render();
       return;
     }
+    if (!confirm("Re-center the board on your current location? This will shift all cell positions.")) {
+      return;
+    }
     state.anchor = state.currentLocation;
     state.virtualOffsetEast = 0;
     state.virtualOffsetNorth = 0;
@@ -213,6 +220,9 @@ function bindEvents() {
   });
 
   newButton.addEventListener("click", () => {
+    if (!confirm("Start a new match? All current progress will be lost.")) {
+      return;
+    }
     resetMatch();
   });
 
@@ -224,7 +234,7 @@ function bindEvents() {
   });
 
   widthRange.addEventListener("input", () => {
-    state.settings.boardMetersWide = Number(widthRange.value);
+    state.settings.boardMetersWide = sliderToMeters(Number(widthRange.value));
     persistSettings();
     updateCursorFromLocation();
     render();
@@ -553,8 +563,8 @@ function render() {
     : "";
 
   gameSelect.value = state.settings.gameId;
-  widthRange.value = String(state.settings.boardMetersWide);
-  widthValue.textContent = `${state.settings.boardMetersWide} m`;
+  widthRange.value = String(metersToSlider(state.settings.boardMetersWide));
+  widthValue.textContent = formatMeters(state.settings.boardMetersWide);
   alphaRange.value = String(Math.round(state.settings.mapAlpha * 100));
   alphaValue.textContent = `${Math.round(state.settings.mapAlpha * 100)}%`;
   mapButton.textContent = state.settings.mapEnabled ? "Map On" : "Map Off";
@@ -617,7 +627,8 @@ function renderBoard() {
 
 function renderMapLayer() {
   if (!state.settings.mapEnabled || !state.anchor) {
-    mapLayer.innerHTML = "";
+    for (const img of activeTiles.values()) img.remove();
+    activeTiles.clear();
     return;
   }
 
@@ -627,25 +638,44 @@ function renderMapLayer() {
   const tileCenterY = Math.floor(centerWorld.y / 256);
   const tilesX = Math.max(1, Math.ceil(boardPixelsWide / 256) + 1);
   const tilesY = Math.max(1, Math.ceil(boardPixelsHigh / 256) + 1);
-  const tiles: string[] = [];
+
+  const neededKeys = new Set<string>();
 
   for (let y = tileCenterY - tilesY; y <= tileCenterY + tilesY; y += 1) {
     for (let x = tileCenterX - tilesX; x <= tileCenterX + tilesX; x += 1) {
+      const wrappedX = wrapTile(x, zoom);
+      const wrappedY = clamp(y, 0, 2 ** zoom - 1);
+      const key = `${zoom}/${x}/${y}`;
+      neededKeys.add(key);
+
       const tileOriginX = x * 256;
       const tileOriginY = y * 256;
       const left = 50 + (((tileOriginX - centerWorld.x) / boardPixelsWide) * 100);
       const top = 50 + (((tileOriginY - centerWorld.y) / boardPixelsHigh) * 100);
       const width = (256 / boardPixelsWide) * 100;
       const height = (256 / boardPixelsHigh) * 100;
-      const wrappedX = wrapTile(x, zoom);
-      const wrappedY = clamp(y, 0, 2 ** zoom - 1);
-      tiles.push(
-        `<img alt="" src="https://tile.openstreetmap.org/${zoom}/${wrappedX}/${wrappedY}.png" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;">`
-      );
+      const style = `left:${left}%;top:${top}%;width:${width}%;height:${height}%`;
+
+      let img = activeTiles.get(key);
+      if (!img) {
+        img = document.createElement("img");
+        img.alt = "";
+        img.src = `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${wrappedY}.png`;
+        img.dataset.tileKey = key;
+        mapLayer.appendChild(img);
+        activeTiles.set(key, img);
+      }
+      img.style.cssText = style;
     }
   }
 
-  mapLayer.innerHTML = tiles.join("");
+  // Remove tiles no longer needed
+  for (const [key, img] of activeTiles) {
+    if (!neededKeys.has(key)) {
+      img.remove();
+      activeTiles.delete(key);
+    }
+  }
 }
 
 function renderPlayerMarker() {
@@ -749,7 +779,7 @@ function loadSettings(): Settings {
     }
     return {
       gameId: parsed.gameId,
-      boardMetersWide: clamp(Number(parsed.boardMetersWide ?? fallback.boardMetersWide), 30, 600),
+      boardMetersWide: clamp(Number(parsed.boardMetersWide ?? fallback.boardMetersWide), 20, 200000),
       mapEnabled: parsed.mapEnabled !== false,
       mapAlpha: clamp(Number(parsed.mapAlpha ?? fallback.mapAlpha), 0, 1),
       mapForeground: parsed.mapForeground !== false,
@@ -847,19 +877,28 @@ function restoreSession() {
 }
 
 function chooseMapZoom(boardMetersWide: number): number {
-  if (boardMetersWide <= 80) {
-    return 19;
-  }
-  if (boardMetersWide <= 160) {
-    return 18;
-  }
-  if (boardMetersWide <= 320) {
-    return 17;
-  }
-  if (boardMetersWide <= 640) {
-    return 16;
-  }
-  return 15;
+  if (boardMetersWide <= 80) return 19;
+  if (boardMetersWide <= 160) return 18;
+  if (boardMetersWide <= 320) return 17;
+  if (boardMetersWide <= 640) return 16;
+  if (boardMetersWide <= 1300) return 15;
+  if (boardMetersWide <= 2500) return 14;
+  if (boardMetersWide <= 5000) return 13;
+  if (boardMetersWide <= 10000) return 12;
+  if (boardMetersWide <= 20000) return 11;
+  if (boardMetersWide <= 40000) return 10;
+  if (boardMetersWide <= 80000) return 9;
+  if (boardMetersWide <= 160000) return 8;
+  return 7;
+}
+
+function sliderToMeters(v: number): number {
+  const t = v / 1000;
+  return Math.round(SLIDER_MIN_M + (SLIDER_MAX_M - SLIDER_MIN_M) * t * t);
+}
+
+function metersToSlider(m: number): number {
+  return Math.round(1000 * Math.sqrt((m - SLIDER_MIN_M) / (SLIDER_MAX_M - SLIDER_MIN_M)));
 }
 
 interface SerializedGameState {

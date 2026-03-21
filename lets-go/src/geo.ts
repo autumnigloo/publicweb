@@ -43,5 +43,8 @@ export function formatMeters(value: number): string {
   if (abs < 10) {
     return `${value.toFixed(1)} m`;
   }
+  if (abs >= 1000) {
+    return `${(value / 1000).toFixed(1)} km`;
+  }
   return `${Math.round(value)} m`;
 }
