@@ -1,0 +1,15 @@
+{
+  "name": "city_fold",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "city_fold_bg.wasm",
+    "city_fold.js",
+    "city_fold.d.ts"
+  ],
+  "main": "city_fold.js",
+  "types": "city_fold.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

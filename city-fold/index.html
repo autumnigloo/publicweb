@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CityFold — Bend Reality</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      color: #fff;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    #canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* HUD overlay */
+    #hud {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    /* Top bar */
+    #top-bar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, transparent 100%);
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    #level-info {
+      max-width: 60%;
+    }
+
+    #level-name {
+      font-size: 20px;
+      font-weight: bold;
+      color: #7df;
+      text-shadow: 0 0 20px #7df;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    #level-desc {
+      font-size: 13px;
+      color: #aaa;
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    #hint {
+      font-size: 12px;
+      color: #fa0;
+      margin-top: 6px;
+      opacity: 0.9;
+    }
+
+    /* Controls panel */
+    #controls {
+      background: rgba(0,0,10,0.75);
+      border: 1px solid rgba(100,180,255,0.3);
+      border-radius: 8px;
+      padding: 12px 16px;
+      min-width: 200px;
+      font-size: 11px;
+      color: #8af;
+    }
+
+    #controls h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #7df;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(100,180,255,0.2);
+      padding-bottom: 6px;
+    }
+
+    .ctrl-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 3px 0;
+      gap: 12px;
+    }
+
+    .ctrl-key {
+      background: rgba(100,180,255,0.15);
+      border: 1px solid rgba(100,180,255,0.3);
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-size: 10px;
+      color: #cef;
+    }
+
+    /* Fold progress panel */
+    #fold-panel {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(0,0,10,0.75);
+      border: 1px solid rgba(100,180,255,0.3);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 11px;
+      color: #8af;
+    }
+
+    #fold-panel h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #7df;
+      margin-bottom: 8px;
+    }
+
+    .fold-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 4px 0;
+    }
+
+    .fold-label {
+      width: 70px;
+      color: #adf;
+    }
+
+    .fold-bar-bg {
+      width: 100px;
+      height: 6px;
+      background: rgba(100,180,255,0.1);
+      border: 1px solid rgba(100,180,255,0.2);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .fold-bar-fill {
+      height: 100%;
+      background: linear-gradient(to right, #28f, #8af);
+      width: 0%;
+      transition: width 0.1s;
+      border-radius: 3px;
+    }
+
+    .fold-val {
+      width: 35px;
+      text-align: right;
+      color: #7df;
+    }
+
+    /* Status bar */
+    #status-bar {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0,0,10,0.75);
+      border: 1px solid rgba(100,180,255,0.3);
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 12px;
+      color: #8af;
+      max-width: 300px;
+    }
+
+    #status {
+      color: #cef;
+    }
+
+    /* Level complete overlay */
+    #level-complete {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,20,0.92);
+      border: 2px solid #7df;
+      box-shadow: 0 0 40px rgba(100,200,255,0.4), inset 0 0 60px rgba(0,50,100,0.3);
+      border-radius: 12px;
+      padding: 40px 60px;
+      text-align: center;
+      pointer-events: none;
+      animation: pulse-border 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse-border {
+      0%, 100% { box-shadow: 0 0 30px rgba(100,200,255,0.4), inset 0 0 60px rgba(0,50,100,0.3); }
+      50% { box-shadow: 0 0 60px rgba(100,200,255,0.8), inset 0 0 80px rgba(0,80,150,0.4); }
+    }
+
+    #level-complete h2 {
+      font-size: 28px;
+      color: #7df;
+      text-shadow: 0 0 30px #7df;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    #level-complete p {
+      color: #adf;
+      font-size: 14px;
+      margin: 8px 0;
+    }
+
+    /* Title screen */
+    #title-screen {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: all;
+      z-index: 100;
+    }
+
+    #title-screen h1 {
+      font-size: 52px;
+      letter-spacing: 8px;
+      text-transform: uppercase;
+      background: linear-gradient(135deg, #28f, #7df, #28f);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-shadow: none;
+      filter: drop-shadow(0 0 30px rgba(100,200,255,0.8));
+      margin-bottom: 8px;
+    }
+
+    #title-screen .tagline {
+      font-size: 14px;
+      color: #7af;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      margin-bottom: 40px;
+    }
+
+    .level-select {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 600px;
+    }
+
+    .level-btn {
+      background: rgba(0,30,80,0.8);
+      border: 1px solid rgba(100,180,255,0.4);
+      color: #8af;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      padding: 14px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+      min-width: 130px;
+      pointer-events: all;
+    }
+
+    .level-btn:hover {
+      background: rgba(0,60,150,0.8);
+      border-color: #7df;
+      color: #cef;
+      box-shadow: 0 0 20px rgba(100,200,255,0.3);
+    }
+
+    .level-btn .lnum {
+      font-size: 18px;
+      color: #7df;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .level-btn .lname {
+      font-size: 11px;
+      color: #8af;
+    }
+
+    .start-tip {
+      margin-top: 32px;
+      font-size: 12px;
+      color: #556;
+      letter-spacing: 2px;
+    }
+
+    /* Scanlines effect */
+    #scanlines {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.03) 2px,
+        rgba(0,0,0,0.03) 4px
+      );
+    }
+
+    /* Loading */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      font-size: 16px;
+      color: #7df;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+    }
+
+    .loading-dot {
+      animation: blink 1.2s infinite;
+    }
+    .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.1; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="loading">
+  Folding Reality
+  <span class="loading-dot">.</span>
+  <span class="loading-dot">.</span>
+  <span class="loading-dot">.</span>
+</div>
+
+<canvas id="canvas"></canvas>
+<div id="scanlines"></div>
+
+<!-- HUD -->
+<div id="hud">
+  <!-- Top bar -->
+  <div id="top-bar">
+    <div id="level-info">
+      <div id="level-name">Level 1: The Bridge Fold</div>
+      <div id="level-desc">Connect the two halves of the divided city</div>
+      <div id="hint">💡 Click the LEFT half and drag UP to fold it</div>
+    </div>
+    <div id="controls">
+      <h3>Controls</h3>
+      <div class="ctrl-row">
+        <span>Drag segment</span><span class="ctrl-key">Click+Drag</span>
+      </div>
+      <div class="ctrl-row">
+        <span>Rotate view</span><span class="ctrl-key">Shift+Drag</span>
+      </div>
+      <div class="ctrl-row">
+        <span>Zoom</span><span class="ctrl-key">Scroll</span>
+      </div>
+      <div class="ctrl-row">
+        <span>Select seg</span><span class="ctrl-key">1-8</span>
+      </div>
+      <div class="ctrl-row">
+        <span>Fold up/down</span><span class="ctrl-key">↑ ↓</span>
+      </div>
+      <div class="ctrl-row">
+        <span>Reset folds</span><span class="ctrl-key">R</span>
+      </div>
+      <div class="ctrl-row">
+        <span>Next level</span><span class="ctrl-key">N / Enter</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fold progress panel -->
+  <div id="fold-panel">
+    <h3>City Segments</h3>
+    <div id="fold-bars"></div>
+  </div>
+
+  <!-- Status -->
+  <div id="status-bar">
+    <div id="status">Click a city segment to select it, then drag to fold</div>
+  </div>
+
+  <!-- Level complete overlay -->
+  <div id="level-complete">
+    <h2>Level Complete!</h2>
+    <p>Press N or Enter for next level</p>
+  </div>
+</div>
+
+<!-- Title screen -->
+<div id="title-screen">
+  <h1>CityFold</h1>
+  <div class="tagline">Bend the city. Break reality.</div>
+
+  <div class="level-select">
+    <button class="level-btn" onclick="startLevel(0)">
+      <span class="lnum">01</span>
+      <span class="lname">The Bridge Fold</span>
+    </button>
+    <button class="level-btn" onclick="startLevel(1)">
+      <span class="lnum">02</span>
+      <span class="lname">The Skyscraper</span>
+    </button>
+    <button class="level-btn" onclick="startLevel(2)">
+      <span class="lnum">03</span>
+      <span class="lname">The Inception Loop</span>
+    </button>
+    <button class="level-btn" onclick="startLevel(3)">
+      <span class="lnum">04</span>
+      <span class="lname">The Möbius District</span>
+    </button>
+    <button class="level-btn" onclick="startLevel(4)">
+      <span class="lnum">05</span>
+      <span class="lname">Total Inversion</span>
+    </button>
+  </div>
+
+  <div class="start-tip">Click any level to begin</div>
+</div>
+
+<script type="module">
+  import init, { start, load_level } from './pkg/city_fold.js';
+
+  // Resize canvas to window
+  function resize() {
+    const canvas = document.getElementById('canvas');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+
+  let gameLoaded = false;
+
+  async function loadGame() {
+    try {
+      await init();
+      start();
+      gameLoaded = true;
+
+      // Hide loading
+      document.getElementById('loading').style.display = 'none';
+
+      // Initialize fold bars dynamically from segments
+      initFoldBars();
+    } catch (e) {
+      console.error('Failed to load WASM:', e);
+      document.getElementById('loading').textContent = 'Failed to load game: ' + e;
+    }
+  }
+
+  function initFoldBars() {
+    const container = document.getElementById('fold-bars');
+    container.innerHTML = '';
+    const maxSegs = 8;
+    for (let i = 0; i < maxSegs; i++) {
+      const row = document.createElement('div');
+      row.className = 'fold-row';
+      row.id = `fold-row-${i}`;
+      row.style.display = i < 2 ? 'flex' : 'none'; // show only active segment count
+      row.innerHTML = `
+        <span class="fold-label">Seg ${i+1}</span>
+        <div class="fold-bar-bg">
+          <div class="fold-bar-fill" id="fold-bar-${i}"></div>
+        </div>
+        <span class="fold-val" id="fold-${i}">0%</span>
+      `;
+      container.appendChild(row);
+    }
+  }
+
+  // Poll fold values and update bars
+  setInterval(() => {
+    if (!gameLoaded) return;
+    for (let i = 0; i < 8; i++) {
+      const el = document.getElementById(`fold-${i}`);
+      const bar = document.getElementById(`fold-bar-${i}`);
+      if (el && bar) {
+        const pct = parseInt(el.textContent) || 0;
+        bar.style.width = pct + '%';
+        // Color based on completion level
+        if (pct > 80) {
+          bar.style.background = 'linear-gradient(to right, #0f8, #8fa)';
+        } else if (pct > 40) {
+          bar.style.background = 'linear-gradient(to right, #fa0, #fd8)';
+        } else {
+          bar.style.background = 'linear-gradient(to right, #28f, #8af)';
+        }
+      }
+    }
+  }, 50);
+
+  window.startLevel = function(level) {
+    document.getElementById('title-screen').style.display = 'none';
+
+    // Update visible fold rows based on level
+    const segCounts = [2, 4, 4, 6, 8];
+    const segs = segCounts[level] || 2;
+    for (let i = 0; i < 8; i++) {
+      const row = document.getElementById(`fold-row-${i}`);
+      if (row) row.style.display = i < segs ? 'flex' : 'none';
+    }
+
+    if (gameLoaded) {
+      load_level(level);
+    }
+  };
+
+  loadGame();
+</script>
+</body>
+</html>
