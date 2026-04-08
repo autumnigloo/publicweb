@@ -159,6 +159,16 @@
       0%,100% { opacity: 0.15; transform: scaleX(1) translateY(0); }
       50%      { opacity: 0.35; transform: scaleX(1.08) translateY(-20px); }
     }
+
+    /* ── rainbow fade ── */
+    @keyframes rainbowFade {
+      0%,100% { opacity: 0.08; }
+      50%      { opacity: 0.22; }
+    }
+    @keyframes rainbowFade2 {
+      0%,100% { opacity: 0.04; }
+      50%      { opacity: 0.15; }
+    }
   </style>
 </head>
 <body>
@@ -259,6 +269,40 @@
     <clipPath id="cupClip1"><ellipse cx="0" cy="0" rx="30" ry="34"/></clipPath>
     <clipPath id="cupClip2"><ellipse cx="0" cy="0" rx="30" ry="34"/></clipPath>
   </defs>
+
+  <!-- ── Rainbows ── -->
+  <!-- Rainbow 1: large, left-center -->
+  <g style="animation: rainbowFade 8s ease-in-out infinite;">
+    <path d="M -60 580 A 500 500 0 0 1 1060 580" fill="none" stroke="#ff0000" stroke-width="18" opacity="0.7"/>
+    <path d="M -40 580 A 480 480 0 0 1 1040 580" fill="none" stroke="#ff7700" stroke-width="18" opacity="0.7"/>
+    <path d="M -20 580 A 460 460 0 0 1 1020 580" fill="none" stroke="#ffee00" stroke-width="18" opacity="0.7"/>
+    <path d="M   0 580 A 440 440 0 0 1 1000 580" fill="none" stroke="#00cc44" stroke-width="18" opacity="0.7"/>
+    <path d="M  20 580 A 420 420 0 0 1  980 580" fill="none" stroke="#0088ff" stroke-width="18" opacity="0.7"/>
+    <path d="M  40 580 A 400 400 0 0 1  960 580" fill="none" stroke="#4400cc" stroke-width="18" opacity="0.7"/>
+    <path d="M  60 580 A 380 380 0 0 1  940 580" fill="none" stroke="#aa00ff" stroke-width="18" opacity="0.7"/>
+  </g>
+
+  <!-- Rainbow 2: smaller, right side, delayed -->
+  <g style="animation: rainbowFade2 11s ease-in-out infinite 3s;">
+    <path d="M 700 620 A 280 280 0 0 1 1260 620" fill="none" stroke="#ff0000" stroke-width="12" opacity="0.7"/>
+    <path d="M 712 620 A 268 268 0 0 1 1248 620" fill="none" stroke="#ff7700" stroke-width="12" opacity="0.7"/>
+    <path d="M 724 620 A 256 256 0 0 1 1236 620" fill="none" stroke="#ffee00" stroke-width="12" opacity="0.7"/>
+    <path d="M 736 620 A 244 244 0 0 1 1224 620" fill="none" stroke="#00cc44" stroke-width="12" opacity="0.7"/>
+    <path d="M 748 620 A 232 232 0 0 1 1212 620" fill="none" stroke="#0088ff" stroke-width="12" opacity="0.7"/>
+    <path d="M 760 620 A 220 220 0 0 1 1200 620" fill="none" stroke="#4400cc" stroke-width="12" opacity="0.7"/>
+    <path d="M 772 620 A 208 208 0 0 1 1188 620" fill="none" stroke="#aa00ff" stroke-width="12" opacity="0.7"/>
+  </g>
+
+  <!-- Rainbow 3: tiny, left side, different timing -->
+  <g style="animation: rainbowFade 13s ease-in-out infinite 6s;">
+    <path d="M -200 560 A 200 200 0 0 1 200 560" fill="none" stroke="#ff0000" stroke-width="10" opacity="0.7"/>
+    <path d="M -188 560 A 188 188 0 0 1 188 560" fill="none" stroke="#ff7700" stroke-width="10" opacity="0.7"/>
+    <path d="M -176 560 A 176 176 0 0 1 176 560" fill="none" stroke="#ffee00" stroke-width="10" opacity="0.7"/>
+    <path d="M -164 560 A 164 164 0 0 1 164 560" fill="none" stroke="#00cc44" stroke-width="10" opacity="0.7"/>
+    <path d="M -152 560 A 152 152 0 0 1 152 560" fill="none" stroke="#0088ff" stroke-width="10" opacity="0.7"/>
+    <path d="M -140 560 A 140 140 0 0 1 140 560" fill="none" stroke="#4400cc" stroke-width="10" opacity="0.7"/>
+    <path d="M -128 560 A 128 128 0 0 1 128 560" fill="none" stroke="#aa00ff" stroke-width="10" opacity="0.7"/>
+  </g>
 
   <!-- ── Aurora background blobs ── -->
   <ellipse cx="300" cy="520" rx="320" ry="180" fill="url(#spotA)" style="animation: aurora 7s ease-in-out infinite;"/>
