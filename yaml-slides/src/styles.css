@@ -20,16 +20,17 @@
 html,
 body {
   margin: 0;
-  min-height: 100%;
+  height: 100%;
   background:
     radial-gradient(circle at top left, rgba(191, 90, 54, 0.12), transparent 28%),
     radial-gradient(circle at bottom right, rgba(101, 92, 168, 0.1), transparent 30%),
     linear-gradient(180deg, var(--bg) 0%, #efe7db 100%);
   color: var(--ink);
+  overflow: hidden;
 }
 
 body {
-  min-height: 100vh;
+  height: 100dvh;
 }
 
 button,
@@ -69,7 +70,7 @@ code {
 
 .page {
   --editor-fr: 0.38;
-  min-height: 100vh;
+  height: 100dvh;
   padding: 1.25rem;
   display: grid;
   grid-template-columns:
@@ -77,10 +78,12 @@ code {
     14px
     minmax(0, 1fr);
   gap: 0;
+  overflow: hidden;
 }
 
 .panel {
   min-width: 0;
+  min-height: 0;
   background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.75);
   box-shadow: 0 24px 60px var(--shadow);
@@ -93,14 +96,17 @@ code {
   padding: 1.1rem;
   display: grid;
   gap: 1rem;
+  min-height: 0;
 }
 
 .editor-panel {
   margin-right: 0.625rem;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .preview-panel {
   margin-left: 0.625rem;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .panel-divider {
@@ -172,8 +178,9 @@ h2 {
 
 #yaml-input {
   width: 100%;
-  min-height: 60vh;
-  resize: vertical;
+  height: 100%;
+  min-height: 0;
+  resize: none;
   border: 1px solid var(--line);
   border-radius: 22px;
   padding: 1rem;
@@ -201,7 +208,7 @@ h2 {
 }
 
 .preview-panel {
-  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
 }
 
 .preview-panel:fullscreen {
@@ -221,8 +228,6 @@ h2 {
 }
 
 .preview-panel:fullscreen .slide-frame {
-  min-height: calc(100vh - 2.5rem);
-  height: calc(100vh - 2.5rem);
   border-radius: 0;
   border: none;
   box-shadow: none;
@@ -232,24 +237,32 @@ h2 {
   justify-content: flex-end;
 }
 
+.slide-viewport {
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
 .slide-frame {
   --header-scale: 1;
   --content-scale: 1;
-  min-height: 72vh;
+  --stage-height-px: 600px;
   background:
     linear-gradient(140deg, rgba(255, 255, 255, 0.86), rgba(255, 248, 241, 0.92)),
     linear-gradient(130deg, #f7eee4, #fdfbf8);
   border: 1px solid rgba(82, 52, 33, 0.08);
   border-radius: 30px;
-  padding: clamp(1.25rem, 3vw, 3rem);
+  padding: calc(var(--stage-height-px) * 0.05);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
     0 18px 42px rgba(92, 63, 44, 0.12);
   display: grid;
-  gap: 2rem;
+  gap: calc(var(--stage-height-px) * 0.033);
   align-content: start;
   position: relative;
   overflow: hidden;
+  flex: 0 0 auto;
 }
 
 .slide-frame::before {
@@ -279,27 +292,31 @@ h2 {
 }
 
 .slide-title h3 {
-  font-size: calc(clamp(2rem, 4.2vw, 4.6rem) * var(--header-scale));
+  font-size: calc(var(--stage-height-px) * 0.093 * var(--header-scale));
   line-height: 0.95;
 }
 
 .slide-body {
   display: grid;
-  gap: 1.2rem;
-  font-size: calc(clamp(1rem, 1.45vw, 1.35rem) * var(--content-scale));
+  gap: calc(var(--stage-height-px) * 0.02);
+  font-size: calc(var(--stage-height-px) * 0.03 * var(--content-scale));
   line-height: 1.45;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .split-body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(1rem, 2vw, 2.5rem);
+  gap: calc(var(--stage-height-px) * 0.04);
 }
 
 .content-column {
   min-width: 0;
+  min-height: 0;
   display: grid;
-  gap: 1rem;
+  gap: calc(var(--stage-height-px) * 0.017);
   align-content: start;
+  overflow: hidden;
 }
 
 .content-column p {
@@ -308,9 +325,9 @@ h2 {
 
 ul {
   margin: 0;
-  padding-left: 1.2em;
+  padding-left: 1.15em;
   display: grid;
-  gap: 0.5rem;
+  gap: calc(var(--stage-height-px) * 0.008);
 }
 
 ul[data-depth="2"] {
@@ -348,9 +365,20 @@ em {
   gap: 0.75rem;
 }
 
+.slide-frame.title-only {
+  align-content: center;
+  justify-items: center;
+}
+
+.slide-frame.title-only .slide-title {
+  text-align: center;
+  align-self: center;
+}
+
 @media (max-width: 980px) {
   .page {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
     gap: 1.25rem;
   }
 
@@ -364,11 +392,7 @@ em {
   }
 
   #yaml-input {
-    min-height: 40vh;
-  }
-
-  .slide-frame {
-    min-height: 58vh;
+    min-height: 0;
   }
 }
 

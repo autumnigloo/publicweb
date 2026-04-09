@@ -28,35 +28,44 @@ type ContentBlock =
   | { type: "paragraph"; text: string }
   | { type: "list"; items: ListItemNode[] };
 
-const SAMPLE_YAML = `title: Product Story
+const SAMPLE_YAML = `# Deck title shown above the slide preview
+title: Product Story
+
+# Optional multipliers for slide text sizing
 header_scale: 1.0
 content_scale: 1.0
-slides:
-  - title: Opening
-    body: |
-      Build slides from YAML and share the whole deck with a URL.
 
-      - Write plain text
-      - Add **bold** or *italic*
-      - Keep outlines simple
+slides:
+  - title: YAML Slides
+    body: |
+      Edit this YAML and the full deck is kept in the URL as ?x=...
+
+      - Use normal paragraphs
+      - Add **bold** and *italic*
+      - Write bullet lists
+        - With a second layer
+          - And a third layer
 
   - title: Split Layout
     layout: split
     left: |
-      The left side can hold:
+      Add layout: split to divide a slide into two columns.
 
-      - A short setup
-      - Supporting bullets
-        - With nesting
-          - Up to three layers
+      - Put one outline on the left
+      - Keep the structure simple
     right: |
-      The right side can hold:
+      Put supporting text on the right.
 
-      A normal paragraph with **emphasis**.
+      You can also change:
+
+      - header_scale
+      - content_scale
+
+  - title: Title Only
 
   - title: Closing
     body: |
-      Shareable links store the full YAML deck in the URL.
+      If a slide has too much text, the extra content clips off the slide instead of changing its size.
 `;
 const SPLIT_STORAGE_KEY = "yaml-slides-split-v1";
 const DEFAULT_EDITOR_FRACTION = 0.38;
@@ -76,11 +85,6 @@ app.innerHTML = `
           <h1>YAML Slides</h1>
         </div>
       </div>
-      <p class="hint">
-        Schema: top-level <code>title</code> and <code>slides</code>. Each slide can use
-        <code>body</code> or <code>layout: split</code> with <code>left</code> and <code>right</code>.
-        Optional deck-level floats: <code>header_scale</code> and <code>content_scale</code>.
-      </p>
       <textarea id="yaml-input" spellcheck="false"></textarea>
       <div class="status-row">
         <span id="status-text"></span>
@@ -100,7 +104,9 @@ app.innerHTML = `
           <button id="next-slide">Next</button>
         </div>
       </div>
-      <article id="slide-frame" class="slide-frame"></article>
+      <div id="slide-viewport" class="slide-viewport">
+        <article id="slide-frame" class="slide-frame"></article>
+      </div>
       <p class="hint keyboard-hint">Arrow keys move between slides when the editor is not focused.</p>
     </section>
   </main>
@@ -113,6 +119,7 @@ const page = document.querySelector<HTMLElement>(".page")!;
 const divider = document.querySelector<HTMLDivElement>("#panel-divider")!;
 const deckTitle = document.querySelector<HTMLHeadingElement>("#deck-title")!;
 const slideCount = document.querySelector<HTMLSpanElement>("#slide-count")!;
+const slideViewport = document.querySelector<HTMLDivElement>("#slide-viewport")!;
 const slideFrame = document.querySelector<HTMLElement>("#slide-frame")!;
 const prevSlideButton = document.querySelector<HTMLButtonElement>("#prev-slide")!;
 const nextSlideButton = document.querySelector<HTMLButtonElement>("#next-slide")!;
@@ -148,6 +155,7 @@ async function init() {
   bindEvents();
   applyEditorFraction(editorFraction);
   updateFullscreenButton();
+  bindSlideViewportSizing();
   void refreshFromEditor();
 }
 
@@ -264,7 +272,11 @@ function renderDeck(deck: Deck) {
   slideFrame.style.setProperty("--content-scale", String(deck.contentScale));
 
   const slide = deck.slides[currentSlideIndex];
-  slideFrame.className = `slide-frame ${slide.layout === "split" ? "split" : "single"}`;
+  const hasBodyContent =
+    slide.layout === "split"
+      ? Boolean((slide.left ?? "").trim() || (slide.right ?? "").trim())
+      : Boolean((slide.body ?? "").trim());
+  slideFrame.className = `slide-frame ${slide.layout === "split" ? "split" : "single"}${!hasBodyContent ? " title-only" : ""}`;
   slideFrame.replaceChildren();
 
   if (slide.title?.trim()) {
@@ -277,18 +289,20 @@ function renderDeck(deck: Deck) {
     slideFrame.appendChild(title);
   }
 
-  const body = document.createElement("section");
-  body.className = "slide-body";
+  if (hasBodyContent) {
+    const body = document.createElement("section");
+    body.className = "slide-body";
 
-  if (slide.layout === "split") {
-    body.classList.add("split-body");
-    body.appendChild(buildContentColumn(slide.left ?? ""));
-    body.appendChild(buildContentColumn(slide.right ?? ""));
-  } else {
-    body.appendChild(buildContentColumn(slide.body ?? ""));
+    if (slide.layout === "split") {
+      body.classList.add("split-body");
+      body.appendChild(buildContentColumn(slide.left ?? ""));
+      body.appendChild(buildContentColumn(slide.right ?? ""));
+    } else {
+      body.appendChild(buildContentColumn(slide.body ?? ""));
+    }
+
+    slideFrame.appendChild(body);
   }
-
-  slideFrame.appendChild(body);
 }
 
 function renderError(message: string) {
@@ -496,14 +510,14 @@ function parseSlide(entry: unknown, index: number): Slide {
     };
   }
 
-  if (typeof entry.body !== "string") {
-    throw new Error(`Slide ${index + 1} needs a string body.`);
+  if (entry.body != null && typeof entry.body !== "string") {
+    throw new Error(`Slide ${index + 1} needs a string body when body is present.`);
   }
 
   return {
     title,
     layout,
-    body: entry.body,
+    body: typeof entry.body === "string" ? entry.body : "",
   };
 }
 
@@ -622,6 +636,29 @@ async function toggleFullscreen() {
 
 function updateFullscreenButton() {
   fullscreenButton.textContent = document.fullscreenElement === previewPanel ? "Exit Fullscreen" : "Fullscreen";
+}
+
+function bindSlideViewportSizing() {
+  const resize = () => {
+    const width = slideViewport.clientWidth;
+    const height = slideViewport.clientHeight;
+    if (!width || !height) {
+      return;
+    }
+
+    const nextWidth = Math.min(width, height * (16 / 9));
+    const nextHeight = nextWidth / (16 / 9);
+
+    slideFrame.style.width = `${nextWidth}px`;
+    slideFrame.style.height = `${nextHeight}px`;
+    slideFrame.style.setProperty("--stage-height-px", `${nextHeight}px`);
+  };
+
+  const observer = new ResizeObserver(() => {
+    resize();
+  });
+  observer.observe(slideViewport);
+  resize();
 }
 
 function parseScale(value: unknown, fallback: number) {
