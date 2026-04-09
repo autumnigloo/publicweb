@@ -29,6 +29,13 @@ type ContentBlock =
   | { type: "paragraph"; text: string }
   | { type: "list"; items: ListItemNode[] };
 
+type PdfTextStyle = "normal" | "bold" | "italic" | "bolditalic";
+
+interface PdfRun {
+  text: string;
+  style: PdfTextStyle;
+}
+
 const SAMPLE_YAML = `# Deck title shown above the slide preview
 title: Product Story
 
@@ -696,12 +703,9 @@ function renderSlideToPdf(pdf: jsPDF, deck: Deck, slide: Slide) {
 
   if (!hasBodyContent) {
     if (slide.title?.trim()) {
-      pdf.setFont("times", "bold");
-      pdf.setFontSize(titleSize);
-      pdf.text(stripInlineMarkup(slide.title), pageWidth / 2, pageHeight / 2, {
+      const titleBottom = pageHeight / 2 + titleSize * 3;
+      drawWrappedRuns(pdf, parseInlineRuns(slide.title), pad, pageHeight / 2 - titleSize, contentWidth, titleBottom, titleSize, {
         align: "center",
-        baseline: "middle",
-        maxWidth: contentWidth,
       });
     }
     return;
@@ -709,11 +713,8 @@ function renderSlideToPdf(pdf: jsPDF, deck: Deck, slide: Slide) {
 
   let top = pad;
   if (slide.title?.trim()) {
-    pdf.setFont("times", "bold");
-    pdf.setFontSize(titleSize);
-    const titleLines = pdf.splitTextToSize(stripInlineMarkup(slide.title), contentWidth);
-    pdf.text(titleLines, pad, top + titleSize * 0.85);
-    top += titleLines.length * titleSize * 0.95 + titleGap;
+    const nextTop = drawWrappedRuns(pdf, parseInlineRuns(slide.title), pad, top, contentWidth, pad + contentHeight, titleSize);
+    top = nextTop + titleGap;
   }
 
   const bodyTop = top;
@@ -758,7 +759,7 @@ function drawContentBlocksToPdf(
     }
 
     if (block.type === "paragraph") {
-      y = drawWrappedText(pdf, stripInlineMarkup(block.text), left, y, width, bottom, fontSize);
+      y = drawWrappedRuns(pdf, parseInlineRuns(block.text), left, y, width, bottom, fontSize);
       y += paragraphGap;
       continue;
     }
@@ -788,11 +789,13 @@ function drawPdfList(
     }
 
     const currentLeft = left + depth * indent;
-    const bullet = depth % 2 === 0 ? "\u2022" : "\u25E6";
+    const bullet = depth === 0 ? "\u2022" : depth === 1 ? "-" : "*";
+    pdf.setFont("times", "normal");
+    pdf.setFontSize(fontSize);
     pdf.text(bullet, currentLeft, y + fontSize * 0.82);
-    y = drawWrappedText(
+    y = drawWrappedRuns(
       pdf,
-      stripInlineMarkup(item.text),
+      parseInlineRuns(item.text),
       currentLeft + bulletPad,
       y,
       width - depth * indent - bulletPad,
@@ -809,30 +812,149 @@ function drawPdfList(
   return y;
 }
 
-function drawWrappedText(
+function drawWrappedRuns(
   pdf: jsPDF,
-  text: string,
+  runs: PdfRun[],
   left: number,
   top: number,
   width: number,
   bottom: number,
   fontSize: number,
+  options: { align?: "left" | "center" } = {},
 ) {
-  pdf.setFontSize(fontSize);
-  const lines = pdf.splitTextToSize(text, Math.max(width, fontSize * 4));
   const lineHeight = fontSize * 1.3;
   const maxLines = Math.max(0, Math.floor((bottom - top) / lineHeight));
+  const lines = wrapRunsToWidth(pdf, runs, Math.max(width, fontSize * 4), fontSize);
 
   for (const line of lines.slice(0, maxLines)) {
-    pdf.text(line, left, top + fontSize * 0.82);
+    drawRunLine(pdf, line, left, top + fontSize * 0.82, fontSize, width, options.align ?? "left");
     top += lineHeight;
   }
 
   return top;
 }
 
-function stripInlineMarkup(text: string) {
-  return text.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1");
+function parseInlineRuns(text: string): PdfRun[] {
+  const runs: PdfRun[] = [];
+  let buffer = "";
+  let bold = false;
+  let italic = false;
+
+  const flush = () => {
+    if (!buffer) {
+      return;
+    }
+    runs.push({
+      text: buffer,
+      style: toPdfStyle(bold, italic),
+    });
+    buffer = "";
+  };
+
+  for (let index = 0; index < text.length; ) {
+    if (text.startsWith("**", index)) {
+      flush();
+      bold = !bold;
+      index += 2;
+      continue;
+    }
+
+    if (text[index] === "*") {
+      flush();
+      italic = !italic;
+      index += 1;
+      continue;
+    }
+
+    buffer += text[index];
+    index += 1;
+  }
+
+  flush();
+  return runs;
+}
+
+function toPdfStyle(bold: boolean, italic: boolean): PdfTextStyle {
+  if (bold && italic) {
+    return "bolditalic";
+  }
+  if (bold) {
+    return "bold";
+  }
+  if (italic) {
+    return "italic";
+  }
+  return "normal";
+}
+
+function wrapRunsToWidth(pdf: jsPDF, runs: PdfRun[], width: number, fontSize: number) {
+  const lines: PdfRun[][] = [];
+  let currentLine: PdfRun[] = [];
+  let currentWidth = 0;
+
+  for (const run of runs) {
+    const parts = run.text.match(/\S+\s*|\s+/g) ?? [];
+    for (const part of parts) {
+      const partWidth = measurePdfText(pdf, part, run.style, fontSize);
+      const isWhitespace = part.trim().length === 0;
+
+      if (!isWhitespace && currentLine.length && currentWidth + partWidth > width) {
+        trimTrailingWhitespace(currentLine);
+        lines.push(currentLine);
+        currentLine = [];
+        currentWidth = 0;
+      }
+
+      if (!currentLine.length && isWhitespace) {
+        continue;
+      }
+
+      currentLine.push({ text: part, style: run.style });
+      currentWidth += partWidth;
+    }
+  }
+
+  trimTrailingWhitespace(currentLine);
+  if (currentLine.length) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+}
+
+function trimTrailingWhitespace(line: PdfRun[]) {
+  while (line.length && !line[line.length - 1].text.trim()) {
+    line.pop();
+  }
+}
+
+function drawRunLine(
+  pdf: jsPDF,
+  runs: PdfRun[],
+  left: number,
+  baseline: number,
+  fontSize: number,
+  width: number,
+  align: "left" | "center",
+) {
+  const lineWidth = runs.reduce((sum, run) => sum + measurePdfText(pdf, run.text, run.style, fontSize), 0);
+  let x = align === "center" ? left + Math.max(0, (width - lineWidth) / 2) : left;
+
+  for (const run of runs) {
+    if (!run.text) {
+      continue;
+    }
+    pdf.setFont("times", run.style);
+    pdf.setFontSize(fontSize);
+    pdf.text(run.text, x, baseline);
+    x += measurePdfText(pdf, run.text, run.style, fontSize);
+  }
+}
+
+function measurePdfText(pdf: jsPDF, text: string, style: PdfTextStyle, fontSize: number) {
+  pdf.setFont("times", style);
+  pdf.setFontSize(fontSize);
+  return pdf.getTextWidth(text);
 }
 
 function makePdfFilename(title: string) {
