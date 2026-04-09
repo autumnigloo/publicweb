@@ -57,7 +57,6 @@ slides:
     body: |
       Shareable links store the full YAML deck in the URL.
 `;
-const STORAGE_KEY = "yaml-slides-editor-v1";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -126,18 +125,15 @@ async function init() {
   const params = new URLSearchParams(window.location.search);
   const encodedDeck = params.get("x") ?? params.get("deck");
   const initialSlide = clampSlideIndex(Number(params.get("s") ?? params.get("slide") ?? "1") - 1, 0);
-  const cachedDeck = loadCachedEditorText();
 
   if (encodedDeck) {
     try {
       yamlInput.value = await decodeDeck(encodedDeck);
       currentSlideIndex = initialSlide;
     } catch (error) {
-      yamlInput.value = cachedDeck || SAMPLE_YAML;
+      yamlInput.value = SAMPLE_YAML;
       setStatus(`Could not decode shared deck: ${formatError(error)}`, true);
     }
-  } else if (cachedDeck) {
-    yamlInput.value = cachedDeck;
   } else {
     yamlInput.value = SAMPLE_YAML;
   }
@@ -149,7 +145,25 @@ async function init() {
 
 function bindEvents() {
   yamlInput.addEventListener("input", () => {
-    cacheEditorText(yamlInput.value);
+    window.clearTimeout(shareTimer);
+    shareTimer = window.setTimeout(() => {
+      void refreshFromEditor();
+    }, 180);
+  });
+
+  yamlInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+
+    const selectionStart = yamlInput.selectionStart;
+    const selectionEnd = yamlInput.selectionEnd;
+    const lineStart = yamlInput.value.lastIndexOf("\n", selectionStart - 1) + 1;
+    const line = yamlInput.value.slice(lineStart, selectionStart);
+    const indent = (/^[ \t]*/.exec(line) ?? [""])[0];
+
+    event.preventDefault();
+    yamlInput.setRangeText(`\n${indent}`, selectionStart, selectionEnd, "end");
     window.clearTimeout(shareTimer);
     shareTimer = window.setTimeout(() => {
       void refreshFromEditor();
@@ -189,7 +203,6 @@ function bindEvents() {
 
 async function refreshFromEditor() {
   try {
-    cacheEditorText(yamlInput.value);
     const parsed = parseDeck(yamlInput.value);
     currentDeck = parsed;
     currentSlideIndex = clampSlideIndex(currentSlideIndex, parsed.slides.length - 1);
@@ -217,13 +230,15 @@ function renderDeck(deck: Deck) {
   slideFrame.className = `slide-frame ${slide.layout === "split" ? "split" : "single"}`;
   slideFrame.replaceChildren();
 
-  const title = document.createElement("header");
-  title.className = "slide-title";
+  if (slide.title?.trim()) {
+    const title = document.createElement("header");
+    title.className = "slide-title";
 
-  const titleText = document.createElement("h3");
-  titleText.textContent = slide.title || `Slide ${currentSlideIndex + 1}`;
-  title.appendChild(titleText);
-  slideFrame.appendChild(title);
+    const titleText = document.createElement("h3");
+    titleText.textContent = slide.title;
+    title.appendChild(titleText);
+    slideFrame.appendChild(title);
+  }
 
   const body = document.createElement("section");
   body.className = "slide-body";
@@ -594,22 +609,6 @@ async function toggleFullscreen() {
 
 function updateFullscreenButton() {
   fullscreenButton.textContent = document.fullscreenElement === previewPanel ? "Exit Fullscreen" : "Fullscreen";
-}
-
-function cacheEditorText(text: string) {
-  try {
-    localStorage.setItem(STORAGE_KEY, text);
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function loadCachedEditorText() {
-  try {
-    return localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
 }
 
 function parseScale(value: unknown, fallback: number) {
