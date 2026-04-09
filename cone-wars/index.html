@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cone Wars</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #050510; color: #cfd; overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  #canvas { display: block; width: 100vw; height: 100vh; }
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 14px 22px;
+    pointer-events: none;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 6px #000;
+  }
+  #hud .left { font-size: 14px; opacity: 0.85; }
+  #hud .right { text-align: right; }
+  #score { font-size: 30px; font-weight: 700; color: #fff; letter-spacing: 0.04em; }
+  #high  { font-size: 13px; opacity: 0.7; margin-top: 2px; }
+  #nova {
+    margin-top: 6px;
+    display: flex; gap: 6px; justify-content: flex-end; align-items: center;
+  }
+  .charge {
+    width: 22px; height: 22px;
+    border: 2px solid #6fc; border-radius: 50%;
+    background: radial-gradient(circle, #6ff 0%, transparent 70%);
+    box-shadow: 0 0 8px #6ff;
+  }
+  .charge.empty {
+    background: none; box-shadow: none; border-color: #2a4;
+    opacity: 0.5;
+  }
+  .charge.empty.charging {
+    background: linear-gradient(to top, #6ff var(--p, 0%), transparent var(--p, 0%));
+    opacity: 0.85;
+  }
+  #overlay {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(3px);
+    transition: opacity 0.3s;
+  }
+  #overlay h1 { font-size: 56px; margin: 0 0 8px; letter-spacing: 0.08em; }
+  #overlay p { margin: 6px 0; font-size: 16px; opacity: 0.85; max-width: 520px; text-align: center; }
+  #overlay button {
+    margin-top: 18px;
+    background: #1a3; color: #fff; border: 0; padding: 12px 28px;
+    font-size: 16px; border-radius: 6px; cursor: pointer;
+    font-family: inherit; font-weight: 600; letter-spacing: 0.05em;
+  }
+  #overlay button:hover { background: #2c5; }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  .key { display: inline-block; padding: 2px 8px; border: 1px solid #4a6; border-radius: 4px; font-family: monospace; }
+  #back-link {
+    position: fixed; bottom: 12px; left: 14px;
+    color: #6c8; text-decoration: none; font-size: 12px; opacity: 0.6;
+  }
+  #back-link:hover { opacity: 1; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="hud">
+  <div class="left">
+    <div><span class="key">←↑↓→</span> move</div>
+    <div><span class="key">space</span> nova bomb</div>
+  </div>
+  <div class="right">
+    <div id="score">0.0</div>
+    <div id="high">best 0.0</div>
+    <div id="nova"></div>
+  </div>
+</div>
+
+<div id="overlay">
+  <h1>CONE WARS</h1>
+  <p>You're trapped on the surface of an infinite cone. Survive as long as you can.</p>
+  <p>
+    <span style="color:#f44">●</span> Red circles accelerate toward you along the geodesic.
+    <span style="color:#4af">⬢</span> Blue hexagons hop in 6 hex directions, recalculating each second.
+  </p>
+  <p>The world is a perfect 3D cone — straight lines bend over the seam, and the shortest path between two points may not be the obvious one.</p>
+  <button id="start">PLAY</button>
+</div>
+
+<a id="back-link" href="../index.html">← back to projects</a>
+
+<script type="module">
+import init, { Game } from './pkg/cone_wars.js';
+
+const canvas = document.getElementById('canvas');
+const gl = canvas.getContext('webgl2', { antialias: true });
+if (!gl) {
+  document.body.innerHTML = '<p style="padding:30px;color:#f88">WebGL2 is required.</p>';
+  throw new Error('no webgl2');
+}
+
+// ───── shaders ─────────────────────────────────────────────────────────────
+const coneVS = `#version 300 es
+layout(location=0) in vec3 a_pos;
+layout(location=1) in vec3 a_normal;
+layout(location=2) in vec2 a_uv;
+uniform mat4 u_viewProj;
+out vec3 v_normal;
+out vec2 v_uv;
+out vec3 v_pos;
+void main() {
+  v_normal = a_normal;
+  v_uv = a_uv;
+  v_pos = a_pos;
+  gl_Position = u_viewProj * vec4(a_pos, 1.0);
+}`;
+
+const coneFS = `#version 300 es
+precision highp float;
+in vec3 v_normal;
+in vec2 v_uv;
+in vec3 v_pos;
+uniform vec3 u_light;
+uniform float u_flash;
+uniform float u_time;
+out vec4 outColor;
+void main() {
+  vec3 N = normalize(v_normal);
+  float diff = max(dot(N, normalize(u_light)), 0.0);
+  // grid lines along generators (theta) and circles (s)
+  float gridU = abs(fract(v_uv.x * 18.0) - 0.5);
+  float gridV = abs(fract(v_uv.y * 12.0) - 0.5);
+  float grid = smoothstep(0.45, 0.5, max(0.5 - gridU, 0.5 - gridV));
+  vec3 base = mix(vec3(0.05, 0.07, 0.18), vec3(0.05, 0.5, 0.7), v_uv.y);
+  vec3 col = base * (0.25 + diff * 0.85);
+  col += vec3(0.0, 0.6, 0.8) * grid * 0.4;
+  // seam highlight at uv.x near 0 or 1
+  float seam = smoothstep(0.0, 0.01, v_uv.x) * smoothstep(0.0, 0.01, 1.0 - v_uv.x);
+  col *= 0.6 + 0.4 * seam;
+  // edge glow at base
+  col += vec3(0.1, 0.4, 0.6) * smoothstep(0.85, 1.0, v_uv.y);
+  col = mix(col, vec3(1.0, 0.9, 0.8), u_flash * 0.6);
+  outColor = vec4(col, 1.0);
+}`;
+
+const pointVS = `#version 300 es
+layout(location=0) in vec3 a_pos;
+layout(location=1) in vec4 a_color;
+layout(location=2) in float a_size;
+uniform mat4 u_viewProj;
+uniform vec2 u_viewport;
+out vec4 v_color;
+void main() {
+  vec4 clip = u_viewProj * vec4(a_pos, 1.0);
+  gl_Position = clip;
+  // perspective-correct point size
+  gl_PointSize = a_size * u_viewport.y / max(clip.w, 0.001);
+  v_color = a_color;
+}`;
+
+const pointFS = `#version 300 es
+precision highp float;
+in vec4 v_color;
+out vec4 outColor;
+void main() {
+  vec2 d = gl_PointCoord - 0.5;
+  float r = length(d);
+  if (r > 0.5) discard;
+  float a = smoothstep(0.5, 0.35, r);
+  // bright core
+  float core = smoothstep(0.3, 0.0, r);
+  vec3 col = mix(v_color.rgb, vec3(1.0), core * 0.6);
+  outColor = vec4(col, a * v_color.a);
+}`;
+
+function compile(src, type) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(sh));
+    throw new Error('shader compile failed');
+  }
+  return sh;
+}
+function link(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(vs, gl.VERTEX_SHADER));
+  gl.attachShader(p, compile(fs, gl.FRAGMENT_SHADER));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(p));
+    throw new Error('program link failed');
+  }
+  return p;
+}
+
+const coneProg = link(coneVS, coneFS);
+const pointProg = link(pointVS, pointFS);
+
+// ───── matrix helpers (column-major) ───────────────────────────────────────
+function mat4Identity() { const m = new Float32Array(16); m[0]=m[5]=m[10]=m[15]=1; return m; }
+function mat4Multiply(a, b) {
+  const o = new Float32Array(16);
+  for (let i = 0; i < 4; i++)
+    for (let j = 0; j < 4; j++)
+      o[i*4+j] =
+        a[0*4+j] * b[i*4+0] +
+        a[1*4+j] * b[i*4+1] +
+        a[2*4+j] * b[i*4+2] +
+        a[3*4+j] * b[i*4+3];
+  return o;
+}
+function mat4Perspective(fov, aspect, near, far) {
+  const f = 1.0 / Math.tan(fov / 2);
+  const nf = 1 / (near - far);
+  const m = new Float32Array(16);
+  m[0] = f / aspect;
+  m[5] = f;
+  m[10] = (far + near) * nf;
+  m[11] = -1;
+  m[14] = (2 * far * near) * nf;
+  return m;
+}
+function mat4LookAt(eye, target, up) {
+  const z0 = eye[0]-target[0], z1 = eye[1]-target[1], z2 = eye[2]-target[2];
+  let zl = Math.hypot(z0,z1,z2); const zx=z0/zl, zy=z1/zl, zz=z2/zl;
+  let xx = up[1]*zz - up[2]*zy;
+  let xy = up[2]*zx - up[0]*zz;
+  let xz = up[0]*zy - up[1]*zx;
+  const xl = Math.hypot(xx, xy, xz);
+  xx/=xl; xy/=xl; xz/=xl;
+  const yx = zy*xz - zz*xy;
+  const yy = zz*xx - zx*xz;
+  const yz = zx*xy - zy*xx;
+  const m = new Float32Array(16);
+  m[0]=xx; m[1]=yx; m[2]=zx; m[3]=0;
+  m[4]=xy; m[5]=yy; m[6]=zy; m[7]=0;
+  m[8]=xz; m[9]=yz; m[10]=zz; m[11]=0;
+  m[12]=-(xx*eye[0]+xy*eye[1]+xz*eye[2]);
+  m[13]=-(yx*eye[0]+yy*eye[1]+yz*eye[2]);
+  m[14]=-(zx*eye[0]+zy*eye[1]+zz*eye[2]);
+  m[15]=1;
+  return m;
+}
+
+// ───── cone mesh ───────────────────────────────────────────────────────────
+let coneVAO, coneIndexCount;
+let coneParams = null;
+
+function buildConeMesh(sinA, cosA, rMin, rMax) {
+  const sSteps = 28;
+  const tSteps = 96; // theta steps around full cone
+  const positions = [];
+  const normals = [];
+  const uvs = [];
+  const indices = [];
+  for (let i = 0; i <= sSteps; i++) {
+    const t = i / sSteps;
+    const s = rMin + t * (rMax - rMin);
+    for (let j = 0; j <= tSteps; j++) {
+      const u = j / tSteps;
+      const theta = u * Math.PI * 2;
+      const x = s * sinA * Math.cos(theta);
+      const z = s * sinA * Math.sin(theta);
+      const y = -s * cosA;
+      positions.push(x, y, z);
+      // outward normal: (cosA·cosθ, sinA, cosA·sinθ)
+      normals.push(cosA * Math.cos(theta), sinA, cosA * Math.sin(theta));
+      uvs.push(u, t);
+    }
+  }
+  for (let i = 0; i < sSteps; i++) {
+    for (let j = 0; j < tSteps; j++) {
+      const a = i * (tSteps + 1) + j;
+      const b = a + 1;
+      const c = a + (tSteps + 1);
+      const d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  coneVAO = gl.createVertexArray();
+  gl.bindVertexArray(coneVAO);
+
+  function buf(loc, data, size) {
+    const b = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+  }
+  buf(0, positions, 3);
+  buf(1, normals, 3);
+  buf(2, uvs, 2);
+  const ib = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+  coneIndexCount = indices.length;
+  gl.bindVertexArray(null);
+}
+
+// ───── point sprites for entities ──────────────────────────────────────────
+let pointVAO, pointPosBuf, pointColBuf, pointSizeBuf;
+const MAX_POINTS = 256;
+
+function initPointBuffers() {
+  pointVAO = gl.createVertexArray();
+  gl.bindVertexArray(pointVAO);
+  pointPosBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pointPosBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, MAX_POINTS * 3 * 4, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+  pointColBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pointColBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, MAX_POINTS * 4 * 4, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0);
+
+  pointSizeBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pointSizeBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, MAX_POINTS * 1 * 4, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0);
+
+  gl.bindVertexArray(null);
+}
+
+// ───── game ────────────────────────────────────────────────────────────────
+let game = null;
+let keys = 0;
+const K_LEFT=1, K_RIGHT=2, K_UP=4, K_DOWN=8;
+let highScore = parseFloat(localStorage.getItem('cone-wars-high') || '0') || 0;
+let running = false;
+let lastTime = 0;
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(window.innerWidth * dpr);
+  canvas.height = Math.floor(window.innerHeight * dpr);
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', resize);
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft')  { keys |= K_LEFT;  e.preventDefault(); }
+  if (e.key === 'ArrowRight') { keys |= K_RIGHT; e.preventDefault(); }
+  if (e.key === 'ArrowUp')    { keys |= K_UP;    e.preventDefault(); }
+  if (e.key === 'ArrowDown')  { keys |= K_DOWN;  e.preventDefault(); }
+  if (e.key === ' ' && game)  { game.fire_nova(); e.preventDefault(); }
+  if ((e.key === 'r' || e.key === 'Enter') && game && game.game_over()) {
+    startRun();
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'ArrowLeft')  keys &= ~K_LEFT;
+  if (e.key === 'ArrowRight') keys &= ~K_RIGHT;
+  if (e.key === 'ArrowUp')    keys &= ~K_UP;
+  if (e.key === 'ArrowDown')  keys &= ~K_DOWN;
+});
+
+function startRun() {
+  if (!game) game = new Game();
+  else game.reset();
+  document.getElementById('overlay').classList.add('hidden');
+  running = true;
+  lastTime = performance.now();
+}
+
+document.getElementById('start').addEventListener('click', startRun);
+
+// ───── render loop ─────────────────────────────────────────────────────────
+function render(now) {
+  requestAnimationFrame(render);
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  if (running && game) {
+    game.set_keys(keys);
+    game.tick(dt);
+
+    if (game.game_over()) {
+      running = false;
+      const score = game.score();
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('cone-wars-high', String(highScore));
+      }
+      showOverlay(true, score);
+    }
+  }
+
+  const aspect = canvas.width / canvas.height;
+  const proj = mat4Perspective(Math.PI / 4, aspect, 0.5, 200);
+  // gentle camera orbit
+  const t = now * 0.0001;
+  const camR = 38;
+  const camY = 8;
+  const camTargetY = -10;
+  const view = mat4LookAt(
+    [Math.sin(t) * camR, camY, Math.cos(t) * camR],
+    [0, camTargetY, 0],
+    [0, 1, 0]
+  );
+  const viewProj = mat4Multiply(proj, view);
+
+  gl.clearColor(0.02, 0.02, 0.06, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+  // draw cone
+  gl.useProgram(coneProg);
+  gl.uniformMatrix4fv(gl.getUniformLocation(coneProg, 'u_viewProj'), false, viewProj);
+  gl.uniform3f(gl.getUniformLocation(coneProg, 'u_light'), 0.4, 0.8, 0.5);
+  gl.uniform1f(gl.getUniformLocation(coneProg, 'u_flash'), game ? game.flash() : 0.0);
+  gl.uniform1f(gl.getUniformLocation(coneProg, 'u_time'), now / 1000);
+  gl.bindVertexArray(coneVAO);
+  gl.drawElements(gl.TRIANGLES, coneIndexCount, gl.UNSIGNED_SHORT, 0);
+  gl.bindVertexArray(null);
+
+  // draw entities as point sprites
+  if (game) {
+    const pos = [];
+    const col = [];
+    const sz = [];
+    const player = game.player_xyz();
+    pos.push(player[0], player[1], player[2]);
+    col.push(0.4, 1.0, 0.6, 1.0);
+    sz.push(0.7);
+
+    const ed = game.enemies_data();
+    for (let i = 0; i < ed.length; i += 4) {
+      pos.push(ed[i], ed[i+1], ed[i+2]);
+      const kind = ed[i+3];
+      if (kind < 0.5) {
+        col.push(1.0, 0.25, 0.25, 1.0);
+        sz.push(0.55);
+      } else {
+        col.push(0.3, 0.6, 1.0, 1.0);
+        sz.push(0.7);
+      }
+    }
+    const n = sz.length;
+
+    gl.useProgram(pointProg);
+    gl.uniformMatrix4fv(gl.getUniformLocation(pointProg, 'u_viewProj'), false, viewProj);
+    gl.uniform2f(gl.getUniformLocation(pointProg, 'u_viewport'), canvas.width, canvas.height);
+    gl.bindVertexArray(pointVAO);
+    gl.bindBuffer(gl.ARRAY_BUFFER, pointPosBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(pos));
+    gl.bindBuffer(gl.ARRAY_BUFFER, pointColBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(col));
+    gl.bindBuffer(gl.ARRAY_BUFFER, pointSizeBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(sz));
+    gl.disable(gl.DEPTH_TEST);
+    gl.drawArrays(gl.POINTS, 0, n);
+    gl.enable(gl.DEPTH_TEST);
+    gl.bindVertexArray(null);
+
+    // HUD
+    document.getElementById('score').textContent = game.score().toFixed(1);
+    document.getElementById('high').textContent = 'best ' + highScore.toFixed(1);
+    renderNova(game.nova_charges(), game.nova_progress());
+  }
+}
+
+function renderNova(charges, progress) {
+  const el = document.getElementById('nova');
+  if (el.childElementCount !== 2) {
+    el.innerHTML = '<div class="charge"></div><div class="charge"></div>';
+  }
+  const items = el.children;
+  for (let i = 0; i < 2; i++) {
+    const c = items[i];
+    if (i < charges) {
+      c.className = 'charge';
+      c.style.removeProperty('--p');
+    } else {
+      // Charging the next charge: only the lowest empty slot is filling
+      if (i === charges) {
+        c.className = 'charge empty charging';
+        c.style.setProperty('--p', (progress * 100).toFixed(1) + '%');
+      } else {
+        c.className = 'charge empty';
+        c.style.removeProperty('--p');
+      }
+    }
+  }
+}
+
+function showOverlay(isGameOver, score) {
+  const ov = document.getElementById('overlay');
+  ov.classList.remove('hidden');
+  if (isGameOver) {
+    ov.innerHTML =
+      `<h1>YOU DIED</h1>` +
+      `<p style="font-size:24px;color:#fff">survived <strong>${score.toFixed(1)}s</strong></p>` +
+      `<p>best: <strong>${highScore.toFixed(1)}s</strong></p>` +
+      `<button id="start">PLAY AGAIN</button>`;
+    document.getElementById('start').addEventListener('click', startRun);
+  }
+}
+
+// ───── boot ────────────────────────────────────────────────────────────────
+async function main() {
+  await init();
+  resize();
+  game = new Game();
+  const params = game.cone_params();
+  buildConeMesh(params[0], params[1], params[2], params[3]);
+  initPointBuffers();
+  document.getElementById('high').textContent = 'best ' + highScore.toFixed(1);
+  renderNova(2, 1.0);
+  lastTime = performance.now();
+  requestAnimationFrame(render);
+}
+main().catch(e => {
+  console.error(e);
+  document.body.innerHTML = '<p style="padding:30px;color:#f88">' + e.message + '</p>';
+});
+</script>
+</body>
+</html>

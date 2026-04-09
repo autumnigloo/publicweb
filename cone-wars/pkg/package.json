@@ -1,0 +1,15 @@
+{
+  "name": "cone_wars",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "cone_wars_bg.wasm",
+    "cone_wars.js",
+    "cone_wars.d.ts"
+  ],
+  "main": "cone_wars.js",
+  "types": "cone_wars.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

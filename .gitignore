@@ -20,3 +20,7 @@ yarn-error.log*
 
 # Vite
 *.local
+
+# Rust build output (cone-wars/pkg is committed for static hosting)
+cone-wars/target/
+cone-wars/Cargo.lock
