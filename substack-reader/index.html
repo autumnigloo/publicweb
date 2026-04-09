@@ -407,28 +407,40 @@ function extractArticle(doc, sourceUrl) {
     img.style.display = 'block';
     img.style.margin = '0 auto';
 
-    // Wrap naked images in <figure>
-    if (img.parentElement && img.parentElement.tagName !== 'FIGURE') {
-      const fig = document.createElement('figure');
-      img.replaceWith(fig);
-      fig.appendChild(img);
-    }
   });
 
-  // 5. Style figures and captions — preserve native figcaption, just apply inline styles
+  // 5. Flatten figures into a single <p> so Google Docs treats image + caption
+  //    as one paragraph (otherwise the figure/figcaption block boundary creates
+  //    a blank line between image and caption on paste).
   root.querySelectorAll('figure').forEach(fig => {
-    fig.style.cssText = 'margin:20px 0;text-align:center;display:block;';
     const img = fig.querySelector('img');
-    if (img) img.style.cssText = 'display:block;margin:0 auto;max-width:100%;';
+    if (!img) { fig.remove(); return; }
     const cap = fig.querySelector('figcaption');
-    if (cap) {
-      const p = document.createElement('p');
-      p.setAttribute('align', 'center');
-      p.style.cssText = 'text-align:center;font-style:italic;color:#666;line-height:1.3;margin:0;padding:2px 0 0;';
-      p.innerHTML = cap.innerHTML;
-      cap.innerHTML = '';
-      cap.appendChild(p);
+    const p = document.createElement('p');
+    p.setAttribute('align', 'center');
+    p.style.cssText = 'text-align:center;margin:16px 0 0;';
+    // Inline img styles so they survive the copy.
+    img.style.cssText = 'display:inline-block;max-width:100%;margin:0 auto;';
+    p.appendChild(img);
+    if (cap && cap.textContent.trim()) {
+      p.appendChild(document.createElement('br'));
+      const i = document.createElement('i');
+      i.style.cssText = 'font-style:italic;color:#666;font-size:10pt;';
+      i.innerHTML = cap.innerHTML;
+      p.appendChild(i);
     }
+    fig.replaceWith(p);
+  });
+
+  // Any remaining naked <img> (wasn't inside a figure) — wrap in a single centered <p>.
+  root.querySelectorAll('img').forEach(img => {
+    if (img.closest('p[align="center"]')) return;
+    const p = document.createElement('p');
+    p.setAttribute('align', 'center');
+    p.style.cssText = 'text-align:center;margin:16px 0 0;';
+    img.style.cssText = 'display:inline-block;max-width:100%;margin:0 auto;';
+    img.replaceWith(p);
+    p.appendChild(img);
   });
 
   // 6. Flatten headings — h1–h2, h4–h6 → h3 (bold, body size via CSS)
