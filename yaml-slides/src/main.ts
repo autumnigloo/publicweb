@@ -635,11 +635,11 @@ async function toggleFullscreen() {
     return;
   }
 
-  await previewPanel.requestFullscreen();
+  await slideViewport.requestFullscreen();
 }
 
 function updateFullscreenButton() {
-  fullscreenButton.textContent = document.fullscreenElement === previewPanel ? "Exit Fullscreen" : "Fullscreen";
+  fullscreenButton.textContent = document.fullscreenElement === slideViewport ? "Exit Fullscreen" : "Fullscreen";
 }
 
 function bindSlideViewportSizing() {
