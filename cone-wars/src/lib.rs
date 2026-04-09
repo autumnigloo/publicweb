@@ -221,18 +221,26 @@ impl GameState {
         let key_up = self.keys & 4 != 0;
         let key_down = self.keys & 8 != 0;
 
+        // Local frame at player: radial = away from apex (down the slant),
+        // tangent = around the cone. The camera is placed behind & above the
+        // player (along slant_down + normal), looking at the player with up =
+        // slant_up. With that camera:
+        //   screen-up    = slant_up         (toward apex)         → Up arrow
+        //   screen-down  = slant_down       (away from apex)      → Down arrow
+        //   screen-left  = +tangent_3d                            → Left arrow
+        //   screen-right = -tangent_3d                            → Right arrow
         let mut vr = 0.0f32;
         let mut vt = 0.0f32;
         if key_up {
-            vr += 1.0;
-        }
-        if key_down {
             vr -= 1.0;
         }
-        if key_right {
-            vt += 1.0;
+        if key_down {
+            vr += 1.0;
         }
         if key_left {
+            vt += 1.0;
+        }
+        if key_right {
             vt -= 1.0;
         }
         let mag = (vr * vr + vt * vt).sqrt();

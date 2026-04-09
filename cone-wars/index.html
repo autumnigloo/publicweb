@@ -355,7 +355,15 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') { keys |= K_RIGHT; e.preventDefault(); }
   if (e.key === 'ArrowUp')    { keys |= K_UP;    e.preventDefault(); }
   if (e.key === 'ArrowDown')  { keys |= K_DOWN;  e.preventDefault(); }
-  if (e.key === ' ' && game)  { game.fire_nova(); e.preventDefault(); }
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (!game) return;
+    if (game.game_over() || !running) {
+      startRun();
+    } else {
+      game.fire_nova();
+    }
+  }
   if ((e.key === 'r' || e.key === 'Enter') && game && game.game_over()) {
     startRun();
   }
@@ -400,16 +408,35 @@ function render(now) {
 
   const aspect = canvas.width / canvas.height;
   const proj = mat4Perspective(Math.PI / 4, aspect, 0.5, 200);
-  // gentle camera orbit
-  const t = now * 0.0001;
-  const camR = 38;
-  const camY = 8;
-  const camTargetY = -10;
-  const view = mat4LookAt(
-    [Math.sin(t) * camR, camY, Math.cos(t) * camR],
-    [0, camTargetY, 0],
-    [0, 1, 0]
-  );
+
+  // ── Player-centered camera ───────────────────────────────────────────────
+  // Place camera behind & above the player along the cone's local frame.
+  // slant_down = (sinα cosθ, -cosα, sinα sinθ)  — down the slant
+  // normal     = (cosα cosθ,  sinα, cosα sinθ)  — outward from the cone axis
+  // slant_up   = -slant_down                    — toward the apex (camera up)
+  let view;
+  if (game) {
+    const p = game.player_xyz();
+    const px = p[0], py = p[1], pz = p[2];
+    const sinA = coneParams[0], cosA = coneParams[1];
+    // θ around the cone axis at the player's location
+    const theta = Math.atan2(pz, px);
+    const ct = Math.cos(theta), st = Math.sin(theta);
+    const normal   = [ cosA * ct,  sinA,  cosA * st];
+    const slantDown = [ sinA * ct, -cosA,  sinA * st];
+    const slantUp   = [-sinA * ct,  cosA, -sinA * st];
+
+    const back = 9;     // distance behind player along slant_down
+    const up   = 5;     // lift along the surface normal
+    const camPos = [
+      px + back * slantDown[0] + up * normal[0],
+      py + back * slantDown[1] + up * normal[1],
+      pz + back * slantDown[2] + up * normal[2],
+    ];
+    view = mat4LookAt(camPos, [px, py, pz], slantUp);
+  } else {
+    view = mat4LookAt([0, 5, 35], [0, -10, 0], [0, 1, 0]);
+  }
   const viewProj = mat4Multiply(proj, view);
 
   gl.clearColor(0.02, 0.02, 0.06, 1);
@@ -516,8 +543,8 @@ async function main() {
   await init();
   resize();
   game = new Game();
-  const params = game.cone_params();
-  buildConeMesh(params[0], params[1], params[2], params[3]);
+  coneParams = game.cone_params();
+  buildConeMesh(coneParams[0], coneParams[1], coneParams[2], coneParams[3]);
   initPointBuffers();
   document.getElementById('high').textContent = 'best ' + highScore.toFixed(1);
   renderNova(2, 1.0);
