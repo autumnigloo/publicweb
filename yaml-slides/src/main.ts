@@ -132,6 +132,7 @@ let shareUrl = window.location.href;
 let shareTimer = 0;
 let statusClearTimer = 0;
 let editorFraction = loadSplitFraction();
+let resizeSlideViewport = () => {};
 
 void init();
 
@@ -202,6 +203,9 @@ function bindEvents() {
 
   document.addEventListener("fullscreenchange", () => {
     updateFullscreenButton();
+    window.requestAnimationFrame(() => {
+      resizeSlideViewport();
+    });
   });
 
   window.addEventListener("keydown", (event) => {
@@ -639,7 +643,7 @@ function updateFullscreenButton() {
 }
 
 function bindSlideViewportSizing() {
-  const resize = () => {
+  resizeSlideViewport = () => {
     const width = slideViewport.clientWidth;
     const height = slideViewport.clientHeight;
     if (!width || !height) {
@@ -655,10 +659,11 @@ function bindSlideViewportSizing() {
   };
 
   const observer = new ResizeObserver(() => {
-    resize();
+    resizeSlideViewport();
   });
   observer.observe(slideViewport);
-  resize();
+  window.addEventListener("resize", resizeSlideViewport);
+  resizeSlideViewport();
 }
 
 function parseScale(value: unknown, fallback: number) {
