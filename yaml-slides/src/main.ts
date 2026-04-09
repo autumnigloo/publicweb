@@ -1,4 +1,5 @@
 import "./styles.css";
+import { gzipSync, gunzipSync } from "fflate";
 import { load } from "js-yaml";
 
 type SlideLayout = "single" | "split";
@@ -152,6 +153,7 @@ async function init() {
 
 function bindEvents() {
   yamlInput.addEventListener("input", () => {
+    void updateShareUrlForCurrentState();
     window.clearTimeout(shareTimer);
     shareTimer = window.setTimeout(() => {
       void refreshFromEditor();
@@ -171,6 +173,7 @@ function bindEvents() {
 
     event.preventDefault();
     yamlInput.setRangeText(`\n${indent}`, selectionStart, selectionEnd, "end");
+    void updateShareUrlForCurrentState();
     window.clearTimeout(shareTimer);
     shareTimer = window.setTimeout(() => {
       void refreshFromEditor();
@@ -238,14 +241,12 @@ function bindEvents() {
 }
 
 async function refreshFromEditor() {
+  await updateShareUrlForCurrentState();
   try {
     const parsed = parseDeck(yamlInput.value);
     currentDeck = parsed;
     currentSlideIndex = clampSlideIndex(currentSlideIndex, parsed.slides.length - 1);
     renderDeck(parsed);
-    shareUrl = await buildShareUrl(yamlInput.value, currentSlideIndex);
-    syncBrowserUrl(shareUrl);
-    updateUrlSize();
     setStatus("Deck parsed successfully.", false);
   } catch (error) {
     currentDeck = null;
@@ -525,38 +526,14 @@ function updateUrlSize() {
 
 async function encodeDeck(text: string): Promise<string> {
   const bytes = new TextEncoder().encode(text);
-  const compressed = await compressBytes(bytes);
+  const compressed = gzipSync(bytes);
   return toBase64Url(compressed);
 }
 
 async function decodeDeck(encoded: string): Promise<string> {
   const compressed = fromBase64Url(encoded);
-  const bytes = await decompressBytes(compressed);
+  const bytes = gunzipSync(compressed);
   return new TextDecoder().decode(bytes);
-}
-
-async function compressBytes(input: Uint8Array): Promise<Uint8Array> {
-  if (!("CompressionStream" in window)) {
-    throw new Error("This browser does not support CompressionStream.");
-  }
-
-  const stream = new CompressionStream("gzip");
-  const writer = stream.writable.getWriter();
-  await writer.write(input);
-  await writer.close();
-  return new Uint8Array(await new Response(stream.readable).arrayBuffer());
-}
-
-async function decompressBytes(input: Uint8Array): Promise<Uint8Array> {
-  if (!("DecompressionStream" in window)) {
-    throw new Error("This browser does not support DecompressionStream.");
-  }
-
-  const stream = new DecompressionStream("gzip");
-  const writer = stream.writable.getWriter();
-  await writer.write(input);
-  await writer.close();
-  return new Uint8Array(await new Response(stream.readable).arrayBuffer());
 }
 
 function moveSlide(delta: number) {
