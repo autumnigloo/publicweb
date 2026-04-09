@@ -1,6 +1,7 @@
 import "./styles.css";
 import { gzipSync, gunzipSync } from "fflate";
 import { load } from "js-yaml";
+import { jsPDF } from "jspdf";
 
 type SlideLayout = "single" | "split";
 
@@ -98,6 +99,7 @@ app.innerHTML = `
           <h2 id="deck-title"></h2>
         </div>
         <div class="nav-group">
+          <button id="export-pdf">Export PDF</button>
           <button id="fullscreen-toggle">Fullscreen</button>
           <button id="prev-slide">Prev</button>
           <span id="slide-count"></span>
@@ -123,6 +125,7 @@ const slideViewport = document.querySelector<HTMLDivElement>("#slide-viewport")!
 const slideFrame = document.querySelector<HTMLElement>("#slide-frame")!;
 const prevSlideButton = document.querySelector<HTMLButtonElement>("#prev-slide")!;
 const nextSlideButton = document.querySelector<HTMLButtonElement>("#next-slide")!;
+const exportPdfButton = document.querySelector<HTMLButtonElement>("#export-pdf")!;
 const fullscreenButton = document.querySelector<HTMLButtonElement>("#fullscreen-toggle")!;
 const previewPanel = document.querySelector<HTMLElement>(".preview-panel")!;
 
@@ -195,6 +198,10 @@ function bindEvents() {
 
   nextSlideButton.addEventListener("click", () => {
     moveSlide(1);
+  });
+
+  exportPdfButton.addEventListener("click", async () => {
+    await exportDeckAsPdf();
   });
 
   fullscreenButton.addEventListener("click", async () => {
@@ -272,6 +279,7 @@ function renderDeck(deck: Deck) {
   slideCount.textContent = `${currentSlideIndex + 1} / ${deck.slides.length}`;
   prevSlideButton.disabled = currentSlideIndex <= 0;
   nextSlideButton.disabled = currentSlideIndex >= deck.slides.length - 1;
+  exportPdfButton.disabled = false;
   slideFrame.style.setProperty("--header-scale", String(deck.headerScale));
   slideFrame.style.setProperty("--content-scale", String(deck.contentScale));
 
@@ -314,6 +322,7 @@ function renderError(message: string) {
   slideCount.textContent = "--";
   prevSlideButton.disabled = true;
   nextSlideButton.disabled = true;
+  exportPdfButton.disabled = true;
   slideFrame.className = "slide-frame error";
   slideFrame.innerHTML = `
     <div class="error-card">
@@ -640,6 +649,199 @@ async function toggleFullscreen() {
 
 function updateFullscreenButton() {
   fullscreenButton.textContent = document.fullscreenElement === slideViewport ? "Exit Fullscreen" : "Fullscreen";
+}
+
+async function exportDeckAsPdf() {
+  if (!currentDeck) {
+    setStatus("Fix YAML errors before exporting PDF.", true);
+    return;
+  }
+
+  const pdf = new jsPDF({
+    orientation: "landscape",
+    unit: "pt",
+    format: [960, 540],
+    compress: true,
+  });
+
+  currentDeck.slides.forEach((slide, index) => {
+    if (index > 0) {
+      pdf.addPage([960, 540], "landscape");
+    }
+    renderSlideToPdf(pdf, currentDeck, slide);
+  });
+
+  pdf.save(makePdfFilename(currentDeck.title));
+  setTemporaryStatus("PDF downloaded.", false, 3000);
+}
+
+function renderSlideToPdf(pdf: jsPDF, deck: Deck, slide: Slide) {
+  const pageWidth = 960;
+  const pageHeight = 540;
+  const pad = 28;
+  const contentWidth = pageWidth - pad * 2;
+  const contentHeight = pageHeight - pad * 2;
+  const titleSize = 50.22 * deck.headerScale;
+  const bodySize = 16.2 * deck.contentScale;
+  const titleGap = 18;
+  const columnGap = 24;
+  const hasBodyContent =
+    slide.layout === "split"
+      ? Boolean((slide.left ?? "").trim() || (slide.right ?? "").trim())
+      : Boolean((slide.body ?? "").trim());
+
+  pdf.setFillColor(252, 248, 241);
+  pdf.rect(0, 0, pageWidth, pageHeight, "F");
+  pdf.setTextColor(37, 26, 18);
+
+  if (!hasBodyContent) {
+    if (slide.title?.trim()) {
+      pdf.setFont("times", "bold");
+      pdf.setFontSize(titleSize);
+      pdf.text(stripInlineMarkup(slide.title), pageWidth / 2, pageHeight / 2, {
+        align: "center",
+        baseline: "middle",
+        maxWidth: contentWidth,
+      });
+    }
+    return;
+  }
+
+  let top = pad;
+  if (slide.title?.trim()) {
+    pdf.setFont("times", "bold");
+    pdf.setFontSize(titleSize);
+    const titleLines = pdf.splitTextToSize(stripInlineMarkup(slide.title), contentWidth);
+    pdf.text(titleLines, pad, top + titleSize * 0.85);
+    top += titleLines.length * titleSize * 0.95 + titleGap;
+  }
+
+  const bodyTop = top;
+  const bodyBottom = pad + contentHeight;
+
+  if (slide.layout === "split") {
+    const columnWidth = (contentWidth - columnGap) / 2;
+    drawContentBlocksToPdf(pdf, parseRichText(slide.left ?? ""), pad, bodyTop, columnWidth, bodyBottom, bodySize);
+    drawContentBlocksToPdf(
+      pdf,
+      parseRichText(slide.right ?? ""),
+      pad + columnWidth + columnGap,
+      bodyTop,
+      columnWidth,
+      bodyBottom,
+      bodySize,
+    );
+    return;
+  }
+
+  drawContentBlocksToPdf(pdf, parseRichText(slide.body ?? ""), pad, bodyTop, contentWidth, bodyBottom, bodySize);
+}
+
+function drawContentBlocksToPdf(
+  pdf: jsPDF,
+  blocks: ContentBlock[],
+  left: number,
+  top: number,
+  width: number,
+  bottom: number,
+  fontSize: number,
+) {
+  let y = top;
+  const paragraphGap = fontSize * 0.9;
+
+  pdf.setFont("times", "normal");
+  pdf.setFontSize(fontSize);
+
+  for (const block of blocks) {
+    if (y >= bottom) {
+      break;
+    }
+
+    if (block.type === "paragraph") {
+      y = drawWrappedText(pdf, stripInlineMarkup(block.text), left, y, width, bottom, fontSize);
+      y += paragraphGap;
+      continue;
+    }
+
+    y = drawPdfList(pdf, block.items, left, y, width, bottom, fontSize, 0);
+    y += paragraphGap * 0.6;
+  }
+}
+
+function drawPdfList(
+  pdf: jsPDF,
+  items: ListItemNode[],
+  left: number,
+  top: number,
+  width: number,
+  bottom: number,
+  fontSize: number,
+  depth: number,
+) {
+  let y = top;
+  const indent = fontSize * 1.1;
+  const bulletPad = fontSize * 0.7;
+
+  for (const item of items) {
+    if (y >= bottom) {
+      break;
+    }
+
+    const currentLeft = left + depth * indent;
+    const bullet = depth % 2 === 0 ? "\u2022" : "\u25E6";
+    pdf.text(bullet, currentLeft, y + fontSize * 0.82);
+    y = drawWrappedText(
+      pdf,
+      stripInlineMarkup(item.text),
+      currentLeft + bulletPad,
+      y,
+      width - depth * indent - bulletPad,
+      bottom,
+      fontSize * Math.max(0.88, 1 - depth * 0.06),
+    );
+    y += fontSize * 0.35;
+
+    if (item.children.length) {
+      y = drawPdfList(pdf, item.children, left, y, width, bottom, fontSize, depth + 1);
+    }
+  }
+
+  return y;
+}
+
+function drawWrappedText(
+  pdf: jsPDF,
+  text: string,
+  left: number,
+  top: number,
+  width: number,
+  bottom: number,
+  fontSize: number,
+) {
+  pdf.setFontSize(fontSize);
+  const lines = pdf.splitTextToSize(text, Math.max(width, fontSize * 4));
+  const lineHeight = fontSize * 1.3;
+  const maxLines = Math.max(0, Math.floor((bottom - top) / lineHeight));
+
+  for (const line of lines.slice(0, maxLines)) {
+    pdf.text(line, left, top + fontSize * 0.82);
+    top += lineHeight;
+  }
+
+  return top;
+}
+
+function stripInlineMarkup(text: string) {
+  return text.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1");
+}
+
+function makePdfFilename(title: string) {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return `${slug || "slides"}.pdf`;
 }
 
 function bindSlideViewportSizing() {
