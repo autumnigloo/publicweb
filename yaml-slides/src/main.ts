@@ -5,6 +5,8 @@ type SlideLayout = "single" | "split";
 
 interface Deck {
   title: string;
+  headerScale: number;
+  contentScale: number;
   slides: Slide[];
 }
 
@@ -26,6 +28,8 @@ type ContentBlock =
   | { type: "list"; items: ListItemNode[] };
 
 const SAMPLE_YAML = `title: Product Story
+header_scale: 1.0
+content_scale: 1.0
 slides:
   - title: Opening
     body: |
@@ -53,6 +57,7 @@ slides:
     body: |
       Shareable links store the full YAML deck in the URL.
 `;
+const STORAGE_KEY = "yaml-slides-editor-v1";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -68,11 +73,11 @@ app.innerHTML = `
           <p class="eyebrow">YAML editor</p>
           <h1>YAML Slides</h1>
         </div>
-        <button id="copy-link" class="accent">Copy Share Link</button>
       </div>
       <p class="hint">
         Schema: top-level <code>title</code> and <code>slides</code>. Each slide can use
         <code>body</code> or <code>layout: split</code> with <code>left</code> and <code>right</code>.
+        Optional deck-level floats: <code>header_scale</code> and <code>content_scale</code>.
       </p>
       <textarea id="yaml-input" spellcheck="false"></textarea>
       <div class="status-row">
@@ -83,10 +88,10 @@ app.innerHTML = `
     <section class="preview-panel panel">
       <div class="preview-head">
         <div>
-          <p class="eyebrow">Preview</p>
           <h2 id="deck-title"></h2>
         </div>
         <div class="nav-group">
+          <button id="fullscreen-toggle">Fullscreen</button>
           <button id="prev-slide">Prev</button>
           <span id="slide-count"></span>
           <button id="next-slide">Next</button>
@@ -106,38 +111,45 @@ const slideCount = document.querySelector<HTMLSpanElement>("#slide-count")!;
 const slideFrame = document.querySelector<HTMLElement>("#slide-frame")!;
 const prevSlideButton = document.querySelector<HTMLButtonElement>("#prev-slide")!;
 const nextSlideButton = document.querySelector<HTMLButtonElement>("#next-slide")!;
-const copyLinkButton = document.querySelector<HTMLButtonElement>("#copy-link")!;
+const fullscreenButton = document.querySelector<HTMLButtonElement>("#fullscreen-toggle")!;
+const previewPanel = document.querySelector<HTMLElement>(".preview-panel")!;
 
 let currentDeck: Deck | null = null;
 let currentSlideIndex = 0;
 let shareUrl = window.location.href;
 let shareTimer = 0;
+let statusClearTimer = 0;
 
 void init();
 
 async function init() {
   const params = new URLSearchParams(window.location.search);
-  const encodedDeck = params.get("deck");
-  const initialSlide = clampSlideIndex(Number(params.get("slide") ?? "1") - 1, 0);
+  const encodedDeck = params.get("x") ?? params.get("deck");
+  const initialSlide = clampSlideIndex(Number(params.get("s") ?? params.get("slide") ?? "1") - 1, 0);
+  const cachedDeck = loadCachedEditorText();
 
   if (encodedDeck) {
     try {
       yamlInput.value = await decodeDeck(encodedDeck);
       currentSlideIndex = initialSlide;
     } catch (error) {
-      yamlInput.value = SAMPLE_YAML;
+      yamlInput.value = cachedDeck || SAMPLE_YAML;
       setStatus(`Could not decode shared deck: ${formatError(error)}`, true);
     }
+  } else if (cachedDeck) {
+    yamlInput.value = cachedDeck;
   } else {
     yamlInput.value = SAMPLE_YAML;
   }
 
   bindEvents();
+  updateFullscreenButton();
   void refreshFromEditor();
 }
 
 function bindEvents() {
   yamlInput.addEventListener("input", () => {
+    cacheEditorText(yamlInput.value);
     window.clearTimeout(shareTimer);
     shareTimer = window.setTimeout(() => {
       void refreshFromEditor();
@@ -152,13 +164,12 @@ function bindEvents() {
     moveSlide(1);
   });
 
-  copyLinkButton.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setStatus("Share link copied.", false);
-    } catch {
-      setStatus("Clipboard write failed. Copy the URL from the address bar.", true);
-    }
+  fullscreenButton.addEventListener("click", async () => {
+    await toggleFullscreen();
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    updateFullscreenButton();
   });
 
   window.addEventListener("keydown", (event) => {
@@ -178,11 +189,14 @@ function bindEvents() {
 
 async function refreshFromEditor() {
   try {
+    cacheEditorText(yamlInput.value);
     const parsed = parseDeck(yamlInput.value);
     currentDeck = parsed;
     currentSlideIndex = clampSlideIndex(currentSlideIndex, parsed.slides.length - 1);
     renderDeck(parsed);
-    await updateShareUrl();
+    shareUrl = await buildShareUrl(yamlInput.value, currentSlideIndex);
+    syncBrowserUrl(shareUrl);
+    updateUrlSize();
     setStatus("Deck parsed successfully.", false);
   } catch (error) {
     currentDeck = null;
@@ -196,6 +210,8 @@ function renderDeck(deck: Deck) {
   slideCount.textContent = `${currentSlideIndex + 1} / ${deck.slides.length}`;
   prevSlideButton.disabled = currentSlideIndex <= 0;
   nextSlideButton.disabled = currentSlideIndex >= deck.slides.length - 1;
+  slideFrame.style.setProperty("--header-scale", String(deck.headerScale));
+  slideFrame.style.setProperty("--content-scale", String(deck.contentScale));
 
   const slide = deck.slides[currentSlideIndex];
   slideFrame.className = `slide-frame ${slide.layout === "split" ? "split" : "single"}`;
@@ -214,10 +230,10 @@ function renderDeck(deck: Deck) {
 
   if (slide.layout === "split") {
     body.classList.add("split-body");
-    body.appendChild(buildContentColumn(slide.left ?? "", "Left"));
-    body.appendChild(buildContentColumn(slide.right ?? "", "Right"));
+    body.appendChild(buildContentColumn(slide.left ?? ""));
+    body.appendChild(buildContentColumn(slide.right ?? ""));
   } else {
-    body.appendChild(buildContentColumn(slide.body ?? "", ""));
+    body.appendChild(buildContentColumn(slide.body ?? ""));
   }
 
   slideFrame.appendChild(body);
@@ -237,16 +253,9 @@ function renderError(message: string) {
   `;
 }
 
-function buildContentColumn(source: string, label: string) {
+function buildContentColumn(source: string) {
   const column = document.createElement("div");
   column.className = "content-column";
-
-  if (label) {
-    const marker = document.createElement("p");
-    marker.className = "column-label";
-    marker.textContent = label;
-    column.appendChild(marker);
-  }
 
   for (const block of parseRichText(source)) {
     if (block.type === "paragraph") {
@@ -405,12 +414,14 @@ function parseDeck(source: string): Deck {
   }
 
   const title = typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : "Untitled deck";
+  const headerScale = parseScale(raw.header_scale, 1);
+  const contentScale = parseScale(raw.content_scale, 1);
   if (!Array.isArray(raw.slides) || raw.slides.length === 0) {
     throw new Error("Deck must contain a non-empty slides array.");
   }
 
   const slides = raw.slides.map((entry, index) => parseSlide(entry, index));
-  return { title, slides };
+  return { title, headerScale, contentScale, slides };
 }
 
 function parseSlide(entry: unknown, index: number): Slide {
@@ -444,13 +455,20 @@ function parseSlide(entry: unknown, index: number): Slide {
   };
 }
 
-async function updateShareUrl() {
-  const encoded = await encodeDeck(yamlInput.value);
-  const url = new URL(window.location.href);
-  url.searchParams.set("deck", encoded);
-  url.searchParams.set("slide", String(currentSlideIndex + 1));
-  shareUrl = url.toString();
+async function buildShareUrl(source: string, slideIndex: number) {
+  const encoded = await encodeDeck(source);
+  const url = new URL(window.location.origin + window.location.pathname);
+  url.searchParams.set("x", encoded);
+  url.searchParams.set("s", String(slideIndex + 1));
+  return url.toString();
+}
+
+function syncBrowserUrl(urlText: string) {
+  const url = new URL(urlText);
   history.replaceState(null, "", url);
+}
+
+function updateUrlSize() {
   urlSize.textContent = `${shareUrl.length.toLocaleString()} chars`;
 }
 
@@ -500,7 +518,7 @@ function moveSlide(delta: number) {
   }
   currentSlideIndex = nextIndex;
   renderDeck(currentDeck);
-  void updateShareUrl();
+  void updateShareUrlForCurrentState();
 }
 
 function clampSlideIndex(index: number, max: number) {
@@ -511,8 +529,17 @@ function clampSlideIndex(index: number, max: number) {
 }
 
 function setStatus(message: string, isError: boolean) {
+  window.clearTimeout(statusClearTimer);
   statusText.textContent = message;
   statusText.classList.toggle("error-text", isError);
+}
+
+function setTemporaryStatus(message: string, isError: boolean, durationMs: number) {
+  setStatus(message, isError);
+  statusClearTimer = window.setTimeout(() => {
+    statusText.textContent = "";
+    statusText.classList.remove("error-text");
+  }, durationMs);
 }
 
 function formatError(error: unknown) {
@@ -548,4 +575,46 @@ function fromBase64Url(input: string) {
     output[index] = binary.charCodeAt(index);
   }
   return output;
+}
+
+async function updateShareUrlForCurrentState() {
+  shareUrl = await buildShareUrl(yamlInput.value, currentSlideIndex);
+  syncBrowserUrl(shareUrl);
+  updateUrlSize();
+}
+
+async function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    await document.exitFullscreen();
+    return;
+  }
+
+  await previewPanel.requestFullscreen();
+}
+
+function updateFullscreenButton() {
+  fullscreenButton.textContent = document.fullscreenElement === previewPanel ? "Exit Fullscreen" : "Fullscreen";
+}
+
+function cacheEditorText(text: string) {
+  try {
+    localStorage.setItem(STORAGE_KEY, text);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function loadCachedEditorText() {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function parseScale(value: unknown, fallback: number) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return value;
 }

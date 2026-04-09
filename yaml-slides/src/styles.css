@@ -60,12 +60,6 @@ button:disabled {
   box-shadow: none;
 }
 
-button.accent {
-  background: linear-gradient(135deg, #d86f47, var(--accent));
-  color: white;
-  border-color: transparent;
-}
-
 code {
   font-family: "SF Mono", "Menlo", monospace;
   background: rgba(37, 26, 18, 0.06);
@@ -168,11 +162,37 @@ h2 {
   grid-template-rows: auto 1fr auto;
 }
 
+.preview-panel:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  border-radius: 0;
+  padding: 1.25rem;
+  background:
+    radial-gradient(circle at top left, rgba(191, 90, 54, 0.1), transparent 26%),
+    linear-gradient(180deg, #f3ede3 0%, #efe4d5 100%);
+}
+
+.preview-panel:fullscreen .preview-head,
+.preview-panel:fullscreen .keyboard-hint {
+  display: none;
+}
+
+.preview-panel:fullscreen .slide-frame {
+  min-height: calc(100vh - 2.5rem);
+  height: calc(100vh - 2.5rem);
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
 .nav-group {
   justify-content: flex-end;
 }
 
 .slide-frame {
+  --header-scale: 1;
+  --content-scale: 1;
   min-height: 72vh;
   background:
     linear-gradient(140deg, rgba(255, 255, 255, 0.86), rgba(255, 248, 241, 0.92)),
@@ -217,15 +237,14 @@ h2 {
 }
 
 .slide-title h3 {
-  font-size: clamp(2rem, 4.2vw, 4.6rem);
+  font-size: clamp(2rem, calc(4.2vw * var(--header-scale)), 4.6rem);
   line-height: 0.95;
-  max-width: 12ch;
 }
 
 .slide-body {
   display: grid;
   gap: 1.2rem;
-  font-size: clamp(1rem, 1.45vw, 1.35rem);
+  font-size: clamp(1rem, calc(1.45vw * var(--content-scale)), 1.35rem);
   line-height: 1.45;
 }
 
@@ -239,13 +258,6 @@ h2 {
   display: grid;
   gap: 1rem;
   align-content: start;
-}
-
-.column-label {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.8rem;
-  color: var(--muted);
 }
 
 .content-column p {
