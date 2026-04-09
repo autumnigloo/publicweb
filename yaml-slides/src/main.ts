@@ -57,6 +57,8 @@ slides:
     body: |
       Shareable links store the full YAML deck in the URL.
 `;
+const SPLIT_STORAGE_KEY = "yaml-slides-split-v1";
+const DEFAULT_EDITOR_FRACTION = 0.38;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -84,6 +86,7 @@ app.innerHTML = `
         <span id="url-size"></span>
       </div>
     </section>
+    <div id="panel-divider" class="panel-divider" role="separator" aria-orientation="vertical" aria-label="Resize editor and preview"></div>
     <section class="preview-panel panel">
       <div class="preview-head">
         <div>
@@ -105,6 +108,8 @@ app.innerHTML = `
 const yamlInput = document.querySelector<HTMLTextAreaElement>("#yaml-input")!;
 const statusText = document.querySelector<HTMLSpanElement>("#status-text")!;
 const urlSize = document.querySelector<HTMLSpanElement>("#url-size")!;
+const page = document.querySelector<HTMLElement>(".page")!;
+const divider = document.querySelector<HTMLDivElement>("#panel-divider")!;
 const deckTitle = document.querySelector<HTMLHeadingElement>("#deck-title")!;
 const slideCount = document.querySelector<HTMLSpanElement>("#slide-count")!;
 const slideFrame = document.querySelector<HTMLElement>("#slide-frame")!;
@@ -118,6 +123,7 @@ let currentSlideIndex = 0;
 let shareUrl = window.location.href;
 let shareTimer = 0;
 let statusClearTimer = 0;
+let editorFraction = loadSplitFraction();
 
 void init();
 
@@ -139,6 +145,7 @@ async function init() {
   }
 
   bindEvents();
+  applyEditorFraction(editorFraction);
   updateFullscreenButton();
   void refreshFromEditor();
 }
@@ -199,6 +206,35 @@ function bindEvents() {
       moveSlide(1);
     }
   });
+
+  divider.addEventListener("pointerdown", (event) => {
+    if (window.innerWidth <= 980) {
+      return;
+    }
+    event.preventDefault();
+    divider.setPointerCapture(event.pointerId);
+    document.body.classList.add("resizing-panels");
+  });
+
+  divider.addEventListener("pointermove", (event) => {
+    if (!divider.hasPointerCapture(event.pointerId) || window.innerWidth <= 980) {
+      return;
+    }
+    const nextFraction = clampEditorFraction(event.clientX / window.innerWidth);
+    applyEditorFraction(nextFraction);
+  });
+
+  const releaseResize = (event: PointerEvent) => {
+    if (!divider.hasPointerCapture(event.pointerId)) {
+      return;
+    }
+    divider.releasePointerCapture(event.pointerId);
+    document.body.classList.remove("resizing-panels");
+    saveSplitFraction(editorFraction);
+  };
+
+  divider.addEventListener("pointerup", releaseResize);
+  divider.addEventListener("pointercancel", releaseResize);
 }
 
 async function refreshFromEditor() {
@@ -616,4 +652,36 @@ function parseScale(value: unknown, fallback: number) {
     return fallback;
   }
   return value;
+}
+
+function applyEditorFraction(fraction: number) {
+  editorFraction = clampEditorFraction(fraction);
+  page.style.setProperty("--editor-fr", editorFraction.toFixed(4));
+}
+
+function clampEditorFraction(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_EDITOR_FRACTION;
+  }
+  return Math.min(Math.max(value, 0.22), 0.78);
+}
+
+function loadSplitFraction() {
+  try {
+    const raw = localStorage.getItem(SPLIT_STORAGE_KEY);
+    if (!raw) {
+      return DEFAULT_EDITOR_FRACTION;
+    }
+    return clampEditorFraction(Number(raw));
+  } catch {
+    return DEFAULT_EDITOR_FRACTION;
+  }
+}
+
+function saveSplitFraction(fraction: number) {
+  try {
+    localStorage.setItem(SPLIT_STORAGE_KEY, String(clampEditorFraction(fraction)));
+  } catch {
+    // Ignore storage failures.
+  }
 }

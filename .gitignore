@@ -6,6 +6,7 @@ yarn.lock
 # Build output
 dist/
 !lets-go/dist/
+!yaml-slides/dist/
 
 # Environment files
 .env
