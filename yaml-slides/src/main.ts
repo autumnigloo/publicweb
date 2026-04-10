@@ -3,8 +3,6 @@ import { gzipSync, gunzipSync } from "fflate";
 import { load } from "js-yaml";
 import { jsPDF } from "jspdf";
 
-type SlideLayout = "single" | "split";
-
 interface Deck {
   title: string;
   headerScale: number;
@@ -14,7 +12,6 @@ interface Deck {
 
 interface Slide {
   title?: string;
-  layout: SlideLayout;
   body?: string;
   left?: string;
   right?: string;
@@ -55,9 +52,8 @@ slides:
           - And a third layer
 
   - title: Split Layout
-    layout: split
     left: |
-      Add layout: split to divide a slide into two columns.
+      Add left and/or right to divide a slide into two columns.
 
       - Put one outline on the left
       - Keep the structure simple
@@ -291,11 +287,12 @@ function renderDeck(deck: Deck) {
   slideFrame.style.setProperty("--content-scale", String(deck.contentScale));
 
   const slide = deck.slides[currentSlideIndex];
+  const isSplit = isSplitSlide(slide);
   const hasBodyContent =
-    slide.layout === "split"
+    isSplit
       ? Boolean((slide.left ?? "").trim() || (slide.right ?? "").trim())
       : Boolean((slide.body ?? "").trim());
-  slideFrame.className = `slide-frame ${slide.layout === "split" ? "split" : "single"}${!hasBodyContent ? " title-only" : ""}`;
+  slideFrame.className = `slide-frame ${isSplit ? "split" : "single"}${!hasBodyContent ? " title-only" : ""}`;
   slideFrame.replaceChildren();
 
   if (slide.title?.trim()) {
@@ -312,7 +309,7 @@ function renderDeck(deck: Deck) {
     const body = document.createElement("section");
     body.className = "slide-body";
 
-    if (slide.layout === "split") {
+    if (isSplit) {
       body.classList.add("split-body");
       body.appendChild(buildContentColumn(slide.left ?? ""));
       body.appendChild(buildContentColumn(slide.right ?? ""));
@@ -515,29 +512,25 @@ function parseSlide(entry: unknown, index: number): Slide {
     throw new Error(`Slide ${index + 1} must be a mapping.`);
   }
 
-  const layout = entry.layout === "split" ? "split" : "single";
   const title = typeof entry.title === "string" ? entry.title : undefined;
-
-  if (layout === "split") {
-    if (typeof entry.left !== "string" || typeof entry.right !== "string") {
-      throw new Error(`Slide ${index + 1} uses split layout and needs string left/right sections.`);
-    }
-    return {
-      title,
-      layout,
-      left: entry.left,
-      right: entry.right,
-    };
-  }
 
   if (entry.body != null && typeof entry.body !== "string") {
     throw new Error(`Slide ${index + 1} needs a string body when body is present.`);
   }
 
+  if (entry.left != null && typeof entry.left !== "string") {
+    throw new Error(`Slide ${index + 1} needs a string left section when left is present.`);
+  }
+
+  if (entry.right != null && typeof entry.right !== "string") {
+    throw new Error(`Slide ${index + 1} needs a string right section when right is present.`);
+  }
+
   return {
     title,
-    layout,
     body: typeof entry.body === "string" ? entry.body : "",
+    left: typeof entry.left === "string" ? entry.left : "",
+    right: typeof entry.right === "string" ? entry.right : "",
   };
 }
 
@@ -693,7 +686,7 @@ function renderSlideToPdf(pdf: jsPDF, deck: Deck, slide: Slide) {
   const titleGap = 18;
   const columnGap = 24;
   const hasBodyContent =
-    slide.layout === "split"
+    isSplitSlide(slide)
       ? Boolean((slide.left ?? "").trim() || (slide.right ?? "").trim())
       : Boolean((slide.body ?? "").trim());
 
@@ -720,7 +713,7 @@ function renderSlideToPdf(pdf: jsPDF, deck: Deck, slide: Slide) {
   const bodyTop = top;
   const bodyBottom = pad + contentHeight;
 
-  if (slide.layout === "split") {
+  if (isSplitSlide(slide)) {
     const columnWidth = (contentWidth - columnGap) / 2;
     drawContentBlocksToPdf(pdf, parseRichText(slide.left ?? ""), pad, bodyTop, columnWidth, bodyBottom, bodySize);
     drawContentBlocksToPdf(
@@ -995,6 +988,13 @@ function parseScale(value: unknown, fallback: number) {
     return fallback;
   }
   return value;
+}
+
+function isSplitSlide(slide: Slide) {
+  if ((slide.body ?? "").trim()) {
+    return false;
+  }
+  return Boolean((slide.left ?? "").trim() || (slide.right ?? "").trim());
 }
 
 function applyEditorFraction(fraction: number) {
