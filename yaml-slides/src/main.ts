@@ -83,12 +83,6 @@ if (!app) {
 app.innerHTML = `
   <main class="page">
     <section class="editor-panel panel">
-      <div class="panel-head">
-        <div>
-          <p class="eyebrow">YAML editor</p>
-          <h1>YAML Slides</h1>
-        </div>
-      </div>
       <textarea id="yaml-input" spellcheck="false"></textarea>
       <div class="status-row">
         <span id="status-text"></span>
