@@ -3,69 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Speech to Text</title>
+    <title>Voice Dictation</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="layout">
         <aside id="sidebar">
             <div class="sidebar-header">
-                <h2>Configuration</h2>
+                <h2>Settings</h2>
                 <div style="display: flex; gap: 5px;">
-                    <button id="resetConfigButton" title="Reset to Defaults">↺</button>
-                    <button id="saveConfigButton">Save & Apply</button>
+                    <button id="saveConfigButton">Save</button>
                 </div>
             </div>
             <div class="sidebar-section">
-                <label style="font-size: 0.8rem; color: #bdc3c7;">API Keys</label>
-                <input type="password" id="groqApiKeyInput" class="sidebar-input" placeholder="Groq API Key (optional)">
-                <input type="password" id="geminiApiKeyInput" class="sidebar-input" placeholder="Gemini API Key (optional)">
+                <label class="sidebar-label">Groq API Key (for Whisper)</label>
+                <input type="password" id="groqApiKeyInput" class="sidebar-input" placeholder="gsk_...">
             </div>
             <div class="sidebar-section">
-                <label style="font-size: 0.8rem; color: #bdc3c7;">Gemini Model</label>
-                <select id="geminiModelSelect" class="sidebar-input" style="color: #ecf0f1;">
-                    <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (fastest, free)</option>
-                    <option value="gemini-2.5-flash">gemini-2.5-flash (balanced, free)</option>
-                    <option value="gemini-2.5-pro">gemini-2.5-pro (best quality, slow)</option>
+                <label class="sidebar-label">Gemini API Key (for Execute)</label>
+                <input type="password" id="geminiApiKeyInput" class="sidebar-input" placeholder="AIza...">
+            </div>
+            <div class="sidebar-section">
+                <label class="sidebar-label">Gemini Model</label>
+                <select id="geminiModelSelect" class="sidebar-input">
+                    <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (fastest)</option>
+                    <option value="gemini-2.5-flash">gemini-2.5-flash (balanced)</option>
+                    <option value="gemini-2.5-pro">gemini-2.5-pro (best quality)</option>
                 </select>
             </div>
             <div class="sidebar-section">
-                <label style="font-size: 0.8rem; color: #bdc3c7;">Behavior Settings</label>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <input type="checkbox" id="keyboardShortcutsCheckbox" class="sidebar-checkbox" checked>
-                    <label for="keyboardShortcutsCheckbox" style="font-size: 0.9rem; color: #ecf0f1; cursor: pointer; user-select: none;">Enable keyboard shortcuts (Ctrl/Space)</label>
-                </div>
+                <label class="sidebar-label">Gemini System Prompt</label>
+                <textarea id="geminiSystemPromptInput" class="sidebar-textarea" placeholder="System Prompt for Execute…"></textarea>
             </div>
-            <div class="sidebar-section">
-                <label style="font-size: 0.8rem; color: #bdc3c7;">Gemini System Prompt</label>
-                <textarea id="geminiSystemPromptInput" class="sidebar-textarea" placeholder="System Prompt for Gemini..."></textarea>
-            </div>
-            <p class="help-text">Format: regex=replacement<br>Use # for commands.</p>
-            <textarea id="configEditor" spellcheck="false"></textarea>
         </aside>
+
         <main id="content">
             <div class="main-header">
-                <button id="sidebarToggle">☰ Config</button>
-                <h2 class="app-title">Advanced Dictation</h2>
+                <button id="sidebarToggle">☰</button>
+                <h2 class="app-title">Voice Dictation</h2>
             </div>
+
             <div class="editor-container">
                 <div class="editor-wrapper">
-                    <textarea id="textBox" spellcheck="false" placeholder="Start speaking..."></textarea>
+                    <textarea id="textBox" spellcheck="false" placeholder="Your text will appear here after transcription…"></textarea>
                 </div>
-                <div id="preview">Pending: <span id="pendingText"></span></div>
-                <div class="button-group">
-                    <button id="toggleButton">Start Dictation</button>
-                    <button id="processButton">Process</button>
-                    <button id="executeButton">Execute</button>
-                    <button id="discardButton">Discard</button>
-                    <button id="undoButton">Undo</button>
-                    <button id="redoButton">Redo</button>
+
+                <div id="status">Ready</div>
+
+                <div class="button-grid">
+                    <button id="toggleButton" class="btn-record">Start</button>
+                    <button id="processButton" class="btn-action">Process</button>
+                    <button id="discardButton" class="btn-danger">Discard</button>
+                    <button id="executeButton" class="btn-action">Execute</button>
+                    <button id="copyAllButton" class="btn-util">Copy &amp; Clear</button>
+                    <button id="editModeButton" class="btn-util">Read Mode</button>
                 </div>
-                <div id="status">Status: Ready</div>
             </div>
         </main>
     </div>
 
-<script src="main.js"></script>
+    <script src="main.js"></script>
 </body>
 </html>
