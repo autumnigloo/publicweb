@@ -557,13 +557,16 @@ async function processWithGroq(mode = 'process') {
 
                 console.log("Groq Transcription Cleaned:", groqText, "Mode:", isExecuteCommand ? "Execute" : "Process");
 
+                // Show the transcribed text immediately so the user can see what was recognized
+                statusDiv.textContent = `Recognized: "${groqText}"`;
+
                 if (isExecuteCommand) {
                     await executeWithGemini(groqText);
                 } else {
                     runTextProcessing(groqText);
                 }
 
-                if (!statusDiv.textContent.includes("Error")) {
+                if (!statusDiv.textContent.includes("Error") && !statusDiv.textContent.includes("Gemini")) {
                     statusDiv.textContent = "Status: Ready";
                 }
 
@@ -699,9 +702,13 @@ if (window.SpeechRecognition || window.webkitSpeechRecognition) {
         ignoreResults = false;
         currentTranscript = "";
         pendingTextSpan.textContent = "";
-        toggleButton.textContent = 'Stop Dictation';
+        toggleButton.textContent = isMobile ? 'Stop & Transcribe' : 'Stop Dictation';
         toggleButton.classList.add('recording');
-        statusDiv.textContent = "Status: Listening...";
+        // On mobile, browser STT results are unreliable — Whisper (Groq) is the real
+        // transcription path. Tell the user to tap Stop when done speaking.
+        statusDiv.textContent = isMobile
+            ? "Status: Recording… tap Stop to transcribe"
+            : "Status: Listening...";
         recognitionFailCount = 0;
     };
 
@@ -751,6 +758,14 @@ if (window.SpeechRecognition || window.webkitSpeechRecognition) {
             // On mobile we always restart here (continuous=false, so every session ends).
             // Add a short debounce to avoid rapid-fire restart loops when the
             // recognition service is failing immediately on Android.
+            // Keep the button text / status stable so the UX isn't jumpy.
+            if (isMobile) {
+                toggleButton.textContent = 'Stop & Transcribe';
+                toggleButton.classList.add('recording');
+                if (!statusDiv.textContent.includes("Recording")) {
+                    statusDiv.textContent = "Status: Recording… tap Stop to transcribe";
+                }
+            }
             scheduleRestart();
         } else {
             // Only update UI if we are NOT processing (to prevent flickering)
@@ -1354,8 +1369,14 @@ keyboardShortcutsCheckbox.addEventListener('change', () => {
 });
 
 toggleButton.addEventListener('click', () => {
-    if (isRecognizing) {
-        stopDictation();
+    if (isRecognizing || shouldKeepListening) {
+        // On mobile, browser STT gives no live text — Groq/Whisper is the real path.
+        // Auto-process on stop so the user doesn't have to press two buttons.
+        if (isMobile && groqApiKey) {
+            processWithGroq('process');
+        } else {
+            stopDictation();
+        }
     } else {
         startDictation();
     }
