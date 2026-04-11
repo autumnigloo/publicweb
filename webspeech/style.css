@@ -227,8 +227,21 @@ body {
 
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 
-@media (max-width: 600px) {
-    #sidebar { width: min(320px, 90vw); }
-    #sidebar.collapsed { margin-left: min(-320px, -90vw); }
+@media (max-width: 700px) {
+    /* Sidebar overlays content instead of pushing it off-screen */
+    #sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: min(320px, 85vw);
+        margin-left: 0;
+        transform: translateX(0);
+        transition: transform 0.3s ease;
+    }
+    #sidebar.collapsed {
+        transform: translateX(-100%);
+        margin-left: 0; /* override the desktop negative-margin approach */
+    }
     .button-grid button { padding: 24px 10px; font-size: 1.05rem; }
 }

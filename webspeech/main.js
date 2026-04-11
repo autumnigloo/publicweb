@@ -239,7 +239,7 @@ function discardRecording() {
     stopRecording().then(() => {
         audioChunks = [];
         setStatus("Discarded");
-        setTimeout(() => setStatus("Ready"), 1500);
+        setTimeout(() => startRecording(), 800);
     });
 }
 
@@ -299,6 +299,7 @@ async function processRecording() {
         }
     }
     isProcessing = false;
+    startRecording();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -363,6 +364,7 @@ async function executeRecording() {
         setStatus("Gemini error: " + e.message);
     }
     isProcessing = false;
+    startRecording();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -447,6 +449,9 @@ loadConfig();
 restoreState();
 saveState();
 
-if (localStorage.getItem('webspeech_sidebar_collapsed') === 'true') {
+// On narrow screens always start with sidebar hidden so it doesn't overflow
+const isMobileLayout = window.innerWidth <= 700;
+const sidebarPref = localStorage.getItem('webspeech_sidebar_collapsed');
+if (isMobileLayout || sidebarPref === 'true') {
     sidebar.classList.add('collapsed');
 }
