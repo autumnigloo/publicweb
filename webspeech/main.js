@@ -43,6 +43,7 @@ const undoButton     = document.getElementById('undoButton');
 const redoButton     = document.getElementById('redoButton');
 const textBox        = document.getElementById('textBox');
 const toast          = document.getElementById('toast');
+const logBox         = document.getElementById('logBox');
 const sidebar        = document.getElementById('sidebar');
 const sidebarToggle  = document.getElementById('sidebarToggle');
 const groqApiKeyInput         = document.getElementById('groqApiKeyInput');
@@ -108,6 +109,11 @@ function showToast(msg, durationMs = 5000) {
     toast.textContent = msg;
     toast.classList.remove('hidden');
     toastTimer = setTimeout(hideToast, durationMs);
+
+    // Append to session log
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    logBox.value += (logBox.value ? '\n' : '') + `[${time}] ${msg}`;
+    logBox.scrollTop = logBox.scrollHeight;
 }
 function hideToast() {
     clearTimeout(toastTimer);

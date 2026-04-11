@@ -88,6 +88,32 @@ body {
     box-sizing: border-box;
 }
 
+/* Log box — grows to fill remaining sidebar space */
+.sidebar-log-section {
+    flex: 1 1 0;
+    min-height: 80px;
+    padding: 12px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sidebar-log {
+    flex: 1 1 0;
+    min-height: 80px;
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 5px;
+    border: 1px solid #46647f;
+    background-color: #1e2c3a;
+    color: #a8c0d6;
+    font-size: 0.8rem;
+    font-family: monospace;
+    line-height: 1.5;
+    resize: none;
+    box-sizing: border-box;
+}
+
 #saveConfigButton {
     padding: 7px 16px;
     font-size: 0.9rem;
