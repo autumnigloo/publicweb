@@ -3,7 +3,7 @@
 /* -------------------------------------------------------------------------- */
 const MARKER_A = '🅰️';
 const MARKER_B = '🅱️';
-const MAX_HISTORY = 30;
+const MAX_HISTORY = 50;
 const INACTIVITY_TIMEOUT_MS = 3 * 60 * 1000;
 
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful text editing assistant.
@@ -39,15 +39,17 @@ const discardButton  = document.getElementById('discardButton');
 const executeButton  = document.getElementById('executeButton');
 const copyAllButton  = document.getElementById('copyAllButton');
 const editModeButton = document.getElementById('editModeButton');
+const undoButton     = document.getElementById('undoButton');
+const redoButton     = document.getElementById('redoButton');
 const textBox        = document.getElementById('textBox');
-const statusDiv      = document.getElementById('status');
+const toast          = document.getElementById('toast');
 const sidebar        = document.getElementById('sidebar');
 const sidebarToggle  = document.getElementById('sidebarToggle');
-const groqApiKeyInput        = document.getElementById('groqApiKeyInput');
-const geminiApiKeyInput      = document.getElementById('geminiApiKeyInput');
-const geminiSystemPromptInput= document.getElementById('geminiSystemPromptInput');
-const geminiModelSelect      = document.getElementById('geminiModelSelect');
-const saveConfigButton       = document.getElementById('saveConfigButton');
+const groqApiKeyInput         = document.getElementById('groqApiKeyInput');
+const geminiApiKeyInput       = document.getElementById('geminiApiKeyInput');
+const geminiSystemPromptInput = document.getElementById('geminiSystemPromptInput');
+const geminiModelSelect       = document.getElementById('geminiModelSelect');
+const saveConfigButton        = document.getElementById('saveConfigButton');
 
 /* -------------------------------------------------------------------------- */
 /*                               Global State                                 */
@@ -66,6 +68,7 @@ let isProcessing  = false;
 let isReadMode    = false;
 let inactivityTimer;
 let savedSelection = { start: 0, end: 0 };
+let toastTimer    = null;
 
 /* -------------------------------------------------------------------------- */
 /*                           Configuration / Persistence                      */
@@ -86,46 +89,103 @@ function loadConfig() {
 }
 
 saveConfigButton.addEventListener('click', () => {
-    groqApiKey = groqApiKeyInput.value.trim();
-    geminiApiKey = geminiApiKeyInput.value.trim();
-    geminiModel = geminiModelSelect.value;
+    groqApiKey     = groqApiKeyInput.value.trim();
+    geminiApiKey   = geminiApiKeyInput.value.trim();
+    geminiModel    = geminiModelSelect.value;
     geminiSystemPrompt = geminiSystemPromptInput.value.trim() || DEFAULT_SYSTEM_PROMPT;
 
-    localStorage.setItem('webspeech_groq_key', groqApiKey);
-    localStorage.setItem('webspeech_gemini_key', geminiApiKey);
+    localStorage.setItem('webspeech_groq_key',     groqApiKey);
+    localStorage.setItem('webspeech_gemini_key',   geminiApiKey);
     localStorage.setItem('webspeech_gemini_model', geminiModel);
-    localStorage.setItem('webspeech_gemini_prompt', geminiSystemPrompt);
+    localStorage.setItem('webspeech_gemini_prompt',geminiSystemPrompt);
 
-    setStatus("Settings saved", "ok");
-    setTimeout(() => setStatus("Ready"), 2000);
+    showToast("Settings saved");
 });
 
 /* -------------------------------------------------------------------------- */
-/*                               Status Helper                                */
+/*                               Toast Helper                                 */
 /* -------------------------------------------------------------------------- */
-function setStatus(text, cls = "") {
-    statusDiv.textContent = text;
-    statusDiv.className = cls;
+function showToast(msg, durationMs = 5000) {
+    clearTimeout(toastTimer);
+    toast.textContent = msg;
+    toast.classList.remove('hidden');
+    toastTimer = setTimeout(hideToast, durationMs);
 }
+function hideToast() {
+    clearTimeout(toastTimer);
+    toast.classList.add('hidden');
+}
+toast.addEventListener('click', hideToast);
 
 /* -------------------------------------------------------------------------- */
 /*                             Textarea Helpers                               */
 /* -------------------------------------------------------------------------- */
 function getTextContent() { return textBox.value; }
-function setTextContent(text) { textBox.value = text; }
+function setTextContent(v) { textBox.value = v; }
 function getCursorPosition() { return { start: textBox.selectionStart, end: textBox.selectionEnd }; }
 function setCursorPosition(start, end = start) {
     textBox.selectionStart = start;
-    textBox.selectionEnd = end;
+    textBox.selectionEnd   = end;
 }
 
+/* -------------------------------------------------------------------------- */
+/*                             History Management                             */
+/* -------------------------------------------------------------------------- */
+// Always call pushSnapshot() BEFORE making a change so the old state is saved.
+// saveState() de-dupes consecutive identical text.
+function pushSnapshot() {
+    const val = getTextContent();
+    const sel = { ...savedSelection };
+    // Truncate redo stack
+    if (historyIndex < historyStack.length - 1) {
+        historyStack = historyStack.slice(0, historyIndex + 1);
+    }
+    // De-dupe: don't push if text unchanged
+    if (historyIndex >= 0 && historyStack[historyIndex].text === val) {
+        historyStack[historyIndex].selection = sel;
+        return;
+    }
+    historyStack.push({ text: val, selection: sel });
+    if (historyStack.length > MAX_HISTORY) historyStack.shift();
+    else historyIndex++;
+    localStorage.setItem('webspeech_content', val);
+}
+
+function undo() {
+    if (historyIndex <= 0) return;
+    historyIndex--;
+    const s = historyStack[historyIndex];
+    setTextContent(s.text);
+    savedSelection = { ...s.selection };
+    setCursorPosition(savedSelection.start, savedSelection.end);
+    localStorage.setItem('webspeech_content', s.text);
+}
+
+function redo() {
+    if (historyIndex >= historyStack.length - 1) return;
+    historyIndex++;
+    const s = historyStack[historyIndex];
+    setTextContent(s.text);
+    savedSelection = { ...s.selection };
+    setCursorPosition(savedSelection.start, savedSelection.end);
+    localStorage.setItem('webspeech_content', s.text);
+}
+
+function restoreFromStorage() {
+    const saved = localStorage.getItem('webspeech_content');
+    if (saved) setTextContent(saved);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Text Insertion                                */
+/* -------------------------------------------------------------------------- */
 function insertTextAtCursor(text) {
-    saveState();
+    pushSnapshot(); // save pre-insert state
     let start = savedSelection.start;
     let end   = savedSelection.end;
     const current = getTextContent();
 
-    // Auto-space and capitalize like a real dictation app
+    // Auto-space + capitalize
     const before = current.slice(0, start).replace(/[ \t]+$/, '');
     const lastChar = before.length > 0 ? before[before.length - 1] : "";
     const atSentenceStart = before.length === 0 || ['.', '!', '?', '\n'].includes(lastChar);
@@ -147,40 +207,7 @@ function insertTextAtCursor(text) {
     const newPos = start + finalInsert.length;
     setCursorPosition(newPos);
     savedSelection = getCursorPosition();
-    saveState();
-}
-
-/* -------------------------------------------------------------------------- */
-/*                             History Management                             */
-/* -------------------------------------------------------------------------- */
-function saveState() {
-    const val = getTextContent();
-    localStorage.setItem('webspeech_content', val);
-    const state = { text: val, selection: { ...savedSelection } };
-    if (historyIndex >= 0 && historyStack[historyIndex].text === val) {
-        historyStack[historyIndex].selection = state.selection;
-        return;
-    }
-    if (historyIndex < historyStack.length - 1) historyStack = historyStack.slice(0, historyIndex + 1);
-    historyStack.push(state);
-    if (historyStack.length > MAX_HISTORY) historyStack.shift();
-    else historyIndex++;
-}
-
-function restoreState() {
-    const saved = localStorage.getItem('webspeech_content');
-    if (saved) setTextContent(saved);
-}
-
-function undo() {
-    if (historyIndex > 0) {
-        historyIndex--;
-        const s = historyStack[historyIndex];
-        setTextContent(s.text);
-        savedSelection = { ...s.selection };
-        setCursorPosition(savedSelection.start, savedSelection.end);
-        localStorage.setItem('webspeech_content', s.text);
-    }
+    pushSnapshot(); // save post-insert state
 }
 
 /* -------------------------------------------------------------------------- */
@@ -189,16 +216,14 @@ function undo() {
 function resetInactivityTimer() {
     clearTimeout(inactivityTimer);
     inactivityTimer = setTimeout(() => {
-        if (isRecording) {
-            stopRecording();
-            setStatus("Stopped (inactivity)");
-        }
+        if (isRecording) stopRecording();
     }, INACTIVITY_TIMEOUT_MS);
 }
 
 async function startRecording() {
     if (isRecording || isProcessing) return;
     try {
+        // Always request a fresh stream so the mic indicator appears correctly
         if (!globalStream) {
             globalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         }
@@ -209,37 +234,36 @@ async function startRecording() {
         isRecording = true;
         toggleButton.textContent = "Stop";
         toggleButton.classList.add('recording');
-        setStatus("Listening…", "listening");
         resetInactivityTimer();
     } catch (err) {
         console.error("Mic error:", err);
-        setStatus("Mic error — check permissions");
+        showToast("Mic error — check permissions");
     }
 }
 
 function stopRecording() {
     return new Promise(resolve => {
         clearTimeout(inactivityTimer);
-        if (!isRecording || !mediaRecorder) {
-            isRecording = false;
-            toggleButton.textContent = "Start";
-            toggleButton.classList.remove('recording');
-            resolve();
-            return;
-        }
-        mediaRecorder.onstop = () => resolve();
-        mediaRecorder.stop();
-        isRecording = false;
         toggleButton.textContent = "Start";
         toggleButton.classList.remove('recording');
-    });
-}
 
-function discardRecording() {
-    stopRecording().then(() => {
-        audioChunks = [];
-        setStatus("Discarded");
-        setTimeout(() => startRecording(), 800);
+        const finish = () => {
+            // Release the mic entirely so the system indicator goes away
+            if (globalStream) {
+                globalStream.getTracks().forEach(t => t.stop());
+                globalStream = null;
+            }
+            isRecording = false;
+            resolve();
+        };
+
+        if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+            finish();
+            return;
+        }
+        mediaRecorder.onstop = finish;
+        mediaRecorder.stop();
+        isRecording = false; // update flag immediately for UI
     });
 }
 
@@ -248,15 +272,14 @@ function discardRecording() {
 /* -------------------------------------------------------------------------- */
 async function transcribeWithGroq() {
     if (!groqApiKey) {
-        alert("Enter your Groq API key in Settings first.");
+        showToast("Enter your Groq API key in Settings first.");
         return null;
     }
     if (audioChunks.length === 0) {
-        setStatus("Nothing recorded");
+        showToast("Nothing recorded.");
         return null;
     }
 
-    setStatus("Transcribing…", "processing");
     const blob = new Blob(audioChunks, { type: 'audio/webm' });
     audioChunks = [];
 
@@ -276,55 +299,61 @@ async function transcribeWithGroq() {
         return data.text || "";
     } catch (e) {
         console.error("Groq error:", e);
-        setStatus("Groq error: " + e.message);
+        showToast("Groq error: " + e.message);
         return null;
     }
 }
 
 /* -------------------------------------------------------------------------- */
-/*                             Process (Whisper → insert)                     */
+/*                        Discard / Process / Execute                         */
 /* -------------------------------------------------------------------------- */
+function discardRecording() {
+    stopRecording().then(() => {
+        audioChunks = [];
+        showToast("Recording discarded.");
+        startRecording();
+    });
+}
+
 async function processRecording() {
     if (isProcessing) return;
     isProcessing = true;
     await stopRecording();
 
     const text = await transcribeWithGroq();
+    isProcessing = false;
+
     if (text !== null) {
         if (text.trim()) {
             insertTextAtCursor(text.trim());
-            setStatus(`Inserted: "${text.trim().slice(0, 60)}${text.trim().length > 60 ? '…' : ''}"`, "ok");
+            showToast(text.trim());
         } else {
-            setStatus("No speech detected");
+            showToast("No speech detected.");
         }
     }
-    isProcessing = false;
     startRecording();
 }
 
-/* -------------------------------------------------------------------------- */
-/*                            Execute (Whisper → Gemini)                      */
-/* -------------------------------------------------------------------------- */
 async function executeRecording() {
     if (isProcessing) return;
     isProcessing = true;
     await stopRecording();
 
     const instruction = await transcribeWithGroq();
-    if (instruction === null) { isProcessing = false; return; }
-    if (!instruction.trim()) { setStatus("No instruction heard"); isProcessing = false; return; }
+    if (instruction === null) { isProcessing = false; startRecording(); return; }
+    if (!instruction.trim())  { showToast("No instruction heard."); isProcessing = false; startRecording(); return; }
 
     if (!geminiApiKey) {
-        alert("Enter your Gemini API key in Settings first.");
+        showToast("Enter your Gemini API key in Settings first.");
         isProcessing = false;
+        startRecording();
         return;
     }
 
-    setStatus(`Sending to Gemini: "${instruction.trim()}"`, "processing");
+    showToast(`Sending to Gemini: "${instruction.trim()}"`, 30000);
 
-    // Build marked-up document text
-    let docText = getTextContent();
-    let { start: selStart, end: selEnd } = savedSelection;
+    const docText = getTextContent();
+    const { start: selStart, end: selEnd } = savedSelection;
     const markedText = docText.slice(0, selStart) + MARKER_A + docText.slice(selStart, selEnd) + MARKER_B + docText.slice(selEnd);
 
     const payload = {
@@ -339,11 +368,10 @@ async function executeRecording() {
         );
         if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
         const data = await res.json();
-
         const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!raw) throw new Error("Empty Gemini response");
 
-        saveState();
+        pushSnapshot(); // save before applying Gemini result
         const aIdx = raw.indexOf(MARKER_A);
         const bIdx = raw.indexOf(MARKER_B);
         const clean = raw.replace(new RegExp(MARKER_A, 'g'), '').replace(new RegExp(MARKER_B, 'g'), '');
@@ -351,17 +379,16 @@ async function executeRecording() {
         let newStart = clean.length, newEnd = clean.length;
         if (aIdx !== -1 && bIdx !== -1) {
             newStart = aIdx;
-            newEnd = bIdx > aIdx ? bIdx - MARKER_A.length : bIdx;
+            newEnd   = bIdx > aIdx ? bIdx - MARKER_A.length : bIdx;
         }
-
         setTextContent(clean);
         setCursorPosition(newStart, newEnd);
         savedSelection = getCursorPosition();
-        saveState();
-        setStatus("Done", "ok");
+        pushSnapshot(); // save after applying Gemini result
+        showToast("Done.");
     } catch (e) {
         console.error("Gemini error:", e);
-        setStatus("Gemini error: " + e.message);
+        showToast("Gemini error: " + e.message);
     }
     isProcessing = false;
     startRecording();
@@ -372,20 +399,18 @@ async function executeRecording() {
 /* -------------------------------------------------------------------------- */
 async function copyAndClear() {
     const text = getTextContent();
-    if (!text.trim()) { setStatus("Nothing to copy"); return; }
+    if (!text.trim()) { showToast("Nothing to copy."); return; }
     try {
         await navigator.clipboard.writeText(text);
     } catch {
-        // Fallback for browsers that block clipboard without user gesture
         textBox.select();
         document.execCommand('copy');
     }
-    saveState();
+    pushSnapshot();
     setTextContent("");
     savedSelection = { start: 0, end: 0 };
-    saveState();
-    setStatus("Copied & cleared", "ok");
-    setTimeout(() => setStatus("Ready"), 2000);
+    pushSnapshot();
+    showToast("Copied & cleared.");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -397,10 +422,8 @@ function toggleEditMode() {
     editModeButton.textContent = isReadMode ? "Edit Mode" : "Read Mode";
     editModeButton.classList.toggle('active', isReadMode);
     if (!isReadMode) {
-        // Restore focus so keyboard appears immediately on re-enabling edit mode
         textBox.focus();
-        const pos = getTextContent().length;
-        setCursorPosition(pos);
+        setCursorPosition(getTextContent().length);
         savedSelection = getCursorPosition();
     }
 }
@@ -409,47 +432,65 @@ function toggleEditMode() {
 /*                              Button Listeners                              */
 /* -------------------------------------------------------------------------- */
 toggleButton.addEventListener('click', () => {
-    if (isRecording) stopRecording().then(() => setStatus("Stopped"));
+    if (isRecording) stopRecording();
     else startRecording();
 });
 
-processButton.addEventListener('click', processRecording);
-discardButton.addEventListener('click', discardRecording);
-executeButton.addEventListener('click', executeRecording);
-copyAllButton.addEventListener('click', copyAndClear);
+processButton.addEventListener('click',  processRecording);
+discardButton.addEventListener('click',  discardRecording);
+executeButton.addEventListener('click',  executeRecording);
+copyAllButton.addEventListener('click',  copyAndClear);
 editModeButton.addEventListener('click', toggleEditMode);
+undoButton.addEventListener('click', undo);
+redoButton.addEventListener('click', redo);
 
-sidebarToggle.addEventListener('click', () => {
+/* -------------------------------------------------------------------------- */
+/*                          Sidebar / Outside Click                           */
+/* -------------------------------------------------------------------------- */
+sidebarToggle.addEventListener('click', e => {
+    e.stopPropagation();
+    const wasCollapsed = sidebar.classList.contains('collapsed');
     sidebar.classList.toggle('collapsed');
-    localStorage.setItem('webspeech_sidebar_collapsed', sidebar.classList.contains('collapsed'));
+    localStorage.setItem('webspeech_sidebar_collapsed', !wasCollapsed);
+});
+
+// Close sidebar when clicking anywhere outside it on mobile
+document.addEventListener('click', e => {
+    if (window.innerWidth > 700) return;
+    if (!sidebar.classList.contains('collapsed') &&
+        !sidebar.contains(e.target) &&
+        e.target !== sidebarToggle) {
+        sidebar.classList.add('collapsed');
+        localStorage.setItem('webspeech_sidebar_collapsed', 'true');
+    }
 });
 
 /* -------------------------------------------------------------------------- */
 /*                          Selection Tracking                                */
 /* -------------------------------------------------------------------------- */
-textBox.addEventListener('select',  () => { savedSelection = getCursorPosition(); });
-textBox.addEventListener('click',   () => { savedSelection = getCursorPosition(); });
-textBox.addEventListener('keyup',   () => { savedSelection = getCursorPosition(); });
-textBox.addEventListener('input',   () => {
+textBox.addEventListener('select', () => { savedSelection = getCursorPosition(); });
+textBox.addEventListener('click',  () => { savedSelection = getCursorPosition(); });
+textBox.addEventListener('keyup',  () => { savedSelection = getCursorPosition(); });
+textBox.addEventListener('input',  () => {
     savedSelection = getCursorPosition();
     clearTimeout(textBox._saveTimer);
-    textBox._saveTimer = setTimeout(saveState, 1000);
+    textBox._saveTimer = setTimeout(pushSnapshot, 1000);
 });
 
-/* Keyboard: Ctrl+Z undo, Escape stops recording */
+/* Keyboard shortcuts */
 document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && isRecording) { e.preventDefault(); stopRecording().then(() => setStatus("Stopped")); }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !isReadMode) { e.preventDefault(); undo(); }
+    if (e.key === 'Escape' && isRecording) { e.preventDefault(); stopRecording(); }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z' && !isReadMode) { e.preventDefault(); undo(); }
+    if ((e.ctrlKey || e.metaKey) && (e.shiftKey && e.key === 'z' || e.key === 'y') && !isReadMode) { e.preventDefault(); redo(); }
 });
 
 /* -------------------------------------------------------------------------- */
 /*                               Initialization                               */
 /* -------------------------------------------------------------------------- */
 loadConfig();
-restoreState();
-saveState();
+restoreFromStorage();
+pushSnapshot(); // seed the undo stack with the initial state
 
-// On narrow screens always start with sidebar hidden so it doesn't overflow
 const isMobileLayout = window.innerWidth <= 700;
 const sidebarPref = localStorage.getItem('webspeech_sidebar_collapsed');
 if (isMobileLayout || sidebarPref === 'true') {

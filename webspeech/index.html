@@ -48,8 +48,6 @@
                     <textarea id="textBox" spellcheck="false" placeholder="Your text will appear here after transcription…"></textarea>
                 </div>
 
-                <div id="status">Ready</div>
-
                 <div class="button-grid">
                     <button id="toggleButton" class="btn-record">Start</button>
                     <button id="processButton" class="btn-action">Process</button>
@@ -57,7 +55,10 @@
                     <button id="executeButton" class="btn-action">Execute</button>
                     <button id="copyAllButton" class="btn-util">Copy &amp; Clear</button>
                     <button id="editModeButton" class="btn-util">Read Mode</button>
+                    <button id="undoButton" class="btn-util">Undo</button>
+                    <button id="redoButton" class="btn-util">Redo</button>
                 </div>
+                <div id="toast" class="toast hidden"></div>
             </div>
         </main>
     </div>
