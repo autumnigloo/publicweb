@@ -177,9 +177,8 @@ body {
 .toast {
     position: fixed;
     bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    max-width: min(480px, calc(100vw - 32px));
+    left: 16px;
+    right: 16px;
     background: rgba(30, 30, 40, 0.93);
     color: #fff;
     padding: 14px 20px;

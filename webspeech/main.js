@@ -98,8 +98,6 @@ saveConfigButton.addEventListener('click', () => {
     localStorage.setItem('webspeech_gemini_key',   geminiApiKey);
     localStorage.setItem('webspeech_gemini_model', geminiModel);
     localStorage.setItem('webspeech_gemini_prompt',geminiSystemPrompt);
-
-    showToast("Settings saved");
 });
 
 /* -------------------------------------------------------------------------- */
@@ -223,7 +221,6 @@ function resetInactivityTimer() {
 async function startRecording() {
     if (isRecording || isProcessing) return;
     try {
-        // Always request a fresh stream so the mic indicator appears correctly
         if (!globalStream) {
             globalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         }
@@ -241,30 +238,46 @@ async function startRecording() {
     }
 }
 
+// Fully stops recording and releases the mic (Stop button only).
 function stopRecording() {
     return new Promise(resolve => {
         clearTimeout(inactivityTimer);
+        isRecording = false;
         toggleButton.textContent = "Start";
         toggleButton.classList.remove('recording');
 
         const finish = () => {
-            // Release the mic entirely so the system indicator goes away
             if (globalStream) {
                 globalStream.getTracks().forEach(t => t.stop());
                 globalStream = null;
             }
-            isRecording = false;
             resolve();
         };
 
-        if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-            finish();
-            return;
-        }
+        if (!mediaRecorder || mediaRecorder.state === 'inactive') { finish(); return; }
         mediaRecorder.onstop = finish;
         mediaRecorder.stop();
-        isRecording = false; // update flag immediately for UI
     });
+}
+
+// Stops the current MediaRecorder segment to collect chunks, but keeps the
+// underlying stream alive so the mic indicator stays on and there's no
+// audio disruption (e.g. podcast playback).
+function finalizeSegment() {
+    return new Promise(resolve => {
+        if (!mediaRecorder || mediaRecorder.state === 'inactive') { resolve(); return; }
+        mediaRecorder.onstop = resolve;
+        mediaRecorder.stop();
+    });
+}
+
+// Starts a fresh MediaRecorder on the existing stream (no new getUserMedia).
+function beginNewSegment() {
+    if (!globalStream || !isRecording) return;
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(globalStream);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.start();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -272,12 +285,11 @@ function stopRecording() {
 /* -------------------------------------------------------------------------- */
 async function transcribeWithGroq() {
     if (!groqApiKey) {
-        showToast("Enter your Groq API key in Settings first.");
+        showToast("Error: Groq API key not set.");
         return null;
     }
     if (audioChunks.length === 0) {
-        showToast("Nothing recorded.");
-        return null;
+        return null; // nothing to do, no toast
     }
 
     const blob = new Blob(audioChunks, { type: 'audio/webm' });
@@ -307,50 +319,47 @@ async function transcribeWithGroq() {
 /* -------------------------------------------------------------------------- */
 /*                        Discard / Process / Execute                         */
 /* -------------------------------------------------------------------------- */
+
+// Discard: throw away buffered audio without touching the stream.
 function discardRecording() {
-    stopRecording().then(() => {
+    finalizeSegment().then(() => {
         audioChunks = [];
-        showToast("Recording discarded.");
-        startRecording();
+        beginNewSegment();
     });
 }
 
 async function processRecording() {
     if (isProcessing) return;
     isProcessing = true;
-    await stopRecording();
+    await finalizeSegment();
 
     const text = await transcribeWithGroq();
-    isProcessing = false;
 
     if (text !== null) {
         if (text.trim()) {
             insertTextAtCursor(text.trim());
-            showToast(text.trim());
-        } else {
-            showToast("No speech detected.");
+            showToast(text.trim()); // whisper output
         }
+        // silent no-op if empty — no toast for non-errors
     }
-    startRecording();
+    isProcessing = false;
+    beginNewSegment();
 }
 
 async function executeRecording() {
     if (isProcessing) return;
     isProcessing = true;
-    await stopRecording();
+    await finalizeSegment();
 
     const instruction = await transcribeWithGroq();
-    if (instruction === null) { isProcessing = false; startRecording(); return; }
-    if (!instruction.trim())  { showToast("No instruction heard."); isProcessing = false; startRecording(); return; }
+    if (!instruction?.trim()) { isProcessing = false; beginNewSegment(); return; }
 
     if (!geminiApiKey) {
-        showToast("Enter your Gemini API key in Settings first.");
+        showToast("Error: Gemini API key not set.");
         isProcessing = false;
-        startRecording();
+        beginNewSegment();
         return;
     }
-
-    showToast(`Sending to Gemini: "${instruction.trim()}"`, 30000);
 
     const docText = getTextContent();
     const { start: selStart, end: selEnd } = savedSelection;
@@ -371,7 +380,7 @@ async function executeRecording() {
         const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!raw) throw new Error("Empty Gemini response");
 
-        pushSnapshot(); // save before applying Gemini result
+        pushSnapshot();
         const aIdx = raw.indexOf(MARKER_A);
         const bIdx = raw.indexOf(MARKER_B);
         const clean = raw.replace(new RegExp(MARKER_A, 'g'), '').replace(new RegExp(MARKER_B, 'g'), '');
@@ -384,14 +393,13 @@ async function executeRecording() {
         setTextContent(clean);
         setCursorPosition(newStart, newEnd);
         savedSelection = getCursorPosition();
-        pushSnapshot(); // save after applying Gemini result
-        showToast("Done.");
+        pushSnapshot();
     } catch (e) {
         console.error("Gemini error:", e);
         showToast("Gemini error: " + e.message);
     }
     isProcessing = false;
-    startRecording();
+    beginNewSegment();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -399,7 +407,7 @@ async function executeRecording() {
 /* -------------------------------------------------------------------------- */
 async function copyAndClear() {
     const text = getTextContent();
-    if (!text.trim()) { showToast("Nothing to copy."); return; }
+    if (!text.trim()) return;
     try {
         await navigator.clipboard.writeText(text);
     } catch {
@@ -410,7 +418,6 @@ async function copyAndClear() {
     setTextContent("");
     savedSelection = { start: 0, end: 0 };
     pushSnapshot();
-    showToast("Copied & cleared.");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -490,6 +497,12 @@ document.addEventListener('keydown', e => {
 loadConfig();
 restoreFromStorage();
 pushSnapshot(); // seed the undo stack with the initial state
+
+// Start in read mode so the keyboard doesn't pop up immediately on mobile
+isReadMode = true;
+textBox.readOnly = true;
+editModeButton.textContent = "Edit Mode";
+editModeButton.classList.add('active');
 
 const isMobileLayout = window.innerWidth <= 700;
 const sidebarPref = localStorage.getItem('webspeech_sidebar_collapsed');
