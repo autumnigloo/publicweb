@@ -38,14 +38,13 @@ const processButton  = document.getElementById('processButton');
 const discardButton  = document.getElementById('discardButton');
 const executeButton  = document.getElementById('executeButton');
 const copyAllButton  = document.getElementById('copyAllButton');
-const editModeButton = document.getElementById('editModeButton');
+const settingsButton = document.getElementById('settingsButton');
 const undoButton     = document.getElementById('undoButton');
 const redoButton     = document.getElementById('redoButton');
 const textBox        = document.getElementById('textBox');
 const toast          = document.getElementById('toast');
 const logBox         = document.getElementById('logBox');
 const sidebar        = document.getElementById('sidebar');
-const sidebarToggle  = document.getElementById('sidebarToggle');
 const groqApiKeyInput         = document.getElementById('groqApiKeyInput');
 const geminiApiKeyInput       = document.getElementById('geminiApiKeyInput');
 const geminiSystemPromptInput = document.getElementById('geminiSystemPromptInput');
@@ -66,7 +65,6 @@ let geminiApiKey  = "";
 let geminiModel   = "gemini-2.5-flash-lite";
 let geminiSystemPrompt = DEFAULT_SYSTEM_PROMPT;
 let isProcessing  = false;
-let isReadMode    = false;
 let inactivityTimer;
 let savedSelection = { start: 0, end: 0 };
 let toastTimer    = null;
@@ -360,6 +358,8 @@ async function executeRecording() {
     const instruction = await transcribeWithGroq();
     if (!instruction?.trim()) { isProcessing = false; beginNewSegment(); return; }
 
+    showToast(instruction.trim()); // show Whisper output for execute too
+
     if (!geminiApiKey) {
         showToast("Error: Gemini API key not set.");
         isProcessing = false;
@@ -427,21 +427,6 @@ async function copyAndClear() {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                            Edit / Read Mode                                */
-/* -------------------------------------------------------------------------- */
-function toggleEditMode() {
-    isReadMode = !isReadMode;
-    textBox.readOnly = isReadMode;
-    editModeButton.textContent = isReadMode ? "Edit Mode" : "Read Mode";
-    editModeButton.classList.toggle('active', isReadMode);
-    if (!isReadMode) {
-        textBox.focus();
-        setCursorPosition(getTextContent().length);
-        savedSelection = getCursorPosition();
-    }
-}
-
-/* -------------------------------------------------------------------------- */
 /*                              Button Listeners                              */
 /* -------------------------------------------------------------------------- */
 toggleButton.addEventListener('click', () => {
@@ -453,26 +438,27 @@ processButton.addEventListener('click',  processRecording);
 discardButton.addEventListener('click',  discardRecording);
 executeButton.addEventListener('click',  executeRecording);
 copyAllButton.addEventListener('click',  copyAndClear);
-editModeButton.addEventListener('click', toggleEditMode);
 undoButton.addEventListener('click', undo);
 redoButton.addEventListener('click', redo);
 
 /* -------------------------------------------------------------------------- */
 /*                          Sidebar / Outside Click                           */
 /* -------------------------------------------------------------------------- */
-sidebarToggle.addEventListener('click', e => {
-    e.stopPropagation();
+function toggleSidebar(e) {
+    if (e) e.stopPropagation();
     const wasCollapsed = sidebar.classList.contains('collapsed');
     sidebar.classList.toggle('collapsed');
     localStorage.setItem('webspeech_sidebar_collapsed', !wasCollapsed);
-});
+}
 
-// Close sidebar when clicking anywhere outside it on mobile
+settingsButton.addEventListener('click', toggleSidebar);
+
+// Close sidebar when tapping outside it on mobile
 document.addEventListener('click', e => {
     if (window.innerWidth > 700) return;
     if (!sidebar.classList.contains('collapsed') &&
         !sidebar.contains(e.target) &&
-        e.target !== sidebarToggle) {
+        e.target !== settingsButton) {
         sidebar.classList.add('collapsed');
         localStorage.setItem('webspeech_sidebar_collapsed', 'true');
     }
@@ -493,8 +479,8 @@ textBox.addEventListener('input',  () => {
 /* Keyboard shortcuts */
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && isRecording) { e.preventDefault(); stopRecording(); }
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z' && !isReadMode) { e.preventDefault(); undo(); }
-    if ((e.ctrlKey || e.metaKey) && (e.shiftKey && e.key === 'z' || e.key === 'y') && !isReadMode) { e.preventDefault(); redo(); }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); }
+    if ((e.ctrlKey || e.metaKey) && (e.shiftKey && e.key === 'z' || e.key === 'y')) { e.preventDefault(); redo(); }
 });
 
 /* -------------------------------------------------------------------------- */
@@ -503,12 +489,6 @@ document.addEventListener('keydown', e => {
 loadConfig();
 restoreFromStorage();
 pushSnapshot(); // seed the undo stack with the initial state
-
-// Start in read mode so the keyboard doesn't pop up immediately on mobile
-isReadMode = true;
-textBox.readOnly = true;
-editModeButton.textContent = "Edit Mode";
-editModeButton.classList.add('active');
 
 const isMobileLayout = window.innerWidth <= 700;
 const sidebarPref = localStorage.getItem('webspeech_sidebar_collapsed');
