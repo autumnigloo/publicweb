@@ -12,7 +12,7 @@ export class Game {
         wasm.__wbg_game_free(ptr, 0);
     }
     /**
-     * Cone parameters: [sin_a, cos_a, r_min, r_max, sector_phi]
+     * [sin_a, cos_a, r_min, r_max, sector_phi, r_disk, disk_y]
      * @returns {Float32Array}
      */
     cone_params() {
@@ -22,7 +22,6 @@ export class Game {
         return v1;
     }
     /**
-     * Returns [x,y,z, kind, x,y,z, kind, ...] where kind=0 red, 1 blue.
      * @returns {Float32Array}
      */
     enemies_data() {
@@ -76,7 +75,24 @@ export class Game {
         return ret;
     }
     /**
-     * Returns [x,y,z] for the player.
+     * 0 = lateral, 1 = disk
+     * @returns {number}
+     */
+    player_patch() {
+        const ret = wasm.game_player_patch(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Smoothed unit velocity direction in 3D [dx, dy, dz].
+     * @returns {Float32Array}
+     */
+    player_vel_dir() {
+        const ret = wasm.game_player_vel_dir(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * @returns {Float32Array}
      */
     player_xyz() {

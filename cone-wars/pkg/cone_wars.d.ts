@@ -5,12 +5,9 @@ export class Game {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Cone parameters: [sin_a, cos_a, r_min, r_max, sector_phi]
+     * [sin_a, cos_a, r_min, r_max, sector_phi, r_disk, disk_y]
      */
     cone_params(): Float32Array;
-    /**
-     * Returns [x,y,z, kind, x,y,z, kind, ...] where kind=0 red, 1 blue.
-     */
     enemies_data(): Float32Array;
     enemy_count(): number;
     fire_nova(): void;
@@ -20,8 +17,13 @@ export class Game {
     nova_charges(): number;
     nova_progress(): number;
     /**
-     * Returns [x,y,z] for the player.
+     * 0 = lateral, 1 = disk
      */
+    player_patch(): number;
+    /**
+     * Smoothed unit velocity direction in 3D [dx, dy, dz].
+     */
+    player_vel_dir(): Float32Array;
     player_xyz(): Float32Array;
     reset(): void;
     score(): number;
@@ -43,6 +45,8 @@ export interface InitOutput {
     readonly game_new: () => number;
     readonly game_nova_charges: (a: number) => number;
     readonly game_nova_progress: (a: number) => number;
+    readonly game_player_patch: (a: number) => number;
+    readonly game_player_vel_dir: (a: number) => [number, number];
     readonly game_player_xyz: (a: number) => [number, number];
     readonly game_reset: (a: number) => void;
     readonly game_score: (a: number) => number;
