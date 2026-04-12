@@ -18,7 +18,7 @@ const R_MIN: f32 = 1.5;
 const R_MAX: f32 = 24.0;
 const R_DISK: f32 = R_MAX * SIN_A;     // 12.0 — radius of the base disk
 const DISK_Y: f32 = -R_MAX * COS_A;    // ≈ −20.78 — y position of the disk
-const R_DISK_MIN: f32 = 0.5;           // clamp distance from disk center
+const R_DISK_MIN: f32 = 0.0;           // allow reaching the disk center
 
 const PLAYER_SPEED: f32 = 7.0;
 const PLAYER_RADIUS: f32 = 0.6;
@@ -193,6 +193,9 @@ impl GameState {
         // ── Player movement ────────────────────────────────────────────
         match self.player.patch {
             Patch::Lateral => {
+                // Simplified polar controls:
+                // Up/Down = move along cone height (radius in unwrapped sector),
+                // Left/Right = rotate around cone axis.
                 let mut vr = 0.0f32;
                 let mut vt = 0.0f32;
                 if key_up   { vr -= 1.0; }
@@ -200,26 +203,21 @@ impl GameState {
                 if key_left { vt += 1.0; }
                 if key_right{ vt -= 1.0; }
                 let mag = (vr * vr + vt * vt).sqrt();
+                let mut r = self.player.pos.len();
+                let mut phi = self.player.pos.y.atan2(self.player.pos.x);
                 if mag > 0.0 {
                     let (vr, vt) = (vr / mag, vt / mag);
-                    let phi = self.player.pos.y.atan2(self.player.pos.x);
-                    let (sp, cp) = (phi.sin(), phi.cos());
-                    let vu = vr * cp - vt * sp;
-                    let vw = vr * sp + vt * cp;
-                    self.player.pos.x += vu * PLAYER_SPEED * dt;
-                    self.player.pos.y += vw * PLAYER_SPEED * dt;
+                    r += vr * PLAYER_SPEED * dt;
+                    let ang_speed = PLAYER_SPEED / r.max(R_MIN);
+                    phi += vt * ang_speed * dt;
                 }
-                let mut zero = Vec2::default();
-                wrap_seam(&mut self.player.pos, &mut zero);
-                let r = self.player.pos.len();
+                phi = phi.rem_euclid(SECTOR_PHI);
                 if r < R_MIN {
-                    let s = R_MIN / r.max(0.001);
-                    self.player.pos.x *= s;
-                    self.player.pos.y *= s;
+                    r = R_MIN;
                 }
+                self.player.pos = Vec2::new(r * phi.cos(), r * phi.sin());
                 // Check transition to disk
                 if r > R_MAX {
-                    let phi = self.player.pos.y.atan2(self.player.pos.x);
                     let theta = phi / SIN_A;
                     let ct = theta.cos();
                     let st = theta.sin();
@@ -228,35 +226,29 @@ impl GameState {
                 }
             }
             Patch::Disk => {
-                // Local frame: radial_outward from disk center, tangent around it.
-                let dr = self.player.pos.len().max(0.001);
-                let ct = self.player.pos.x / dr;
-                let st = self.player.pos.y / dr;
-                // Up = inward (toward center), Down = outward, Left = +tangent, Right = -tangent
+                // Simplified polar controls on disk:
+                // Left/Right = orbit disk center, Down = toward center, Up = toward rim.
                 let mut vr = 0.0f32;
                 let mut vt = 0.0f32;
-                if key_up   { vr -= 1.0; } // inward
-                if key_down { vr += 1.0; } // outward
+                if key_up   { vr += 1.0; } // toward rim
+                if key_down { vr -= 1.0; } // toward center
                 if key_left { vt += 1.0; }
                 if key_right{ vt -= 1.0; }
                 let mag = (vr * vr + vt * vt).sqrt();
+                let mut dr = self.player.pos.len();
+                let mut theta = self.player.pos.y.atan2(self.player.pos.x);
                 if mag > 0.0 {
                     let (vr, vt) = (vr / mag, vt / mag);
-                    // outward = (ct, st), tangent = (-st, ct)
-                    let vx = vr * ct - vt * st;
-                    let vz = vr * st + vt * ct;
-                    self.player.pos.x += vx * PLAYER_SPEED * dt;
-                    self.player.pos.y += vz * PLAYER_SPEED * dt;
+                    dr += vr * PLAYER_SPEED * dt;
+                    let ang_speed = PLAYER_SPEED / dr.max(0.25);
+                    theta += vt * ang_speed * dt;
                 }
-                let dr2 = self.player.pos.len();
-                if dr2 < R_DISK_MIN {
-                    let s = R_DISK_MIN / dr2.max(0.001);
-                    self.player.pos.x *= s;
-                    self.player.pos.y *= s;
+                if dr < R_DISK_MIN {
+                    dr = R_DISK_MIN;
                 }
+                self.player.pos = Vec2::new(dr * theta.cos(), dr * theta.sin());
                 // Check transition back to lateral
-                if dr2 > R_DISK {
-                    let theta = self.player.pos.y.atan2(self.player.pos.x);
+                if dr > R_DISK {
                     let phi = theta * SIN_A;
                     self.player.patch = Patch::Lateral;
                     self.player.pos = Vec2::new(R_MAX * phi.cos(), R_MAX * phi.sin());
