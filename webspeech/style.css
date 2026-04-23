@@ -88,6 +88,36 @@ body {
     box-sizing: border-box;
 }
 
+.sidebar-textarea-large {
+    min-height: 280px;
+    font-family: monospace;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.sidebar-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #ecf0f1;
+    font-size: 0.9rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.sidebar-checkbox {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #27ae60;
+}
+
+.sidebar-help {
+    color: #bdc3c7;
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
 /* Log box — grows to fill remaining sidebar space */
 .sidebar-log-section {
     flex: 1 1 0;
@@ -151,6 +181,43 @@ body {
     overflow: hidden;
     background: white;
     min-height: 0;
+}
+
+.preview-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.preview-label {
+    font-size: 0.8rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.preview-box {
+    width: 100%;
+    min-height: 72px;
+    padding: 10px 12px;
+    border: 1px solid #d6dbe2;
+    border-radius: 8px;
+    background: #eef2f7;
+    color: #5a6470;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    resize: none;
+    user-select: none;
+    -webkit-user-select: none;
+    box-sizing: border-box;
+}
+
+.preview-box:focus {
+    outline: none;
+}
+
+.preview-section.hidden {
+    display: none;
 }
 
 #textBox {

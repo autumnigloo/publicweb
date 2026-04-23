@@ -41,6 +41,18 @@
                 <label class="sidebar-label">Gemini System Prompt</label>
                 <textarea id="geminiSystemPromptInput" class="sidebar-textarea" placeholder="System Prompt for Execute…"></textarea>
             </div>
+            <div class="sidebar-section">
+                <label class="sidebar-label">Command Parsing</label>
+                <label class="sidebar-toggle-row">
+                    <input type="checkbox" id="commandsEnabledCheckbox" class="sidebar-checkbox">
+                    <span>Enable voice commands, substitutions, and regex operations</span>
+                </label>
+            </div>
+            <div class="sidebar-section" id="commandsConfigSection">
+                <label class="sidebar-label">Command Rules</label>
+                <p class="sidebar-help">Section 1 = commands, 2 = substitutions, 3 = regex operations.</p>
+                <textarea id="commandsConfigInput" class="sidebar-textarea sidebar-textarea-large" spellcheck="false" placeholder="Command rules…"></textarea>
+            </div>
             <div class="sidebar-log-section">
                 <label class="sidebar-label">Log</label>
                 <textarea id="logBox" class="sidebar-log" readonly></textarea>
@@ -51,6 +63,10 @@
             <div class="editor-container">
                 <div class="editor-wrapper">
                     <textarea id="textBox" spellcheck="false" placeholder="Your text will appear here after transcription…"></textarea>
+                </div>
+                <div id="previewSection" class="preview-section">
+                    <label for="previewBox" class="preview-label">Local speech preview</label>
+                    <textarea id="previewBox" class="preview-box" readonly tabindex="-1" aria-live="polite"></textarea>
                 </div>
 
                 <div class="button-grid">
