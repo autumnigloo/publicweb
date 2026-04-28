@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>URL Opener</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f0f13">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="URL Opener">
+  <link rel="apple-touch-icon" href="icon-192.svg">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f13;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    .card {
+      background: #1a1a24;
+      border: 1px solid #2a2a3a;
+      border-radius: 16px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 400px;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 400;
+      letter-spacing: 0.08em;
+      color: #fff;
+    }
+
+    #open-btn {
+      background: #4f6ef7;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 1.1rem 1.5rem;
+      font-size: 1.1rem;
+      font-weight: 500;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.15s, transform 0.1s;
+      letter-spacing: 0.02em;
+    }
+
+    #open-btn:active { transform: scale(0.97); background: #3a5ae0; }
+    #open-btn:hover  { background: #5f7ef8; }
+    #open-btn:disabled { background: #2a2a3a; color: #666; cursor: default; transform: none; }
+
+    #status {
+      font-size: 0.85rem;
+      min-height: 1.2em;
+      color: #aaa;
+      text-align: center;
+      transition: color 0.2s;
+    }
+    #status.ok  { color: #6fcf97; }
+    #status.err { color: #eb5757; }
+
+    details {
+      border-top: 1px solid #2a2a3a;
+      padding-top: 1rem;
+    }
+
+    summary {
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #888;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      user-select: none;
+    }
+    summary::after { content: '▸'; transition: transform 0.2s; }
+    details[open] summary::after { transform: rotate(90deg); }
+
+    .settings-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      margin-top: 1rem;
+    }
+
+    label {
+      font-size: 0.8rem;
+      color: #888;
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+
+    input[type="text"] {
+      background: #0f0f13;
+      border: 1px solid #2a2a3a;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 0.9rem;
+      padding: 0.6rem 0.8rem;
+      width: 100%;
+      outline: none;
+      font-family: monospace;
+    }
+    input[type="text"]:focus { border-color: #4f6ef7; }
+
+    .save-btn {
+      background: transparent;
+      border: 1px solid #4f6ef7;
+      color: #4f6ef7;
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      align-self: flex-start;
+    }
+    .save-btn:hover { background: #4f6ef720; }
+
+    #preview {
+      font-size: 0.75rem;
+      color: #666;
+      word-break: break-all;
+      font-family: monospace;
+      min-height: 1em;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1>URL Opener</h1>
+
+  <div>
+    <button id="open-btn">Open from Clipboard</button>
+  </div>
+
+  <div id="status"></div>
+
+  <details>
+    <summary>Settings</summary>
+    <div class="settings-body">
+      <div>
+        <label for="prefix-input">URL prefix to prepend</label>
+        <input type="text" id="prefix-input" placeholder="https://example.com/proxy?url=" spellcheck="false" autocomplete="off">
+      </div>
+      <div id="preview"></div>
+      <button class="save-btn" id="save-btn">Save</button>
+    </div>
+  </details>
+</div>
+
+<script>
+  const STORAGE_KEY = 'url-opener-prefix';
+  const btn = document.getElementById('open-btn');
+  const statusEl = document.getElementById('status');
+  const prefixInput = document.getElementById('prefix-input');
+  const saveBtn = document.getElementById('save-btn');
+  const previewEl = document.getElementById('preview');
+
+  function getPrefix() {
+    return localStorage.getItem(STORAGE_KEY) ?? '';
+  }
+
+  function setStatus(msg, type = '') {
+    statusEl.textContent = msg;
+    statusEl.className = type;
+  }
+
+  function stripArgs(rawUrl) {
+    try {
+      const u = new URL(rawUrl.trim());
+      return u.origin + u.pathname;
+    } catch {
+      return null;
+    }
+  }
+
+  function buildUrl(raw) {
+    const clean = stripArgs(raw);
+    if (!clean) return null;
+    return getPrefix() + clean;
+  }
+
+  function openUrl(raw) {
+    const final = buildUrl(raw);
+    if (!final) {
+      setStatus('Could not parse URL', 'err');
+      return;
+    }
+    setStatus('Opening…', 'ok');
+    window.open(final, '_blank', 'noopener');
+    setTimeout(() => setStatus(''), 2000);
+  }
+
+  // Clipboard button
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    setStatus('Reading clipboard…');
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) { setStatus('Clipboard is empty', 'err'); return; }
+      openUrl(text);
+    } catch (e) {
+      setStatus('Clipboard access denied — paste manually?', 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Settings
+  prefixInput.value = getPrefix();
+  prefixInput.addEventListener('input', () => {
+    previewEl.textContent = prefixInput.value
+      ? prefixInput.value + 'https://example.com/some/path'
+      : '';
+  });
+
+  saveBtn.addEventListener('click', () => {
+    localStorage.setItem(STORAGE_KEY, prefixInput.value.trim());
+    setStatus('Prefix saved', 'ok');
+    setTimeout(() => setStatus(''), 1500);
+  });
+
+  // Android Share Target: app is opened with ?url=…&text=…&title=…
+  function handleShareTarget() {
+    const p = new URLSearchParams(location.search);
+    const shared = p.get('url') || p.get('text');
+    if (!shared) return;
+    history.replaceState({}, '', location.pathname);
+    openUrl(shared);
+  }
+
+  handleShareTarget();
+
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+</script>
+</body>
+</html>
