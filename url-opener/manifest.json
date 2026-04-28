@@ -2,8 +2,8 @@
   "name": "URL Opener",
   "short_name": "URL Opener",
   "description": "Reads a URL from clipboard or share, strips query args, prepends a prefix, and opens it.",
-  "start_url": "/url-opener/",
-  "scope": "/url-opener/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0f0f13",
   "theme_color": "#0f0f13",
@@ -22,7 +22,7 @@
     }
   ],
   "share_target": {
-    "action": "/url-opener/",
+    "action": "./",
     "method": "GET",
     "params": {
       "url":   "url",
