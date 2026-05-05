@@ -1,0 +1,18 @@
+{
+  "name": "puzzlegame",
+  "version": "0.1.0",
+  "description": "3D first-person puzzle game with per-level visual effects",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "@types/three": "^0.183.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0"
+  }
+}

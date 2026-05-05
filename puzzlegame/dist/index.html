@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Puzzlegame</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      width: 100%;
+      background: #000;
+      color: #ddd;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      overflow: hidden;
+      cursor: none;
+    }
+    canvas { display: block; }
+
+    #crosshair {
+      position: fixed;
+      top: 50%; left: 50%;
+      width: 6px; height: 6px;
+      margin: -3px 0 0 -3px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.65);
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    #hud {
+      position: fixed;
+      top: 1rem;
+      left: 1rem;
+      right: 1rem;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+      z-index: 10;
+      font-family: 'Courier New', monospace;
+    }
+    .hud-box {
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      padding: 0.55rem 0.9rem;
+      font-size: 0.85rem;
+      color: #cfcfd8;
+      backdrop-filter: blur(4px);
+    }
+    .hud-box .label {
+      font-size: 0.65rem;
+      letter-spacing: 0.2em;
+      color: #888;
+      text-transform: uppercase;
+      margin-bottom: 0.2rem;
+    }
+    .hud-box .value {
+      font-size: 1rem;
+      color: #fff;
+    }
+
+    #message {
+      position: fixed;
+      bottom: 4rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 8px;
+      padding: 0.7rem 1.3rem;
+      font-size: 0.95rem;
+      color: #fff;
+      text-align: center;
+      max-width: 70vw;
+      pointer-events: none;
+      z-index: 10;
+      opacity: 0;
+      transition: opacity 0.4s;
+      backdrop-filter: blur(6px);
+    }
+    #message.show { opacity: 1; }
+
+    #controls-hint {
+      position: fixed;
+      bottom: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      color: #777;
+      text-align: center;
+      pointer-events: none;
+      letter-spacing: 0.1em;
+      z-index: 10;
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      color: #fff;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+    }
+    #overlay.hidden { display: none; }
+    #overlay h1 {
+      font-size: 2.2rem;
+      letter-spacing: 0.25em;
+      font-weight: 200;
+      margin-bottom: 0.4rem;
+    }
+    #overlay h2 {
+      font-size: 1.05rem;
+      color: #888;
+      font-weight: 300;
+      letter-spacing: 0.1em;
+      margin-bottom: 1.5rem;
+    }
+    #overlay .level-title {
+      color: #9ad;
+      font-size: 1.3rem;
+      letter-spacing: 0.2em;
+      font-weight: 300;
+      margin-bottom: 0.3rem;
+    }
+    #overlay .blurb {
+      color: #aaa;
+      max-width: 30rem;
+      text-align: center;
+      line-height: 1.6;
+      margin-bottom: 1.4rem;
+      font-size: 0.95rem;
+    }
+    #overlay .controls {
+      font-family: 'Courier New', monospace;
+      color: #888;
+      font-size: 0.8rem;
+      line-height: 1.7;
+      text-align: left;
+      margin-bottom: 1.4rem;
+    }
+    #overlay .click-hint {
+      color: #5a8;
+      font-size: 0.85rem;
+      letter-spacing: 0.15em;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+  </style>
+  <script type="module" crossorigin src="./assets/index-Bw2RAWFq.js"></script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="crosshair"></div>
+
+  <div id="hud">
+    <div class="hud-box">
+      <div class="label">Level</div>
+      <div class="value"><span id="level-num">1</span> &middot; <span id="level-name">—</span></div>
+    </div>
+    <div class="hud-box" id="ability-box">
+      <div class="label" id="ability-label">Ability</div>
+      <div class="value" id="ability-value">—</div>
+    </div>
+  </div>
+
+  <div id="message"></div>
+  <div id="controls-hint">WASD move &middot; mouse look &middot; SPACE jump &middot; E ability &middot; ESC release</div>
+
+  <div id="overlay">
+    <h1>PUZZLEGAME</h1>
+    <h2>a first-person puzzle in shifting worlds</h2>
+    <div class="level-title" id="overlay-level-title">Level 1 — Echo Chamber</div>
+    <div class="blurb" id="overlay-blurb">Find the exit in total darkness. Press <b>E</b> to send a sonar pulse that briefly lights up the geometry it touches.</div>
+    <div class="controls">
+      WASD — move<br>
+      MOUSE — look<br>
+      SPACE — jump<br>
+      E — level ability<br>
+      R — restart level<br>
+      N — next level (skip)
+    </div>
+    <div class="click-hint">CLICK TO PLAY</div>
+  </div>
+
+</body>
+</html>
