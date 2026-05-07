@@ -15,12 +15,16 @@ exit pad, but the *means* of navigation changes every level.
 - [x] **Level 2 — Matrix Hallway.** Three barriers of three panels each. Real
       panels flow downward (Matrix code rain), fake panels flow upward and let
       the player pass through. E briefly tints fakes red.
+- [x] **Level 3 — Time Slice.** Monochrome corridor with five red sweeping
+      lasers that have ghost-trail "motion blur". World-time scales with
+      player XZ speed (4% when still → 100% when at full walk), so the wall's
+      scrolling tick-lines visibly stop when the player does. Touching a sweep
+      flashes the screen red and resets to start. E fully freezes time for
+      1.4 s with a 6 s cooldown. Lasers dwell briefly at each end so there's
+      always a window to commit through.
 
 ## Near-term backlog
 
-- [ ] **Level 3 — Time Slice.** High-contrast monochrome with motion blur
-      trails. Mechanic: stand still and time slows; move and time accelerates.
-      Use to dodge moving platforms or laser sweeps that only stop when you do.
 - [ ] **Level 4 — Mirror Maze.** Heavy chromatic aberration + mirrored
       surfaces. Some "doors" are real, some are reflections. Step into a
       reflection and you're rotated 90° / teleported to the mirror's twin.
@@ -51,8 +55,9 @@ exit pad, but the *means* of navigation changes every level.
 - [ ] Save progress (localStorage). Skip-completed-levels nav.
 - [ ] Optimize collision: BVH or grid for many-box levels. Current O(N) per
       axis is fine while N stays small.
-- [ ] Better death / fail state: currently no level can fail. Some upcoming
-      levels (Heat Vision, Time Slice) need a respawn flow.
+- [x] Basic death / respawn flow (Time Slice teleports to start + red flash
+      via a camera-attached overlay). Future: maybe a generic respawn helper
+      on `LevelContext` so each level doesn't roll its own.
 - [ ] Level-transition fade. Currently it's an instant scene swap.
 - [ ] Mobile / touch controls (probably skip — first-person on mobile is bad).
 - [ ] Code-split the Three.js bundle (current 517 kB warning).
