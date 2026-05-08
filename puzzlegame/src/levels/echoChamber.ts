@@ -58,6 +58,7 @@ export class EchoChamberLevel implements Level {
       rows * CELL
     );
     scene.add(boxMesh(floorB, this.echo.material));
+    world.add(floorB);
 
     const ceilingB = box(
       offX + (cols * CELL) / 2,
