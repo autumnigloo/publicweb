@@ -30,4 +30,10 @@ export interface Level {
 
   // Optional teardown (custom geometry, intervals, …).
   dispose?(ctx: LevelContext): void;
+
+  // Optional fullscreen post-process material. If present, main.ts renders the
+  // scene to a render target each frame, sets `tDiffuse` to that texture, and
+  // draws this material on a fullscreen quad. Levels typically also tick a
+  // `uTime` uniform from update().
+  postMaterial?: THREE.ShaderMaterial;
 }

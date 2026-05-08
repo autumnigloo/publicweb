@@ -22,12 +22,25 @@ exit pad, but the *means* of navigation changes every level.
       flashes the screen red and resets to start. E fully freezes time for
       1.4 s with a 6 s cooldown. Lasers dwell briefly at each end so there's
       always a window to commit through.
+- [x] **Level 4 — Mirror Maze.** Three chambers, four archways each. Heavy
+      chromatic aberration post-process. One archway per chamber is real and
+      teleports the player onward; the other three are sealed by mirror
+      panels. Each archway has a glyph plaque above it; the real archway
+      shows it forward, the three fakes show the same glyph horizontally
+      flipped (because reflections invert handedness). E "Polarizes" the
+      world for 2.5 s — splits invert, fakes flash red, the truth flashes
+      green. 7 s cooldown.
+
+## Engine deltas this session
+
+- [x] Per-level optional `postMaterial: ShaderMaterial`. main.ts now renders
+      the scene to a `WebGLRenderTarget` and draws a fullscreen quad with the
+      level's material when present (auto-resized on window resize). Levels
+      without a postMaterial keep direct-to-canvas rendering; no overhead for
+      the existing levels.
 
 ## Near-term backlog
 
-- [ ] **Level 4 — Mirror Maze.** Heavy chromatic aberration + mirrored
-      surfaces. Some "doors" are real, some are reflections. Step into a
-      reflection and you're rotated 90° / teleported to the mirror's twin.
 - [ ] **Level 5 — Gravity Cubes.** Low-poly pastel world with floating cubes.
       Press E to flip the gravity vector of the cube you're aiming at. Build
       staircases / clear gaps.
@@ -77,6 +90,14 @@ exit pad, but the *means* of navigation changes every level.
   underneath you. (Disorienting, fun once.)
 - Photograph mechanic: take a snapshot, then walk into the snapshot to enter
   the past state of the room.
+- Mirror Maze v2: real reflections via `THREE.Reflector` on the panels, and
+  the "tell" is what's *missing* from the reflection (the real archway shows
+  no reflection at all because it's truly open; mirrors show a flipped copy
+  of the chamber). Replaces the glyph-plaque cue with something more elegant.
+- Bevelled / non-axis-aligned walls. AABB collision is showing its limits;
+  add a `Cylinder` or `Plane` collider before any level needs slopes.
+- Sound-driven Echo Chamber upgrade: real WebAudio panning + reverb so the
+  pulse "sounds" like the room.
 
 ## Notes
 

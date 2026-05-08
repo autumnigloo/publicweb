@@ -23,6 +23,30 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 const player = new Player();
 player.installInput(canvas);
 
+// --- Post-processing pipeline ---
+// Levels can opt in by setting `postMaterial`. We render the scene to this RT
+// then draw a fullscreen quad with the level's material (which samples
+// `tDiffuse`). Levels without a postMaterial render straight to the canvas.
+function rtSize() {
+  const dpr = Math.min(window.devicePixelRatio, 2);
+  return [
+    Math.max(1, Math.floor(window.innerWidth * dpr)),
+    Math.max(1, Math.floor(window.innerHeight * dpr)),
+  ] as const;
+}
+const [rtW, rtH] = rtSize();
+const sceneRT = new THREE.WebGLRenderTarget(rtW, rtH, {
+  minFilter: THREE.LinearFilter,
+  magFilter: THREE.LinearFilter,
+  format: THREE.RGBAFormat,
+  depthBuffer: true,
+});
+const postScene = new THREE.Scene();
+const postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+postQuad.frustumCulled = false;
+postScene.add(postQuad);
+
 // --- Game state ---
 const levels = makeLevels();
 let currentIdx = 0;
@@ -148,6 +172,8 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   player.camera.aspect = window.innerWidth / window.innerHeight;
   player.camera.updateProjectionMatrix();
+  const [w, h] = rtSize();
+  sceneRT.setSize(w, h);
 });
 
 // Initialize first level so we have a scene to render even before the
@@ -174,7 +200,18 @@ function animate() {
     if (messageTimer <= 0) messageEl.classList.remove("show");
   }
 
-  renderer.render(scene, player.camera);
+  const post = currentLevel?.postMaterial;
+  if (post) {
+    renderer.setRenderTarget(sceneRT);
+    renderer.clear();
+    renderer.render(scene, player.camera);
+    renderer.setRenderTarget(null);
+    if (post.uniforms.tDiffuse) post.uniforms.tDiffuse.value = sceneRT.texture;
+    postQuad.material = post;
+    renderer.render(postScene, postCamera);
+  } else {
+    renderer.render(scene, player.camera);
+  }
   requestAnimationFrame(animate);
 }
 animate();
