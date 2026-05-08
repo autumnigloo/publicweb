@@ -39,6 +39,12 @@ export class Player {
     this.yaw = yaw;
     this.pitch = 0;
     this.onGround = false;
+    // Sync the camera immediately so the level renders correctly even before
+    // the next physics tick (e.g. while pointer-lock is still being acquired
+    // after a level transition — otherwise the new scene renders from the
+    // previous level's last camera position and looks completely black).
+    this.camera.position.copy(pos);
+    this.camera.rotation.set(0, yaw, 0, "YXZ");
   }
 
   installInput(canvas: HTMLElement) {

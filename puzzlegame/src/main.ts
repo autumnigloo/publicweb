@@ -105,23 +105,41 @@ overlay.addEventListener("click", () => {
     loadLevel(pendingLoadIdx);
     pendingLoadIdx = null;
   }
-  overlay.classList.add("hidden");
-  canvas.requestPointerLock();
+  // Don't hide the overlay yet — wait for pointerlockchange to confirm the
+  // lock actually engaged. Browsers silently refuse pointer-lock for ~1.5s
+  // after Esc, and previously we'd hide the overlay anyway, leaving the user
+  // stranded in an unlocked level with no way back.
+  const req = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+  if (req && typeof req.then === "function") {
+    req.catch(() => {
+      /* silent reject — overlay is still visible so user can retry */
+    });
+  }
 });
 
 document.addEventListener("pointerlockchange", () => {
-  if (document.pointerLockElement !== canvas && currentLevel) {
+  if (document.pointerLockElement === canvas) {
+    overlay.classList.add("hidden");
+  } else if (currentLevel) {
     overlay.classList.remove("hidden");
   }
 });
 
-// Global hotkeys.
+document.addEventListener("pointerlockerror", () => {
+  if (currentLevel) overlay.classList.remove("hidden");
+});
+
+// Global hotkeys. R (restart) and N (next) work even when pointer-lock isn't
+// active, so the player isn't stranded if a lock-grab fails or while the
+// overlay is up. E still requires pointer-lock since it's a gameplay action.
 document.addEventListener("keydown", (e) => {
-  if (e.code === "KeyE" && currentLevel && document.pointerLockElement === canvas) {
+  if (!currentLevel) return;
+  if (e.code === "KeyE" && document.pointerLockElement === canvas) {
     currentLevel.ability?.(makeContext());
-  } else if (e.code === "KeyR" && document.pointerLockElement === canvas) {
+  } else if (e.code === "KeyR") {
+    pendingLoadIdx = null;
     loadLevel(currentIdx);
-  } else if (e.code === "KeyN" && document.pointerLockElement === canvas) {
+  } else if (e.code === "KeyN") {
     if (currentIdx + 1 < levels.length) showOverlayFor(currentIdx + 1);
   }
 });
