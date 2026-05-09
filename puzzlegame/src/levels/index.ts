@@ -3,6 +3,7 @@ import { EchoChamberLevel } from "./echoChamber";
 import { MatrixHallwayLevel } from "./matrixHallway";
 import { TimeSliceLevel } from "./timeSlice";
 import { MirrorMazeLevel } from "./mirrorMaze";
+import { GravityCubesLevel } from "./gravityCubes";
 
 export function makeLevels(): Level[] {
   return [
@@ -10,5 +11,6 @@ export function makeLevels(): Level[] {
     new MatrixHallwayLevel(),
     new TimeSliceLevel(),
     new MirrorMazeLevel(),
+    new GravityCubesLevel(),
   ];
 }
