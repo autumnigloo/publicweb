@@ -30,20 +30,33 @@ exit pad, but the *means* of navigation changes every level.
       flipped (because reflections invert handedness). E "Polarizes" the
       world for 2.5 s — splits invert, fakes flash red, the truth flashes
       green. 7 s cooldown.
+- [x] **Level 5 — Gravity Cubes.** Warm pastel chamber with a posterize /
+      paper-grain post-process (`createPastelPosterizeMaterial`). Cubes hang
+      in midair, frozen by default. Aim at one and press E to cycle its
+      gravity through {frozen → fall → rise → frozen}; cubes change tint
+      (mint / coral / sky-blue). A simple iterative-relaxation y-only
+      physics step lets them rest on the floor, ceiling, and on each other.
+      Three columns of 1/2/3 cubes drop into a flush staircase up to a
+      lavender ledge. Two off-axis decoy cubes for visual interest.
 
-## Engine deltas this session
+## Engine deltas (cumulative)
 
-- [x] Per-level optional `postMaterial: ShaderMaterial`. main.ts now renders
+- [x] Per-level optional `postMaterial: ShaderMaterial`. main.ts renders
       the scene to a `WebGLRenderTarget` and draws a fullscreen quad with the
       level's material when present (auto-resized on window resize). Levels
       without a postMaterial keep direct-to-canvas rendering; no overhead for
       the existing levels.
+- [x] First level with **dynamic colliders** — Gravity Cubes mutates each
+      cube's `Box.min/max` in place every frame, and `BoxWorld.collides`
+      reads the current bounds at query time. Works for slow-moving
+      platforms; tunneling at high speeds is theoretically possible but
+      hasn't shown up at `CUBE_ACCEL = 6 m/s²`.
+- [x] First level using a per-frame **camera-forward raycast** for
+      object selection (Gravity Cubes). The aimed cube gets a yellow edge
+      ring; HUD shows next-state preview ("FROZEN → FALL").
 
 ## Near-term backlog
 
-- [ ] **Level 5 — Gravity Cubes.** Low-poly pastel world with floating cubes.
-      Press E to flip the gravity vector of the cube you're aiming at. Build
-      staircases / clear gaps.
 - [ ] **Level 6 — Wireframe Dream.** White-on-black wireframe world. Solid
       objects are invisible until you bump them, after which their edges
       remain drawn. Memory puzzle.
@@ -73,10 +86,24 @@ exit pad, but the *means* of navigation changes every level.
       on `LevelContext` so each level doesn't roll its own.
 - [ ] Level-transition fade. Currently it's an instant scene swap.
 - [ ] Mobile / touch controls (probably skip — first-person on mobile is bad).
-- [ ] Code-split the Three.js bundle (current 517 kB warning).
+- [ ] Code-split the Three.js bundle (current ~555 kB warning).
+- [ ] **Riding platforms.** Player should move with cubes that rise/fall while
+      they're standing on them. Currently the player just falls off — fine
+      for Gravity Cubes (you only stand on resting stacks) but limiting for
+      future "elevator" puzzles. Approach: parent the player's footing
+      surface from the previous frame and apply its delta to player position
+      before tryMove.
+- [ ] Generic **interactable raycaster** in `LevelContext`. Right now Gravity
+      Cubes rolls its own per-frame ray + aim ring; lift this into the
+      engine (LevelContext.aimAt(meshes) → hit) so future levels reuse it.
 
 ## Mechanic ideas pile (not yet assigned to levels)
 
+- **Gravity Cubes v2.** Replace flat lambert cubes with a single gravity
+  arrow indicator on each face (canvas texture per state) so direction is
+  legible from any angle. Add a real puzzle wrinkle: an over-ledge "ceiling
+  cap" so flipping a cube to "rise" past a certain point is blocked,
+  forcing the player to choose which cubes fall vs rise to clear the path.
 - A pen / marker that draws permanent strokes in 3D space — solve a maze by
   marking visited corridors when the maze keeps shifting.
 - Shadow puzzle: only the *shadow* of a shape on a target wall must match.
