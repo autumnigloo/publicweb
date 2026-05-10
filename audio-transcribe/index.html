@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Transcribe</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f0f13">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Transcribe">
+  <link rel="apple-touch-icon" href="icon-192.svg">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f13;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 1.2rem;
+    }
+
+    .card {
+      background: #1a1a24;
+      border: 1px solid #2a2a3a;
+      border-radius: 16px;
+      padding: 1.6rem;
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+      align-self: flex-start;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 400;
+      letter-spacing: 0.08em;
+      color: #fff;
+    }
+
+    .picker {
+      border: 2px dashed #2a2a3a;
+      border-radius: 12px;
+      padding: 1.4rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      color: #888;
+      font-size: 0.9rem;
+    }
+    .picker:hover, .picker.drag { border-color: #4f6ef7; background: #4f6ef710; color: #c8c8e0; }
+    .picker input { display: none; }
+    .picker .filename { color: #c8c8e0; font-family: monospace; font-size: 0.85rem; word-break: break-all; }
+    .picker .meta { font-size: 0.75rem; color: #666; margin-top: 0.3rem; }
+
+    .row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+
+    button {
+      background: #4f6ef7;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 0.85rem 1.2rem;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, opacity 0.15s;
+      letter-spacing: 0.02em;
+      flex: 1;
+      min-width: 8rem;
+    }
+    button:hover { background: #5f7ef8; }
+    button:active { transform: scale(0.97); background: #3a5ae0; }
+    button:disabled { background: #2a2a3a; color: #666; cursor: default; transform: none; }
+
+    button.secondary {
+      background: transparent;
+      border: 1px solid #4f6ef7;
+      color: #4f6ef7;
+    }
+    button.secondary:hover { background: #4f6ef720; }
+    button.secondary:disabled { border-color: #2a2a3a; color: #444; background: transparent; }
+
+    button.danger {
+      background: transparent;
+      border: 1px solid #eb5757;
+      color: #eb5757;
+    }
+    button.danger:hover { background: #eb575720; }
+    button.danger:disabled { border-color: #2a2a3a; color: #444; background: transparent; }
+
+    #status {
+      font-size: 0.85rem;
+      min-height: 1.2em;
+      color: #aaa;
+      text-align: center;
+    }
+    #status.ok  { color: #6fcf97; }
+    #status.err { color: #eb5757; }
+    #status.busy { color: #f2c94c; }
+
+    .progress {
+      display: none;
+      height: 3px;
+      background: #2a2a3a;
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+    .progress.busy { display: block; }
+    .progress::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -40%;
+      width: 40%;
+      height: 100%;
+      background: #4f6ef7;
+      animation: slide 1.2s infinite ease-in-out;
+    }
+    @keyframes slide { to { left: 100%; } }
+
+    textarea {
+      width: 100%;
+      min-height: 14rem;
+      background: #0f0f13;
+      border: 1px solid #2a2a3a;
+      border-radius: 10px;
+      color: #e0e0e0;
+      padding: 0.9rem 1rem;
+      font-size: 0.95rem;
+      line-height: 1.55;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      resize: vertical;
+      outline: none;
+    }
+    textarea:focus { border-color: #4f6ef7; }
+
+    details {
+      border-top: 1px solid #2a2a3a;
+      padding-top: 1rem;
+    }
+    summary {
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #888;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      user-select: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: '▸'; transition: transform 0.2s; }
+    details[open] summary::after { transform: rotate(90deg); }
+
+    .settings-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      margin-top: 1rem;
+    }
+    label {
+      font-size: 0.8rem;
+      color: #888;
+      display: block;
+      margin-bottom: 0.3rem;
+    }
+    input[type="password"], input[type="text"] {
+      background: #0f0f13;
+      border: 1px solid #2a2a3a;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 0.9rem;
+      padding: 0.6rem 0.8rem;
+      width: 100%;
+      outline: none;
+      font-family: monospace;
+    }
+    input:focus { border-color: #4f6ef7; }
+
+    .hint {
+      font-size: 0.75rem;
+      color: #666;
+      line-height: 1.5;
+    }
+    .hint a { color: #4f6ef7; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Audio Transcribe</h1>
+
+  <label class="picker" id="picker">
+    <input type="file" id="file-input" accept="audio/*,.m4a,.mp3,.wav,.ogg,.webm,.aac,.flac,.mp4">
+    <div id="picker-text">Tap to choose an audio file<br><span class="meta">or share from the Recorder app</span></div>
+  </label>
+
+  <div class="row">
+    <button id="transcribe-btn" disabled>Transcribe</button>
+  </div>
+
+  <div class="progress" id="progress"></div>
+  <div id="status"></div>
+
+  <textarea id="transcript" placeholder="Transcript will appear here…" spellcheck="false"></textarea>
+
+  <div class="row">
+    <button class="secondary" id="cut-btn" disabled>Cut</button>
+    <button class="danger" id="clear-btn" disabled>Clear</button>
+  </div>
+
+  <details id="settings">
+    <summary>Settings</summary>
+    <div class="settings-body">
+      <div>
+        <label for="api-key-input">Groq API key</label>
+        <input type="password" id="api-key-input" placeholder="gsk_…" spellcheck="false" autocomplete="off">
+      </div>
+      <div>
+        <label for="model-input">Whisper model</label>
+        <input type="text" id="model-input" placeholder="whisper-large-v3-turbo" spellcheck="false" autocomplete="off">
+      </div>
+      <div>
+        <label for="lang-input">Language code (optional, e.g. en)</label>
+        <input type="text" id="lang-input" placeholder="auto" spellcheck="false" autocomplete="off">
+      </div>
+      <button class="secondary" id="save-settings">Save</button>
+      <p class="hint">
+        Stored locally in your browser. Get a key at
+        <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>.
+      </p>
+    </div>
+  </details>
+</div>
+
+<script>
+  const KEY_API   = 'audio-transcribe-groq-key';
+  const KEY_MODEL = 'audio-transcribe-model';
+  const KEY_LANG  = 'audio-transcribe-lang';
+  const DEFAULT_MODEL = 'whisper-large-v3-turbo';
+
+  const fileInput     = document.getElementById('file-input');
+  const picker        = document.getElementById('picker');
+  const pickerText    = document.getElementById('picker-text');
+  const transcribeBtn = document.getElementById('transcribe-btn');
+  const cutBtn        = document.getElementById('cut-btn');
+  const clearBtn      = document.getElementById('clear-btn');
+  const transcript    = document.getElementById('transcript');
+  const statusEl      = document.getElementById('status');
+  const progressEl    = document.getElementById('progress');
+  const apiKeyInput   = document.getElementById('api-key-input');
+  const modelInput    = document.getElementById('model-input');
+  const langInput     = document.getElementById('lang-input');
+  const saveBtn       = document.getElementById('save-settings');
+  const settings      = document.getElementById('settings');
+
+  let currentFile = null;
+
+  function setStatus(msg, type = '') {
+    statusEl.textContent = msg;
+    statusEl.className = type;
+  }
+
+  function setBusy(busy) {
+    progressEl.classList.toggle('busy', busy);
+    transcribeBtn.disabled = busy || !currentFile;
+  }
+
+  function updateOutputButtons() {
+    const has = transcript.value.length > 0;
+    cutBtn.disabled = !has;
+    clearBtn.disabled = !has;
+  }
+
+  function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  function setFile(file) {
+    currentFile = file || null;
+    if (!file) {
+      pickerText.innerHTML = 'Tap to choose an audio file<br><span class="meta">or share from the Recorder app</span>';
+      transcribeBtn.disabled = true;
+      return;
+    }
+    pickerText.innerHTML =
+      '<div class="filename">' + (file.name || 'shared-audio') + '</div>' +
+      '<div class="meta">' + formatBytes(file.size) + (file.type ? ' · ' + file.type : '') + '</div>';
+    transcribeBtn.disabled = false;
+  }
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files && fileInput.files[0]) setFile(fileInput.files[0]);
+  });
+
+  // Drag & drop (desktop)
+  ['dragover', 'dragenter'].forEach(ev =>
+    picker.addEventListener(ev, e => { e.preventDefault(); picker.classList.add('drag'); })
+  );
+  ['dragleave', 'drop'].forEach(ev =>
+    picker.addEventListener(ev, e => { e.preventDefault(); picker.classList.remove('drag'); })
+  );
+  picker.addEventListener('drop', e => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) setFile(f);
+  });
+
+  transcribeBtn.addEventListener('click', () => {
+    if (currentFile) transcribe(currentFile);
+  });
+
+  async function transcribe(file) {
+    const apiKey = (localStorage.getItem(KEY_API) || '').trim();
+    if (!apiKey) {
+      setStatus('Set your Groq API key in Settings first.', 'err');
+      settings.open = true;
+      apiKeyInput.focus();
+      return;
+    }
+    const model = (localStorage.getItem(KEY_MODEL) || '').trim() || DEFAULT_MODEL;
+    const lang  = (localStorage.getItem(KEY_LANG)  || '').trim();
+
+    setBusy(true);
+    setStatus('Uploading and transcribing… (' + formatBytes(file.size) + ')', 'busy');
+
+    const fd = new FormData();
+    const sendName = file.name && /\.[a-z0-9]+$/i.test(file.name) ? file.name : 'recording.m4a';
+    fd.append('file', file, sendName);
+    fd.append('model', model);
+    fd.append('response_format', 'json');
+    if (lang) fd.append('language', lang);
+
+    try {
+      const t0 = performance.now();
+      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + apiKey },
+        body: fd,
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(res.status + ': ' + errText.slice(0, 300));
+      }
+      const data = await res.json();
+      const text = (data.text || '').trim();
+      const sep = transcript.value.trim() ? '\n\n' : '';
+      transcript.value = transcript.value + sep + text;
+      updateOutputButtons();
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      setStatus('Done in ' + secs + 's.', 'ok');
+    } catch (err) {
+      console.error(err);
+      setStatus('Error: ' + err.message, 'err');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  cutBtn.addEventListener('click', async () => {
+    const text = transcript.value;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      transcript.value = '';
+      updateOutputButtons();
+      setStatus('Copied to clipboard, transcript cleared.', 'ok');
+    } catch (e) {
+      // fallback: select-and-copy
+      transcript.select();
+      try { document.execCommand('copy'); } catch {}
+      transcript.value = '';
+      updateOutputButtons();
+      setStatus('Copied (fallback), transcript cleared.', 'ok');
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    if (!transcript.value) return;
+    transcript.value = '';
+    updateOutputButtons();
+    setStatus('Cleared.', 'ok');
+  });
+
+  transcript.addEventListener('input', updateOutputButtons);
+
+  // Settings load
+  apiKeyInput.value = localStorage.getItem(KEY_API)   || '';
+  modelInput.value  = localStorage.getItem(KEY_MODEL) || '';
+  langInput.value   = localStorage.getItem(KEY_LANG)  || '';
+  if (!apiKeyInput.value) settings.open = true;
+
+  saveBtn.addEventListener('click', () => {
+    localStorage.setItem(KEY_API,   apiKeyInput.value.trim());
+    localStorage.setItem(KEY_MODEL, modelInput.value.trim());
+    localStorage.setItem(KEY_LANG,  langInput.value.trim());
+    setStatus('Settings saved.', 'ok');
+    setTimeout(() => { if (statusEl.textContent === 'Settings saved.') setStatus(''); }, 1500);
+  });
+
+  // Pick up a file shared via Web Share Target (POST -> SW cache).
+  async function loadSharedFile() {
+    const params = new URLSearchParams(location.search);
+    if (!params.has('shared')) return;
+    history.replaceState({}, '', location.pathname);
+
+    setStatus('Loading shared audio…', 'busy');
+    try {
+      // Wait until the SW is ready, then read what it cached.
+      if ('serviceWorker' in navigator) {
+        await navigator.serviceWorker.ready;
+      }
+      const res = await caches.match('/__shared_audio__');
+      if (!res) {
+        setStatus('No shared file found.', 'err');
+        return;
+      }
+      const blob = await res.blob();
+      const name = decodeURIComponent(res.headers.get('x-filename') || 'shared-audio.m4a');
+      const file = new File([blob], name, { type: blob.type || 'audio/mp4' });
+
+      // Drain the cache so it isn't reused on next open.
+      const cache = await caches.open('audio-transcribe-shared');
+      await cache.delete('/__shared_audio__');
+
+      setFile(file);
+      setStatus('Shared file ready — starting transcription…', 'busy');
+      transcribe(file);
+    } catch (e) {
+      console.error(e);
+      setStatus('Could not read shared file: ' + e.message, 'err');
+    }
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+
+  loadSharedFile();
+  updateOutputButtons();
+</script>
+</body>
+</html>
