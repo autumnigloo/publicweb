@@ -174,7 +174,7 @@
       display: block;
       margin-bottom: 0.3rem;
     }
-    input[type="password"], input[type="text"] {
+    input[type="password"], input[type="text"], #keys-input {
       background: #0f0f13;
       border: 1px solid #2a2a3a;
       border-radius: 8px;
@@ -185,7 +185,8 @@
       outline: none;
       font-family: monospace;
     }
-    input:focus { border-color: #4f6ef7; }
+    input:focus, #keys-input:focus { border-color: #4f6ef7; }
+    #keys-input { resize: vertical; min-height: 4rem; line-height: 1.4; }
 
     .hint {
       font-size: 0.75rem;
@@ -224,8 +225,9 @@
     <summary>Settings</summary>
     <div class="settings-body">
       <div>
-        <label for="api-key-input">Groq API key</label>
-        <input type="password" id="api-key-input" placeholder="gsk_…" spellcheck="false" autocomplete="off">
+        <label for="keys-input">API keys — line 1: OpenRouter, line 2: Groq</label>
+        <textarea id="keys-input" rows="2" spellcheck="false" autocomplete="off"
+          placeholder="sk-or-…&#10;gsk_…"></textarea>
       </div>
       <div>
         <label for="model-input">Whisper model</label>
@@ -235,14 +237,9 @@
         <label for="lang-input">Language code (optional, e.g. en)</label>
         <input type="text" id="lang-input" placeholder="auto" spellcheck="false" autocomplete="off">
       </div>
-
-      <div style="border-top: 1px solid #2a2a3a; padding-top: 0.8rem; margin-top: 0.2rem;">
-        <label for="or-key-input">OpenRouter API key (for cleanup)</label>
-        <input type="password" id="or-key-input" placeholder="sk-or-…" spellcheck="false" autocomplete="off">
-      </div>
       <div>
         <label for="or-model-input">OpenRouter model</label>
-        <input type="text" id="or-model-input" placeholder="deepseek/deepseek-chat-v3.1" spellcheck="false" autocomplete="off">
+        <input type="text" id="or-model-input" placeholder="deepseek/deepseek-v4-flash" spellcheck="false" autocomplete="off">
       </div>
       <div>
         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
@@ -263,14 +260,15 @@
 </div>
 
 <script>
-  const KEY_API           = 'audio-transcribe-groq-key';
+  const KEY_KEYS          = 'audio-transcribe-keys';
   const KEY_MODEL         = 'audio-transcribe-model';
   const KEY_LANG          = 'audio-transcribe-lang';
-  const KEY_OR_API        = 'audio-transcribe-or-key';
   const KEY_OR_MODEL      = 'audio-transcribe-or-model';
   const KEY_AUTO_CLEANUP  = 'audio-transcribe-auto-cleanup';
+  const LEGACY_KEY_GROQ   = 'audio-transcribe-groq-key';
+  const LEGACY_KEY_OR     = 'audio-transcribe-or-key';
   const DEFAULT_MODEL     = 'whisper-large-v3-turbo';
-  const DEFAULT_OR_MODEL  = 'deepseek/deepseek-chat-v3.1';
+  const DEFAULT_OR_MODEL  = 'deepseek/deepseek-v4-flash';
 
   const fileInput      = document.getElementById('file-input');
   const picker         = document.getElementById('picker');
@@ -282,14 +280,21 @@
   const transcript     = document.getElementById('transcript');
   const statusEl       = document.getElementById('status');
   const progressEl     = document.getElementById('progress');
-  const apiKeyInput    = document.getElementById('api-key-input');
+  const keysInput      = document.getElementById('keys-input');
   const modelInput     = document.getElementById('model-input');
   const langInput      = document.getElementById('lang-input');
-  const orKeyInput     = document.getElementById('or-key-input');
   const orModelInput   = document.getElementById('or-model-input');
   const autoCleanupInp = document.getElementById('auto-cleanup-input');
   const saveBtn        = document.getElementById('save-settings');
   const settings       = document.getElementById('settings');
+
+  function parseKeys(text) {
+    const lines = (text || '').split(/\r?\n/).map(s => s.trim());
+    return { openrouter: lines[0] || '', groq: lines[1] || '' };
+  }
+  function getKeys() {
+    return parseKeys(localStorage.getItem(KEY_KEYS) || '');
+  }
 
   let currentFile = null;
 
@@ -355,11 +360,11 @@
   });
 
   async function transcribe(file) {
-    const apiKey = (localStorage.getItem(KEY_API) || '').trim();
+    const { groq: apiKey } = getKeys();
     if (!apiKey) {
-      setStatus('Set your Groq API key in Settings first.', 'err');
+      setStatus('Set your Groq API key in Settings (line 2).', 'err');
       settings.open = true;
-      apiKeyInput.focus();
+      keysInput.focus();
       return;
     }
     const model = (localStorage.getItem(KEY_MODEL) || '').trim() || DEFAULT_MODEL;
@@ -395,7 +400,7 @@
       setStatus('Transcribed in ' + secs + 's.', 'ok');
 
       const autoCleanup = localStorage.getItem(KEY_AUTO_CLEANUP) === '1';
-      const hasOrKey = (localStorage.getItem(KEY_OR_API) || '').trim();
+      const hasOrKey = !!getKeys().openrouter;
       if (autoCleanup && hasOrKey && text) {
         await cleanupTranscript({ rangeStart: transcript.value.length - text.length });
       }
@@ -408,11 +413,11 @@
   }
 
   async function cleanupTranscript({ rangeStart } = {}) {
-    const orKey = (localStorage.getItem(KEY_OR_API) || '').trim();
+    const { openrouter: orKey } = getKeys();
     if (!orKey) {
-      setStatus('Set your OpenRouter API key in Settings first.', 'err');
+      setStatus('Set your OpenRouter API key in Settings (line 1).', 'err');
       settings.open = true;
-      orKeyInput.focus();
+      keysInput.focus();
       return;
     }
     const orModel = (localStorage.getItem(KEY_OR_MODEL) || '').trim() || DEFAULT_OR_MODEL;
@@ -508,23 +513,38 @@
 
   transcript.addEventListener('input', updateOutputButtons);
 
-  // Settings load
-  apiKeyInput.value    = localStorage.getItem(KEY_API)       || '';
-  modelInput.value     = localStorage.getItem(KEY_MODEL)     || '';
-  langInput.value      = localStorage.getItem(KEY_LANG)      || '';
-  orKeyInput.value     = localStorage.getItem(KEY_OR_API)    || '';
-  orModelInput.value   = localStorage.getItem(KEY_OR_MODEL)  || '';
+  // Settings load — migrate any legacy split keys into the unified textarea.
+  let storedKeys = localStorage.getItem(KEY_KEYS);
+  if (storedKeys === null) {
+    const legacyOr   = (localStorage.getItem(LEGACY_KEY_OR)   || '').trim();
+    const legacyGroq = (localStorage.getItem(LEGACY_KEY_GROQ) || '').trim();
+    if (legacyOr || legacyGroq) {
+      storedKeys = legacyOr + '\n' + legacyGroq;
+      localStorage.setItem(KEY_KEYS, storedKeys);
+      localStorage.removeItem(LEGACY_KEY_OR);
+      localStorage.removeItem(LEGACY_KEY_GROQ);
+    } else {
+      storedKeys = '';
+    }
+  }
+  keysInput.value      = storedKeys;
+  modelInput.value     = localStorage.getItem(KEY_MODEL)    || '';
+  langInput.value      = localStorage.getItem(KEY_LANG)     || '';
+  orModelInput.value   = localStorage.getItem(KEY_OR_MODEL) || '';
+  const { groq: loadedGroq, openrouter: loadedOr } = parseKeys(storedKeys);
   autoCleanupInp.checked = localStorage.getItem(KEY_AUTO_CLEANUP) === '1'
-    || (localStorage.getItem(KEY_AUTO_CLEANUP) === null && !!orKeyInput.value);
-  if (!apiKeyInput.value) settings.open = true;
+    || (localStorage.getItem(KEY_AUTO_CLEANUP) === null && !!loadedOr);
+  if (!loadedGroq) settings.open = true;
 
   saveBtn.addEventListener('click', () => {
-    localStorage.setItem(KEY_API,      apiKeyInput.value.trim());
+    const { openrouter, groq } = parseKeys(keysInput.value);
+    const normalized = (openrouter || groq) ? (openrouter + '\n' + groq) : '';
+    localStorage.setItem(KEY_KEYS,     normalized);
     localStorage.setItem(KEY_MODEL,    modelInput.value.trim());
     localStorage.setItem(KEY_LANG,     langInput.value.trim());
-    localStorage.setItem(KEY_OR_API,   orKeyInput.value.trim());
     localStorage.setItem(KEY_OR_MODEL, orModelInput.value.trim());
     localStorage.setItem(KEY_AUTO_CLEANUP, autoCleanupInp.checked ? '1' : '0');
+    keysInput.value = normalized;
     setStatus('Settings saved.', 'ok');
     setTimeout(() => { if (statusEl.textContent === 'Settings saved.') setStatus(''); }, 1500);
   });
