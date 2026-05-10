@@ -207,6 +207,7 @@
 
   <div class="row">
     <button id="transcribe-btn" disabled>Transcribe</button>
+    <button class="secondary" id="cleanup-btn" disabled>Clean up</button>
   </div>
 
   <div class="progress" id="progress"></div>
@@ -234,35 +235,61 @@
         <label for="lang-input">Language code (optional, e.g. en)</label>
         <input type="text" id="lang-input" placeholder="auto" spellcheck="false" autocomplete="off">
       </div>
+
+      <div style="border-top: 1px solid #2a2a3a; padding-top: 0.8rem; margin-top: 0.2rem;">
+        <label for="or-key-input">OpenRouter API key (for cleanup)</label>
+        <input type="password" id="or-key-input" placeholder="sk-or-…" spellcheck="false" autocomplete="off">
+      </div>
+      <div>
+        <label for="or-model-input">OpenRouter model</label>
+        <input type="text" id="or-model-input" placeholder="deepseek/deepseek-chat-v3.1" spellcheck="false" autocomplete="off">
+      </div>
+      <div>
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" id="auto-cleanup-input" style="width: auto; margin: 0;">
+          Auto clean up after transcription
+        </label>
+      </div>
+
       <button class="secondary" id="save-settings">Save</button>
       <p class="hint">
-        Stored locally in your browser. Get a key at
-        <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>.
+        Stored locally in your browser. Groq key at
+        <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>,
+        OpenRouter key at
+        <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>.
       </p>
     </div>
   </details>
 </div>
 
 <script>
-  const KEY_API   = 'audio-transcribe-groq-key';
-  const KEY_MODEL = 'audio-transcribe-model';
-  const KEY_LANG  = 'audio-transcribe-lang';
-  const DEFAULT_MODEL = 'whisper-large-v3-turbo';
+  const KEY_API           = 'audio-transcribe-groq-key';
+  const KEY_MODEL         = 'audio-transcribe-model';
+  const KEY_LANG          = 'audio-transcribe-lang';
+  const KEY_OR_API        = 'audio-transcribe-or-key';
+  const KEY_OR_MODEL      = 'audio-transcribe-or-model';
+  const KEY_AUTO_CLEANUP  = 'audio-transcribe-auto-cleanup';
+  const DEFAULT_MODEL     = 'whisper-large-v3-turbo';
+  const DEFAULT_OR_MODEL  = 'deepseek/deepseek-chat-v3.1';
 
-  const fileInput     = document.getElementById('file-input');
-  const picker        = document.getElementById('picker');
-  const pickerText    = document.getElementById('picker-text');
-  const transcribeBtn = document.getElementById('transcribe-btn');
-  const cutBtn        = document.getElementById('cut-btn');
-  const clearBtn      = document.getElementById('clear-btn');
-  const transcript    = document.getElementById('transcript');
-  const statusEl      = document.getElementById('status');
-  const progressEl    = document.getElementById('progress');
-  const apiKeyInput   = document.getElementById('api-key-input');
-  const modelInput    = document.getElementById('model-input');
-  const langInput     = document.getElementById('lang-input');
-  const saveBtn       = document.getElementById('save-settings');
-  const settings      = document.getElementById('settings');
+  const fileInput      = document.getElementById('file-input');
+  const picker         = document.getElementById('picker');
+  const pickerText     = document.getElementById('picker-text');
+  const transcribeBtn  = document.getElementById('transcribe-btn');
+  const cleanupBtn     = document.getElementById('cleanup-btn');
+  const cutBtn         = document.getElementById('cut-btn');
+  const clearBtn       = document.getElementById('clear-btn');
+  const transcript     = document.getElementById('transcript');
+  const statusEl       = document.getElementById('status');
+  const progressEl     = document.getElementById('progress');
+  const apiKeyInput    = document.getElementById('api-key-input');
+  const modelInput     = document.getElementById('model-input');
+  const langInput      = document.getElementById('lang-input');
+  const orKeyInput     = document.getElementById('or-key-input');
+  const orModelInput   = document.getElementById('or-model-input');
+  const autoCleanupInp = document.getElementById('auto-cleanup-input');
+  const saveBtn        = document.getElementById('save-settings');
+  const settings       = document.getElementById('settings');
 
   let currentFile = null;
 
@@ -274,12 +301,14 @@
   function setBusy(busy) {
     progressEl.classList.toggle('busy', busy);
     transcribeBtn.disabled = busy || !currentFile;
+    cleanupBtn.disabled = busy || transcript.value.trim().length === 0;
   }
 
   function updateOutputButtons() {
     const has = transcript.value.length > 0;
     cutBtn.disabled = !has;
     clearBtn.disabled = !has;
+    cleanupBtn.disabled = !transcript.value.trim() || progressEl.classList.contains('busy');
   }
 
   function formatBytes(n) {
@@ -321,6 +350,10 @@
     if (currentFile) transcribe(currentFile);
   });
 
+  cleanupBtn.addEventListener('click', () => {
+    cleanupTranscript();
+  });
+
   async function transcribe(file) {
     const apiKey = (localStorage.getItem(KEY_API) || '').trim();
     if (!apiKey) {
@@ -359,10 +392,90 @@
       transcript.value = transcript.value + sep + text;
       updateOutputButtons();
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
-      setStatus('Done in ' + secs + 's.', 'ok');
+      setStatus('Transcribed in ' + secs + 's.', 'ok');
+
+      const autoCleanup = localStorage.getItem(KEY_AUTO_CLEANUP) === '1';
+      const hasOrKey = (localStorage.getItem(KEY_OR_API) || '').trim();
+      if (autoCleanup && hasOrKey && text) {
+        await cleanupTranscript({ rangeStart: transcript.value.length - text.length });
+      }
     } catch (err) {
       console.error(err);
       setStatus('Error: ' + err.message, 'err');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cleanupTranscript({ rangeStart } = {}) {
+    const orKey = (localStorage.getItem(KEY_OR_API) || '').trim();
+    if (!orKey) {
+      setStatus('Set your OpenRouter API key in Settings first.', 'err');
+      settings.open = true;
+      orKeyInput.focus();
+      return;
+    }
+    const orModel = (localStorage.getItem(KEY_OR_MODEL) || '').trim() || DEFAULT_OR_MODEL;
+
+    // If we know which slice was just transcribed, clean only that. Otherwise clean the whole textarea.
+    const cleanWhole = (typeof rangeStart !== 'number');
+    const target = cleanWhole ? transcript.value : transcript.value.slice(rangeStart).trim();
+    if (!target.trim()) return;
+
+    setBusy(true);
+    setStatus('Cleaning up with ' + orModel + '…', 'busy');
+
+    const system = [
+      'You are a dictation cleanup tool for single-speaker speech-to-text output.',
+      'Clean the transcript by:',
+      '- fixing punctuation, capitalization, and obvious word-recognition errors',
+      '- removing filler words (um, uh, like, you know) and stutters',
+      '- removing false starts and self-corrections, keeping the corrected version',
+      '- adding paragraph breaks where appropriate',
+      'Do NOT summarize, paraphrase, translate, or add content. Preserve the speaker’s words and meaning.',
+      'Output ONLY the cleaned transcript as plain text. No preamble, no quotes, no commentary.'
+    ].join('\n');
+
+    try {
+      const t0 = performance.now();
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + orKey,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': location.origin,
+          'X-Title': 'Audio Transcribe'
+        },
+        body: JSON.stringify({
+          model: orModel,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user',   content: target }
+          ],
+          temperature: 0.2
+        })
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(res.status + ': ' + errText.slice(0, 300));
+      }
+      const data = await res.json();
+      const cleaned = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim();
+      if (!cleaned) throw new Error('empty response');
+
+      if (cleanWhole) {
+        transcript.value = cleaned;
+      } else {
+        const before = transcript.value.slice(0, rangeStart).replace(/\s+$/, '');
+        const sep = before ? '\n\n' : '';
+        transcript.value = before + sep + cleaned;
+      }
+      updateOutputButtons();
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      setStatus('Cleaned up in ' + secs + 's.', 'ok');
+    } catch (err) {
+      console.error(err);
+      setStatus('Cleanup error: ' + err.message, 'err');
     } finally {
       setBusy(false);
     }
@@ -396,15 +509,22 @@
   transcript.addEventListener('input', updateOutputButtons);
 
   // Settings load
-  apiKeyInput.value = localStorage.getItem(KEY_API)   || '';
-  modelInput.value  = localStorage.getItem(KEY_MODEL) || '';
-  langInput.value   = localStorage.getItem(KEY_LANG)  || '';
+  apiKeyInput.value    = localStorage.getItem(KEY_API)       || '';
+  modelInput.value     = localStorage.getItem(KEY_MODEL)     || '';
+  langInput.value      = localStorage.getItem(KEY_LANG)      || '';
+  orKeyInput.value     = localStorage.getItem(KEY_OR_API)    || '';
+  orModelInput.value   = localStorage.getItem(KEY_OR_MODEL)  || '';
+  autoCleanupInp.checked = localStorage.getItem(KEY_AUTO_CLEANUP) === '1'
+    || (localStorage.getItem(KEY_AUTO_CLEANUP) === null && !!orKeyInput.value);
   if (!apiKeyInput.value) settings.open = true;
 
   saveBtn.addEventListener('click', () => {
-    localStorage.setItem(KEY_API,   apiKeyInput.value.trim());
-    localStorage.setItem(KEY_MODEL, modelInput.value.trim());
-    localStorage.setItem(KEY_LANG,  langInput.value.trim());
+    localStorage.setItem(KEY_API,      apiKeyInput.value.trim());
+    localStorage.setItem(KEY_MODEL,    modelInput.value.trim());
+    localStorage.setItem(KEY_LANG,     langInput.value.trim());
+    localStorage.setItem(KEY_OR_API,   orKeyInput.value.trim());
+    localStorage.setItem(KEY_OR_MODEL, orModelInput.value.trim());
+    localStorage.setItem(KEY_AUTO_CLEANUP, autoCleanupInp.checked ? '1' : '0');
     setStatus('Settings saved.', 'ok');
     setTimeout(() => { if (statusEl.textContent === 'Settings saved.') setStatus(''); }, 1500);
   });
