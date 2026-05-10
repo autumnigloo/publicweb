@@ -21,24 +21,24 @@
       min-height: 100vh;
       display: flex;
       justify-content: center;
-      padding: 1.2rem;
+      padding: 0.5rem;
     }
 
     .card {
       background: #1a1a24;
       border: 1px solid #2a2a3a;
-      border-radius: 16px;
-      padding: 1.6rem;
+      border-radius: 14px;
+      padding: 0.9rem;
       width: 100%;
       max-width: 640px;
       display: flex;
       flex-direction: column;
-      gap: 1.2rem;
+      gap: 0.7rem;
       align-self: flex-start;
     }
 
     h1 {
-      font-size: 1.4rem;
+      font-size: 1.2rem;
       font-weight: 400;
       letter-spacing: 0.08em;
       color: #fff;
@@ -46,8 +46,8 @@
 
     .picker {
       border: 2px dashed #2a2a3a;
-      border-radius: 12px;
-      padding: 1.4rem 1rem;
+      border-radius: 10px;
+      padding: 1rem 0.8rem;
       text-align: center;
       cursor: pointer;
       transition: border-color 0.15s, background 0.15s;
@@ -59,21 +59,18 @@
     .picker .filename { color: #c8c8e0; font-family: monospace; font-size: 0.85rem; word-break: break-all; }
     .picker .meta { font-size: 0.75rem; color: #666; margin-top: 0.3rem; }
 
-    .row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-
     button {
       background: #4f6ef7;
       color: #fff;
       border: none;
-      border-radius: 10px;
-      padding: 0.85rem 1.2rem;
-      font-size: 1rem;
+      border-radius: 9px;
+      padding: 0.7rem 1rem;
+      font-size: 0.95rem;
       font-weight: 500;
       cursor: pointer;
       transition: background 0.15s, transform 0.1s, opacity 0.15s;
       letter-spacing: 0.02em;
-      flex: 1;
-      min-width: 8rem;
+      width: 100%;
     }
     button:hover { background: #5f7ef8; }
     button:active { transform: scale(0.97); background: #3a5ae0; }
@@ -87,23 +84,22 @@
     button.secondary:hover { background: #4f6ef720; }
     button.secondary:disabled { border-color: #2a2a3a; color: #444; background: transparent; }
 
-    button.danger {
-      background: transparent;
-      border: 1px solid #eb5757;
-      color: #eb5757;
+    .diff-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: -0.3rem;
     }
-    button.danger:hover { background: #eb575720; }
-    button.danger:disabled { border-color: #2a2a3a; color: #444; background: transparent; }
-
-    #status {
-      font-size: 0.85rem;
-      min-height: 1.2em;
-      color: #aaa;
-      text-align: center;
+    #diff-btn {
+      width: auto;
+      padding: 0.35rem 0.85rem;
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
     }
-    #status.ok  { color: #6fcf97; }
-    #status.err { color: #eb5757; }
-    #status.busy { color: #f2c94c; }
+    button.toggled {
+      background: #4f6ef7;
+      color: #fff;
+      border-color: #4f6ef7;
+    }
 
     .progress {
       display: none;
@@ -126,32 +122,44 @@
     }
     @keyframes slide { to { left: 100%; } }
 
-    textarea#transcript {
+    /* Wrapper keeps a constant size; textarea and diff-view both fill it. */
+    .text-wrap {
+      position: relative;
+      height: clamp(14rem, 50vh, 36rem);
+      min-height: 10rem;
+      overflow: auto;
+      resize: vertical;
+      border-radius: 10px;
+    }
+    .text-wrap > textarea, .text-wrap > .diff-view {
+      position: absolute;
+      inset: 0;
       width: 100%;
-      min-height: 14rem;
+      height: 100%;
+      margin: 0;
+    }
+
+    textarea#transcript {
       background: #0f0f13;
       border: 1px solid #2a2a3a;
       border-radius: 10px;
       color: #e0e0e0;
-      padding: 0.9rem 1rem;
+      padding: 0.8rem 0.9rem;
       font-size: 0.95rem;
       line-height: 1.55;
       font-family: 'Segoe UI', system-ui, sans-serif;
-      resize: vertical;
+      resize: none;
       outline: none;
     }
     textarea#transcript:focus { border-color: #4f6ef7; }
 
     .diff-view {
-      width: 100%;
-      min-height: 14rem;
-      max-height: 60vh;
       overflow: auto;
       background: #0f0f13;
       border: 1px solid #2a2a3a;
       border-radius: 10px;
       color: #c8c8d8;
-      padding: 0.9rem 1rem;
+      padding: 0.8rem 0.9rem;
       font-size: 0.95rem;
       line-height: 1.6;
       font-family: 'Segoe UI', system-ui, sans-serif;
@@ -178,19 +186,14 @@
       font-style: italic;
       font-size: 0.85rem;
     }
-    button.toggled {
-      background: #4f6ef7;
-      color: #fff;
-      border-color: #4f6ef7;
-    }
 
     details {
       border-top: 1px solid #2a2a3a;
-      padding-top: 1rem;
+      padding-top: 0.7rem;
     }
     summary {
       cursor: pointer;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       color: #888;
       letter-spacing: 0.05em;
       text-transform: uppercase;
@@ -207,35 +210,55 @@
     .settings-body {
       display: flex;
       flex-direction: column;
-      gap: 0.8rem;
-      margin-top: 1rem;
+      gap: 0.7rem;
+      margin-top: 0.7rem;
     }
     label {
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       color: #888;
       display: block;
-      margin-bottom: 0.3rem;
+      margin-bottom: 0.25rem;
     }
-    input[type="password"], input[type="text"], #keys-input {
+    input[type="text"], #keys-input {
       background: #0f0f13;
       border: 1px solid #2a2a3a;
       border-radius: 8px;
       color: #e0e0e0;
       font-size: 0.9rem;
-      padding: 0.6rem 0.8rem;
+      padding: 0.55rem 0.75rem;
       width: 100%;
       outline: none;
       font-family: monospace;
     }
     input:focus, #keys-input:focus { border-color: #4f6ef7; }
-    #keys-input { resize: vertical; min-height: 4rem; line-height: 1.4; }
+    #keys-input { resize: vertical; min-height: 3.6rem; line-height: 1.4; }
 
-    .hint {
-      font-size: 0.75rem;
-      color: #666;
-      line-height: 1.5;
+    .snackbar {
+      position: fixed;
+      bottom: 1rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(160%);
+      background: #2a2a38;
+      color: #fff;
+      padding: 0.7rem 1.1rem;
+      border-radius: 9px;
+      font-size: 0.88rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      transition: transform 0.25s ease, opacity 0.25s ease;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 100;
+      max-width: calc(100vw - 1.5rem);
+      text-align: center;
+      border-left: 3px solid #4f6ef7;
     }
-    .hint a { color: #4f6ef7; }
+    .snackbar.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+    .snackbar.ok   { border-left-color: #6fcf97; }
+    .snackbar.err  { border-left-color: #eb5757; }
+    .snackbar.busy { border-left-color: #f2c94c; }
   </style>
 </head>
 <body>
@@ -248,22 +271,18 @@
     <div id="picker-text">Tap to choose an audio file<br><span class="meta">or share from the Recorder app</span></div>
   </label>
 
-  <div class="row">
-    <button id="transcribe-btn" disabled>Transcribe</button>
-    <button class="secondary" id="cleanup-btn" disabled>Clean up</button>
-  </div>
-
   <div class="progress" id="progress"></div>
-  <div id="status"></div>
 
-  <textarea id="transcript" placeholder="Transcript will appear here…" spellcheck="false"></textarea>
-  <div id="diff-view" class="diff-view" hidden></div>
-
-  <div class="row">
-    <button class="secondary" id="cut-btn" disabled>Cut</button>
-    <button class="secondary" id="diff-btn" disabled>Diff</button>
-    <button class="danger" id="clear-btn" disabled>Clear</button>
+  <div class="diff-row" id="diff-row" hidden>
+    <button id="diff-btn" class="secondary">Diff</button>
   </div>
+
+  <div class="text-wrap">
+    <textarea id="transcript" placeholder="Transcript will appear here…" spellcheck="false"></textarea>
+    <div id="diff-view" class="diff-view" hidden></div>
+  </div>
+
+  <button id="cut-btn" class="secondary" disabled>Cut</button>
 
   <details id="settings">
     <summary>Settings</summary>
@@ -285,59 +304,61 @@
         <label for="or-model-input">OpenRouter model</label>
         <input type="text" id="or-model-input" placeholder="deepseek/deepseek-v4-flash" spellcheck="false" autocomplete="off">
       </div>
-      <div>
-        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-          <input type="checkbox" id="auto-cleanup-input" style="width: auto; margin: 0;">
-          Auto clean up after transcription
-        </label>
-      </div>
-
       <button class="secondary" id="save-settings">Save</button>
-      <p class="hint">
-        Stored locally in your browser. Groq key at
-        <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>,
-        OpenRouter key at
-        <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>.
-      </p>
     </div>
   </details>
 </div>
 
+<div class="snackbar" id="snackbar" role="status" aria-live="polite"></div>
+
 <script>
-  const KEY_KEYS          = 'audio-transcribe-keys';
-  const KEY_MODEL         = 'audio-transcribe-model';
-  const KEY_LANG          = 'audio-transcribe-lang';
-  const KEY_OR_MODEL      = 'audio-transcribe-or-model';
-  const KEY_AUTO_CLEANUP  = 'audio-transcribe-auto-cleanup';
-  const KEY_TRANSCRIPT    = 'audio-transcribe-transcript';
-  const KEY_DIFF_BEFORE   = 'audio-transcribe-diff-before';
-  const KEY_DIFF_AFTER    = 'audio-transcribe-diff-after';
-  const KEY_DIFF_ON       = 'audio-transcribe-diff-on';
-  const LEGACY_KEY_GROQ   = 'audio-transcribe-groq-key';
-  const LEGACY_KEY_OR     = 'audio-transcribe-or-key';
-  const DEFAULT_MODEL     = 'whisper-large-v3-turbo';
-  const DEFAULT_OR_MODEL  = 'deepseek/deepseek-v4-flash';
+  const KEY_KEYS         = 'audio-transcribe-keys';
+  const KEY_MODEL        = 'audio-transcribe-model';
+  const KEY_LANG         = 'audio-transcribe-lang';
+  const KEY_OR_MODEL     = 'audio-transcribe-or-model';
+  const KEY_TRANSCRIPT   = 'audio-transcribe-transcript';
+  const KEY_DIFF_BEFORE  = 'audio-transcribe-diff-before';
+  const KEY_DIFF_AFTER   = 'audio-transcribe-diff-after';
+  const KEY_DIFF_ON      = 'audio-transcribe-diff-on';
+  const LEGACY_KEY_GROQ  = 'audio-transcribe-groq-key';
+  const LEGACY_KEY_OR    = 'audio-transcribe-or-key';
+  const DEFAULT_MODEL    = 'whisper-large-v3-turbo';
+  const DEFAULT_OR_MODEL = 'deepseek/deepseek-v4-flash';
 
-  const fileInput      = document.getElementById('file-input');
-  const picker         = document.getElementById('picker');
-  const pickerText     = document.getElementById('picker-text');
-  const transcribeBtn  = document.getElementById('transcribe-btn');
-  const cleanupBtn     = document.getElementById('cleanup-btn');
-  const cutBtn         = document.getElementById('cut-btn');
-  const diffBtn        = document.getElementById('diff-btn');
-  const clearBtn       = document.getElementById('clear-btn');
-  const transcript     = document.getElementById('transcript');
-  const diffView       = document.getElementById('diff-view');
-  const statusEl       = document.getElementById('status');
-  const progressEl     = document.getElementById('progress');
-  const keysInput      = document.getElementById('keys-input');
-  const modelInput     = document.getElementById('model-input');
-  const langInput      = document.getElementById('lang-input');
-  const orModelInput   = document.getElementById('or-model-input');
-  const autoCleanupInp = document.getElementById('auto-cleanup-input');
-  const saveBtn        = document.getElementById('save-settings');
-  const settings       = document.getElementById('settings');
+  const fileInput    = document.getElementById('file-input');
+  const picker       = document.getElementById('picker');
+  const pickerText   = document.getElementById('picker-text');
+  const cutBtn       = document.getElementById('cut-btn');
+  const diffBtn      = document.getElementById('diff-btn');
+  const diffRow      = document.getElementById('diff-row');
+  const transcript   = document.getElementById('transcript');
+  const diffView     = document.getElementById('diff-view');
+  const progressEl   = document.getElementById('progress');
+  const keysInput    = document.getElementById('keys-input');
+  const modelInput   = document.getElementById('model-input');
+  const langInput    = document.getElementById('lang-input');
+  const orModelInput = document.getElementById('or-model-input');
+  const saveBtn      = document.getElementById('save-settings');
+  const settings     = document.getElementById('settings');
+  const snackbar     = document.getElementById('snackbar');
 
+  /* -------- Snackbar -------- */
+  let snackbarTimer = null;
+  function notify(msg, type = '') {
+    if (!msg) {
+      snackbar.classList.remove('show');
+      return;
+    }
+    snackbar.textContent = msg;
+    snackbar.className = 'snackbar show ' + type;
+    clearTimeout(snackbarTimer);
+    if (type !== 'busy') {
+      const ms = type === 'err' ? 5000 : 2500;
+      snackbarTimer = setTimeout(() => snackbar.classList.remove('show'), ms);
+    }
+  }
+
+  /* -------- Settings keys -------- */
   function parseKeys(text) {
     const lines = (text || '').split(/\r?\n/).map(s => s.trim());
     return { openrouter: lines[0] || '', groq: lines[1] || '' };
@@ -346,37 +367,30 @@
     return parseKeys(localStorage.getItem(KEY_KEYS) || '');
   }
 
-  let currentFile = null;
-
-  function setStatus(msg, type = '') {
-    statusEl.textContent = msg;
-    statusEl.className = type;
-  }
-
+  /* -------- Busy / output state -------- */
   function setBusy(busy) {
     progressEl.classList.toggle('busy', busy);
-    transcribeBtn.disabled = busy || !currentFile;
-    cleanupBtn.disabled = busy || transcript.value.trim().length === 0;
+    fileInput.disabled = busy;
+    picker.style.pointerEvents = busy ? 'none' : '';
+    picker.style.opacity = busy ? '0.6' : '';
   }
 
   function updateOutputButtons() {
-    const has = transcript.value.length > 0;
-    cutBtn.disabled = !has;
-    clearBtn.disabled = !has;
-    cleanupBtn.disabled = !transcript.value.trim() || progressEl.classList.contains('busy');
-    diffBtn.disabled = !hasSnapshot();
+    cutBtn.disabled = transcript.value.length === 0;
+    const has = hasSnapshot();
+    diffRow.hidden = !has;
+    diffBtn.disabled = !has;
   }
 
+  /* -------- Diff snapshot storage -------- */
   function hasSnapshot() {
     return localStorage.getItem(KEY_DIFF_BEFORE) !== null
         && localStorage.getItem(KEY_DIFF_AFTER)  !== null;
   }
-
   function saveSnapshot(before, after) {
     localStorage.setItem(KEY_DIFF_BEFORE, before);
     localStorage.setItem(KEY_DIFF_AFTER,  after);
   }
-
   function clearSnapshot() {
     localStorage.removeItem(KEY_DIFF_BEFORE);
     localStorage.removeItem(KEY_DIFF_AFTER);
@@ -389,7 +403,7 @@
     transcript.hidden = diffOn;
     diffView.hidden   = !diffOn;
     diffBtn.classList.toggle('toggled', diffOn);
-    diffBtn.textContent = diffOn ? 'Hide diff' : 'Diff';
+    diffBtn.textContent = diffOn ? 'Edit' : 'Diff';
     localStorage.setItem(KEY_DIFF_ON, diffOn ? '1' : '0');
     if (diffOn) renderSnapshotDiff();
   }
@@ -401,7 +415,7 @@
     if (!before && !after) {
       const p = document.createElement('div');
       p.className = 'diff-empty';
-      p.textContent = 'No cleanup snapshot yet — run "Clean up" to see what changed.';
+      p.textContent = 'No cleanup snapshot yet.';
       diffView.appendChild(p);
       return;
     }
@@ -415,6 +429,15 @@
         diffView.appendChild(el);
       }
     }
+  }
+
+  /* -------- Word/punctuation-level diff --------
+     Tokenize into separate runs of: word chars, whitespace, punctuation.
+     This way "hello" → "hello," only marks "," as inserted, leaving the
+     unchanged word alone. */
+  const TOKEN_RE = /[\p{L}\p{N}_'’]+|\s+|[^\s\p{L}\p{N}_'’]+/gu;
+  function tokenize(s) {
+    return s.match(TOKEN_RE) || [];
   }
 
   function pushOp(ops, kind, text) {
@@ -448,8 +471,8 @@
   }
 
   function buildDiff(before, after) {
-    const A = before.split(/(\s+)/);
-    const B = after.split(/(\s+)/);
+    const A = tokenize(before);
+    const B = tokenize(after);
     const MAX = 4_000_000;
     if ((A.length + 1) * (B.length + 1) > MAX) {
       return diffTokens(before.split(/(\n+)/), after.split(/(\n+)/));
@@ -457,30 +480,34 @@
     return diffTokens(A, B);
   }
 
+  /* -------- Picker -------- */
   function formatBytes(n) {
     if (n < 1024) return n + ' B';
     if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
     return (n / 1024 / 1024).toFixed(1) + ' MB';
   }
 
-  function setFile(file) {
-    currentFile = file || null;
+  function setFilePreview(file) {
     if (!file) {
       pickerText.innerHTML = 'Tap to choose an audio file<br><span class="meta">or share from the Recorder app</span>';
-      transcribeBtn.disabled = true;
       return;
     }
     pickerText.innerHTML =
       '<div class="filename">' + (file.name || 'shared-audio') + '</div>' +
       '<div class="meta">' + formatBytes(file.size) + (file.type ? ' · ' + file.type : '') + '</div>';
-    transcribeBtn.disabled = false;
+  }
+
+  async function handleFile(file) {
+    if (!file) return;
+    setFilePreview(file);
+    await runTranscribeAndCleanup(file);
   }
 
   fileInput.addEventListener('change', () => {
-    if (fileInput.files && fileInput.files[0]) setFile(fileInput.files[0]);
+    const f = fileInput.files && fileInput.files[0];
+    if (f) handleFile(f);
   });
 
-  // Drag & drop (desktop)
   ['dragover', 'dragenter'].forEach(ev =>
     picker.addEventListener(ev, e => { e.preventDefault(); picker.classList.add('drag'); })
   );
@@ -489,30 +516,30 @@
   );
   picker.addEventListener('drop', e => {
     const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) setFile(f);
+    if (f) handleFile(f);
   });
 
-  transcribeBtn.addEventListener('click', () => {
-    if (currentFile) transcribe(currentFile);
-  });
-
-  cleanupBtn.addEventListener('click', () => {
-    cleanupTranscript();
-  });
+  /* -------- Pipeline: transcribe → cleanup (when OR key set) -------- */
+  async function runTranscribeAndCleanup(file) {
+    const text = await transcribe(file);
+    if (text && getKeys().openrouter) {
+      await cleanupTranscript({ rangeStart: transcript.value.length - text.length });
+    }
+  }
 
   async function transcribe(file) {
     const { groq: apiKey } = getKeys();
     if (!apiKey) {
-      setStatus('Set your Groq API key in Settings (line 2).', 'err');
+      notify('Set your Groq API key in Settings (line 2).', 'err');
       settings.open = true;
       keysInput.focus();
-      return;
+      return null;
     }
     const model = (localStorage.getItem(KEY_MODEL) || '').trim() || DEFAULT_MODEL;
     const lang  = (localStorage.getItem(KEY_LANG)  || '').trim();
 
     setBusy(true);
-    setStatus('Uploading and transcribing… (' + formatBytes(file.size) + ')', 'busy');
+    notify('Transcribing… (' + formatBytes(file.size) + ')', 'busy');
 
     const fd = new FormData();
     const sendName = file.name && /\.[a-z0-9]+$/i.test(file.name) ? file.name : 'recording.m4a';
@@ -539,16 +566,12 @@
       persistTranscript();
       updateOutputButtons();
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
-      setStatus('Transcribed in ' + secs + 's.', 'ok');
-
-      const autoCleanup = localStorage.getItem(KEY_AUTO_CLEANUP) === '1';
-      const hasOrKey = !!getKeys().openrouter;
-      if (autoCleanup && hasOrKey && text) {
-        await cleanupTranscript({ rangeStart: transcript.value.length - text.length });
-      }
+      notify('Transcribed in ' + secs + 's.', 'ok');
+      return text;
     } catch (err) {
       console.error(err);
-      setStatus('Error: ' + err.message, 'err');
+      notify('Error: ' + err.message, 'err');
+      return null;
     } finally {
       setBusy(false);
     }
@@ -557,20 +580,19 @@
   async function cleanupTranscript({ rangeStart } = {}) {
     const { openrouter: orKey } = getKeys();
     if (!orKey) {
-      setStatus('Set your OpenRouter API key in Settings (line 1).', 'err');
+      notify('Set your OpenRouter API key in Settings (line 1).', 'err');
       settings.open = true;
       keysInput.focus();
       return;
     }
     const orModel = (localStorage.getItem(KEY_OR_MODEL) || '').trim() || DEFAULT_OR_MODEL;
 
-    // If we know which slice was just transcribed, clean only that. Otherwise clean the whole textarea.
     const cleanWhole = (typeof rangeStart !== 'number');
     const target = cleanWhole ? transcript.value : transcript.value.slice(rangeStart).trim();
     if (!target.trim()) return;
 
     setBusy(true);
-    setStatus('Cleaning up with ' + orModel + '…', 'busy');
+    notify('Cleaning up with ' + orModel + '…', 'busy');
 
     const beforeSnapshot = transcript.value;
 
@@ -635,15 +657,16 @@
       updateOutputButtons();
       if (diffOn) renderSnapshotDiff();
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
-      setStatus('Cleaned up in ' + secs + 's.', 'ok');
+      notify('Cleaned in ' + secs + 's.', 'ok');
     } catch (err) {
       console.error(err);
-      setStatus('Cleanup error: ' + err.message, 'err');
+      notify('Cleanup error: ' + err.message, 'err');
     } finally {
       setBusy(false);
     }
   }
 
+  /* -------- Buttons -------- */
   cutBtn.addEventListener('click', async () => {
     const text = transcript.value;
     if (!text) return;
@@ -657,16 +680,7 @@
     clearSnapshot();
     persistTranscript();
     updateOutputButtons();
-    setStatus('Copied to clipboard, transcript cleared.', 'ok');
-  });
-
-  clearBtn.addEventListener('click', () => {
-    if (!transcript.value) return;
-    transcript.value = '';
-    clearSnapshot();
-    persistTranscript();
-    updateOutputButtons();
-    setStatus('Cleared.', 'ok');
+    notify('Copied & cleared.', 'ok');
   });
 
   diffBtn.addEventListener('click', () => {
@@ -674,6 +688,7 @@
     setDiffOn(!diffOn);
   });
 
+  /* -------- Persist transcript text -------- */
   let _persistTimer = null;
   function persistTranscript() {
     clearTimeout(_persistTimer);
@@ -687,7 +702,7 @@
     updateOutputButtons();
   });
 
-  // Settings load — migrate any legacy split keys into the unified textarea.
+  /* -------- Settings load + migrate legacy split keys -------- */
   let storedKeys = localStorage.getItem(KEY_KEYS);
   if (storedKeys === null) {
     const legacyOr   = (localStorage.getItem(LEGACY_KEY_OR)   || '').trim();
@@ -701,13 +716,11 @@
       storedKeys = '';
     }
   }
-  keysInput.value      = storedKeys;
-  modelInput.value     = localStorage.getItem(KEY_MODEL)    || '';
-  langInput.value      = localStorage.getItem(KEY_LANG)     || '';
-  orModelInput.value   = localStorage.getItem(KEY_OR_MODEL) || '';
-  const { groq: loadedGroq, openrouter: loadedOr } = parseKeys(storedKeys);
-  autoCleanupInp.checked = localStorage.getItem(KEY_AUTO_CLEANUP) === '1'
-    || (localStorage.getItem(KEY_AUTO_CLEANUP) === null && !!loadedOr);
+  keysInput.value    = storedKeys;
+  modelInput.value   = localStorage.getItem(KEY_MODEL)    || '';
+  langInput.value    = localStorage.getItem(KEY_LANG)     || '';
+  orModelInput.value = localStorage.getItem(KEY_OR_MODEL) || '';
+  const { groq: loadedGroq } = parseKeys(storedKeys);
   if (!loadedGroq) settings.open = true;
 
   saveBtn.addEventListener('click', () => {
@@ -717,51 +730,43 @@
     localStorage.setItem(KEY_MODEL,    modelInput.value.trim());
     localStorage.setItem(KEY_LANG,     langInput.value.trim());
     localStorage.setItem(KEY_OR_MODEL, orModelInput.value.trim());
-    localStorage.setItem(KEY_AUTO_CLEANUP, autoCleanupInp.checked ? '1' : '0');
     keysInput.value = normalized;
-    setStatus('Settings saved.', 'ok');
-    setTimeout(() => { if (statusEl.textContent === 'Settings saved.') setStatus(''); }, 1500);
+    notify('Settings saved.', 'ok');
   });
 
-  // Pick up a file shared via Web Share Target (POST -> SW cache).
+  /* -------- Web Share Target intake -------- */
   async function loadSharedFile() {
     const params = new URLSearchParams(location.search);
     if (!params.has('shared')) return;
     history.replaceState({}, '', location.pathname);
 
-    setStatus('Loading shared audio…', 'busy');
+    notify('Loading shared audio…', 'busy');
     try {
-      // Wait until the SW is ready, then read what it cached.
       if ('serviceWorker' in navigator) {
         await navigator.serviceWorker.ready;
       }
       const res = await caches.match('/__shared_audio__');
       if (!res) {
-        setStatus('No shared file found.', 'err');
+        notify('No shared file found.', 'err');
         return;
       }
       const blob = await res.blob();
       const name = decodeURIComponent(res.headers.get('x-filename') || 'shared-audio.m4a');
       const file = new File([blob], name, { type: blob.type || 'audio/mp4' });
-
-      // Drain the cache so it isn't reused on next open.
       const cache = await caches.open('audio-transcribe-shared');
       await cache.delete('/__shared_audio__');
-
-      setFile(file);
-      setStatus('Shared file ready — starting transcription…', 'busy');
-      transcribe(file);
+      handleFile(file);
     } catch (e) {
       console.error(e);
-      setStatus('Could not read shared file: ' + e.message, 'err');
+      notify('Could not read shared file: ' + e.message, 'err');
     }
   }
 
+  /* -------- Init -------- */
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
-  // Restore cached transcript and diff view state.
   const cachedTranscript = localStorage.getItem(KEY_TRANSCRIPT);
   if (cachedTranscript) transcript.value = cachedTranscript;
   updateOutputButtons();
