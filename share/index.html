@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f0f1a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <title>Text Share</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f1a;
+      --surface: #1a1a2e;
+      --border: #2d2d4e;
+      --text: #e8e8f0;
+      --muted: #6b6b8d;
+      --accent: #6c63ff;
+      --accent-hover: #7c74ff;
+      --danger: #ff6b6b;
+      --radius: 12px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+      padding: 16px;
+      padding-top: max(16px, env(safe-area-inset-top));
+      padding-bottom: max(16px, env(safe-area-inset-bottom));
+      gap: 12px;
+      min-height: 100dvh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .count {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    #textbox {
+      flex: 1;
+      width: 100%;
+      min-height: 200px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 0.95rem;
+      line-height: 1.6;
+      padding: 14px 16px;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+
+    #textbox:focus {
+      border-color: var(--accent);
+    }
+
+    #textbox::placeholder {
+      color: var(--muted);
+    }
+
+    #textbox.flash {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.2);
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    button {
+      flex: 1;
+      padding: 14px 20px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, opacity 0.15s;
+      font-family: inherit;
+      letter-spacing: -0.01em;
+    }
+
+    button:active { transform: scale(0.97); }
+
+    #copyBtn {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    #copyBtn:hover { background: var(--accent-hover); }
+    #copyBtn:disabled { opacity: 0.4; cursor: default; }
+
+    #copyBtn.success {
+      background: #22c55e;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: calc(80px + env(safe-area-inset-bottom, 0));
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #22c55e;
+      color: #fff;
+      padding: 8px 18px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="dot"></div>
+    <h1>Text Share</h1>
+    <span class="count" id="charCount">0 chars</span>
+  </header>
+
+  <textarea id="textbox" placeholder="Shared URLs appear here. You can also type freely.&#10;&#10;Use 'Copy &amp; Clear' to copy everything and wipe the pad."></textarea>
+
+  <div class="actions">
+    <button id="copyBtn" disabled>Copy &amp; Clear</button>
+  </div>
+
+  <div class="toast" id="toast">Copied!</div>
+
+  <script>
+    const textarea = document.getElementById('textbox');
+    const copyBtn = document.getElementById('copyBtn');
+    const charCount = document.getElementById('charCount');
+    const toast = document.getElementById('toast');
+    const KEY = 'textshare-v1';
+
+    // Restore saved content
+    textarea.value = localStorage.getItem(KEY) || '';
+    updateUI();
+
+    // Handle incoming share (GET params)
+    const params = new URLSearchParams(location.search);
+    const incoming = [params.get('url'), params.get('text'), params.get('title')]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    if (incoming) {
+      const current = textarea.value.trimEnd();
+      textarea.value = current ? current + '\n' + incoming : incoming;
+      save();
+      updateUI();
+      // Scroll to bottom so the new line is visible
+      textarea.scrollTop = textarea.scrollHeight;
+      // Flash to signal new content arrived
+      textarea.classList.add('flash');
+      setTimeout(() => textarea.classList.remove('flash'), 600);
+      // Remove query params without reloading
+      history.replaceState(null, '', location.pathname);
+    }
+
+    textarea.addEventListener('input', () => {
+      save();
+      updateUI();
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      if (!textarea.value) return;
+      try {
+        await navigator.clipboard.writeText(textarea.value);
+      } catch {
+        // Fallback for older browsers
+        textarea.select();
+        document.execCommand('copy');
+        window.getSelection()?.removeAllRanges();
+      }
+      textarea.value = '';
+      save();
+      updateUI();
+      showToast();
+    });
+
+    function save() {
+      localStorage.setItem(KEY, textarea.value);
+    }
+
+    function updateUI() {
+      const len = textarea.value.length;
+      copyBtn.disabled = len === 0;
+      charCount.textContent = len === 0 ? '0 chars'
+        : len === 1 ? '1 char'
+        : `${len.toLocaleString()} chars`;
+    }
+
+    function showToast() {
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1800);
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
+  </script>
+</body>
+</html>
