@@ -126,7 +126,7 @@
     }
     @keyframes slide { to { left: 100%; } }
 
-    textarea {
+    textarea#transcript {
       width: 100%;
       min-height: 14rem;
       background: #0f0f13;
@@ -140,7 +140,49 @@
       resize: vertical;
       outline: none;
     }
-    textarea:focus { border-color: #4f6ef7; }
+    textarea#transcript:focus { border-color: #4f6ef7; }
+
+    .diff-view {
+      width: 100%;
+      min-height: 14rem;
+      max-height: 60vh;
+      overflow: auto;
+      background: #0f0f13;
+      border: 1px solid #2a2a3a;
+      border-radius: 10px;
+      color: #c8c8d8;
+      padding: 0.9rem 1rem;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .diff-view ins {
+      background: #1f4d2e;
+      color: #c4ecd1;
+      text-decoration: none;
+      border-radius: 3px;
+      padding: 0 2px;
+    }
+    .diff-view del {
+      background: #4d1f24;
+      color: #ecc4ca;
+      text-decoration: line-through;
+      text-decoration-color: #ecc4ca80;
+      border-radius: 3px;
+      padding: 0 2px;
+    }
+    .diff-empty {
+      color: #666;
+      font-style: italic;
+      font-size: 0.85rem;
+    }
+    button.toggled {
+      background: #4f6ef7;
+      color: #fff;
+      border-color: #4f6ef7;
+    }
 
     details {
       border-top: 1px solid #2a2a3a;
@@ -215,9 +257,11 @@
   <div id="status"></div>
 
   <textarea id="transcript" placeholder="Transcript will appear here…" spellcheck="false"></textarea>
+  <div id="diff-view" class="diff-view" hidden></div>
 
   <div class="row">
     <button class="secondary" id="cut-btn" disabled>Cut</button>
+    <button class="secondary" id="diff-btn" disabled>Diff</button>
     <button class="danger" id="clear-btn" disabled>Clear</button>
   </div>
 
@@ -265,6 +309,10 @@
   const KEY_LANG          = 'audio-transcribe-lang';
   const KEY_OR_MODEL      = 'audio-transcribe-or-model';
   const KEY_AUTO_CLEANUP  = 'audio-transcribe-auto-cleanup';
+  const KEY_TRANSCRIPT    = 'audio-transcribe-transcript';
+  const KEY_DIFF_BEFORE   = 'audio-transcribe-diff-before';
+  const KEY_DIFF_AFTER    = 'audio-transcribe-diff-after';
+  const KEY_DIFF_ON       = 'audio-transcribe-diff-on';
   const LEGACY_KEY_GROQ   = 'audio-transcribe-groq-key';
   const LEGACY_KEY_OR     = 'audio-transcribe-or-key';
   const DEFAULT_MODEL     = 'whisper-large-v3-turbo';
@@ -276,8 +324,10 @@
   const transcribeBtn  = document.getElementById('transcribe-btn');
   const cleanupBtn     = document.getElementById('cleanup-btn');
   const cutBtn         = document.getElementById('cut-btn');
+  const diffBtn        = document.getElementById('diff-btn');
   const clearBtn       = document.getElementById('clear-btn');
   const transcript     = document.getElementById('transcript');
+  const diffView       = document.getElementById('diff-view');
   const statusEl       = document.getElementById('status');
   const progressEl     = document.getElementById('progress');
   const keysInput      = document.getElementById('keys-input');
@@ -314,6 +364,97 @@
     cutBtn.disabled = !has;
     clearBtn.disabled = !has;
     cleanupBtn.disabled = !transcript.value.trim() || progressEl.classList.contains('busy');
+    diffBtn.disabled = !hasSnapshot();
+  }
+
+  function hasSnapshot() {
+    return localStorage.getItem(KEY_DIFF_BEFORE) !== null
+        && localStorage.getItem(KEY_DIFF_AFTER)  !== null;
+  }
+
+  function saveSnapshot(before, after) {
+    localStorage.setItem(KEY_DIFF_BEFORE, before);
+    localStorage.setItem(KEY_DIFF_AFTER,  after);
+  }
+
+  function clearSnapshot() {
+    localStorage.removeItem(KEY_DIFF_BEFORE);
+    localStorage.removeItem(KEY_DIFF_AFTER);
+    if (diffOn) setDiffOn(false);
+  }
+
+  let diffOn = false;
+  function setDiffOn(on) {
+    diffOn = !!on && hasSnapshot();
+    transcript.hidden = diffOn;
+    diffView.hidden   = !diffOn;
+    diffBtn.classList.toggle('toggled', diffOn);
+    diffBtn.textContent = diffOn ? 'Hide diff' : 'Diff';
+    localStorage.setItem(KEY_DIFF_ON, diffOn ? '1' : '0');
+    if (diffOn) renderSnapshotDiff();
+  }
+
+  function renderSnapshotDiff() {
+    const before = localStorage.getItem(KEY_DIFF_BEFORE) || '';
+    const after  = localStorage.getItem(KEY_DIFF_AFTER)  || '';
+    diffView.innerHTML = '';
+    if (!before && !after) {
+      const p = document.createElement('div');
+      p.className = 'diff-empty';
+      p.textContent = 'No cleanup snapshot yet — run "Clean up" to see what changed.';
+      diffView.appendChild(p);
+      return;
+    }
+    const ops = buildDiff(before, after);
+    for (const [kind, text] of ops) {
+      if (kind === '=') {
+        diffView.appendChild(document.createTextNode(text));
+      } else {
+        const el = document.createElement(kind === '+' ? 'ins' : 'del');
+        el.textContent = text;
+        diffView.appendChild(el);
+      }
+    }
+  }
+
+  function pushOp(ops, kind, text) {
+    const last = ops[ops.length - 1];
+    if (last && last[0] === kind) last[1] += text;
+    else ops.push([kind, text]);
+  }
+
+  function diffTokens(A, B) {
+    const n = A.length, m = B.length;
+    const W = m + 1;
+    const dp = new Int32Array((n + 1) * W);
+    for (let i = n - 1; i >= 0; i--) {
+      const rowI  = i * W;
+      const rowI1 = (i + 1) * W;
+      for (let j = m - 1; j >= 0; j--) {
+        if (A[i] === B[j]) dp[rowI + j] = dp[rowI1 + j + 1] + 1;
+        else dp[rowI + j] = Math.max(dp[rowI1 + j], dp[rowI + j + 1]);
+      }
+    }
+    const ops = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (A[i] === B[j]) { pushOp(ops, '=', A[i]); i++; j++; }
+      else if (dp[(i + 1) * W + j] >= dp[i * W + j + 1]) { pushOp(ops, '-', A[i]); i++; }
+      else { pushOp(ops, '+', B[j]); j++; }
+    }
+    while (i < n) pushOp(ops, '-', A[i++]);
+    while (j < m) pushOp(ops, '+', B[j++]);
+    return ops;
+  }
+
+  function buildDiff(before, after) {
+    const A = before.split(/(\s+)/);
+    const B = after.split(/(\s+)/);
+    const MAX = 4_000_000;
+    if ((A.length + 1) * (B.length + 1) > MAX) {
+      return diffTokens(before.split(/(\n+)/), after.split(/(\n+)/));
+    }
+    return diffTokens(A, B);
   }
 
   function formatBytes(n) {
@@ -395,6 +536,7 @@
       const text = (data.text || '').trim();
       const sep = transcript.value.trim() ? '\n\n' : '';
       transcript.value = transcript.value + sep + text;
+      persistTranscript();
       updateOutputButtons();
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
       setStatus('Transcribed in ' + secs + 's.', 'ok');
@@ -430,15 +572,28 @@
     setBusy(true);
     setStatus('Cleaning up with ' + orModel + '…', 'busy');
 
+    const beforeSnapshot = transcript.value;
+
     const system = [
-      'You are a dictation cleanup tool for single-speaker speech-to-text output.',
-      'Clean the transcript by:',
-      '- fixing punctuation, capitalization, and obvious word-recognition errors',
-      '- removing filler words (um, uh, like, you know) and stutters',
-      '- removing false starts and self-corrections, keeping the corrected version',
-      '- adding paragraph breaks where appropriate',
-      'Do NOT summarize, paraphrase, translate, or add content. Preserve the speaker’s words and meaning.',
-      'Output ONLY the cleaned transcript as plain text. No preamble, no quotes, no commentary.'
+      'You are a dictation post-processor for a single-speaker recording.',
+      'Treat the input as raw speech that the speaker is *building up over time*, and produce the speaker’s intended FINAL text.',
+      '',
+      'Apply two kinds of edits:',
+      '',
+      '1. Cleanup (always):',
+      '   - fix punctuation, capitalization, and obvious word-recognition errors',
+      '   - remove filler words (um, uh, like, you know) and stutters',
+      '   - remove false starts and self-corrections, keeping only the corrected version',
+      '   - add paragraph breaks where appropriate',
+      '',
+      '2. Execute meta-commands the speaker addresses to you. The speaker may issue editing instructions mid-stream — those instructions must be APPLIED to the surrounding content and then REMOVED from the output. Examples:',
+      '   - "Actually, his name was Ben." → update every reference to that same person earlier in the text to "Ben", then drop the instruction.',
+      '   - "Ignore the previous section." / "Scratch that last paragraph." / "Strike that." → delete the referenced section and drop the instruction.',
+      '   - "Make this section sound more professional." / "Rewrite the intro as a bullet list." → rewrite the referenced span accordingly and drop the instruction.',
+      '   - "Replace X with Y." / "Change every ‘foo’ to ‘bar’." → apply the replacement and drop the instruction.',
+      '   Only treat something as a meta-command if it is clearly directed at the post-processor (cues like "actually,", "scratch that", "ignore", "delete", "remove", "replace", "change", "make this …", "rewrite …"). When in doubt, KEEP the text as content.',
+      '',
+      'Do not summarize, paraphrase, translate, or invent content beyond what is needed to execute a meta-command. Output ONLY the resulting plain-text transcript — no preamble, no quotes, no commentary.'
     ].join('\n');
 
     try {
@@ -475,7 +630,10 @@
         const sep = before ? '\n\n' : '';
         transcript.value = before + sep + cleaned;
       }
+      saveSnapshot(beforeSnapshot, transcript.value);
+      persistTranscript();
       updateOutputButtons();
+      if (diffOn) renderSnapshotDiff();
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
       setStatus('Cleaned up in ' + secs + 's.', 'ok');
     } catch (err) {
@@ -491,27 +649,43 @@
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      transcript.value = '';
-      updateOutputButtons();
-      setStatus('Copied to clipboard, transcript cleared.', 'ok');
     } catch (e) {
-      // fallback: select-and-copy
       transcript.select();
       try { document.execCommand('copy'); } catch {}
-      transcript.value = '';
-      updateOutputButtons();
-      setStatus('Copied (fallback), transcript cleared.', 'ok');
     }
+    transcript.value = '';
+    clearSnapshot();
+    persistTranscript();
+    updateOutputButtons();
+    setStatus('Copied to clipboard, transcript cleared.', 'ok');
   });
 
   clearBtn.addEventListener('click', () => {
     if (!transcript.value) return;
     transcript.value = '';
+    clearSnapshot();
+    persistTranscript();
     updateOutputButtons();
     setStatus('Cleared.', 'ok');
   });
 
-  transcript.addEventListener('input', updateOutputButtons);
+  diffBtn.addEventListener('click', () => {
+    if (!hasSnapshot()) return;
+    setDiffOn(!diffOn);
+  });
+
+  let _persistTimer = null;
+  function persistTranscript() {
+    clearTimeout(_persistTimer);
+    _persistTimer = setTimeout(() => {
+      localStorage.setItem(KEY_TRANSCRIPT, transcript.value);
+    }, 250);
+  }
+
+  transcript.addEventListener('input', () => {
+    persistTranscript();
+    updateOutputButtons();
+  });
 
   // Settings load — migrate any legacy split keys into the unified textarea.
   let storedKeys = localStorage.getItem(KEY_KEYS);
@@ -587,8 +761,17 @@
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
-  loadSharedFile();
+  // Restore cached transcript and diff view state.
+  const cachedTranscript = localStorage.getItem(KEY_TRANSCRIPT);
+  if (cachedTranscript) transcript.value = cachedTranscript;
   updateOutputButtons();
+  if (localStorage.getItem(KEY_DIFF_ON) === '1' && hasSnapshot()) {
+    setDiffOn(true);
+  } else {
+    setDiffOn(false);
+  }
+
+  loadSharedFile();
 </script>
 </body>
 </html>
