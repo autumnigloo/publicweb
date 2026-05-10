@@ -1,4 +1,4 @@
-const CACHE = 'audio-transcribe-v1';
+const CACHE = 'audio-transcribe-v2';
 const SHARE_CACHE = 'audio-transcribe-shared';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.svg', './icon-512.svg'];
 
