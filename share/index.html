@@ -183,12 +183,17 @@
     textarea.value = localStorage.getItem(KEY) || '';
     updateUI();
 
-    // Handle incoming share (GET params)
+    // Handle incoming share (GET params) — extract URLs only, discard plain text/title
     const params = new URLSearchParams(location.search);
-    const incoming = [params.get('url'), params.get('text'), params.get('title')]
-      .filter(Boolean)
-      .join(' ')
-      .trim();
+    const incoming = extractUrls(
+      [params.get('url'), params.get('text'), params.get('title')].filter(Boolean).join(' ')
+    ).join('\n');
+
+    function extractUrls(str) {
+      const matches = str.match(/https?:\/\/[^\s<>"{}|\\^`[\]]+/g) || [];
+      // Deduplicate while preserving order
+      return [...new Set(matches)];
+    }
 
     if (incoming) {
       const current = textarea.value.trimEnd();
