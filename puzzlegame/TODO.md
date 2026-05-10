@@ -38,6 +38,14 @@ exit pad, but the *means* of navigation changes every level.
       physics step lets them rest on the floor, ceiling, and on each other.
       Three columns of 1/2/3 cubes drop into a flush staircase up to a
       lavender ledge. Two off-axis decoy cubes for visual interest.
+- [x] **Level 6 — Wireframe Dream.** Pitch-black void; only the room's white
+      wireframe outline + a faint grid floor are drawn at start. Invisible
+      pillars are scattered between start and exit. Bumping a pillar reveals
+      its edges permanently (proximity check in update, AABB-vs-XZ-distance).
+      E = Lucid Flash: every unrevealed pillar dimly silhouettes for 1.5s on
+      a 7s cooldown, with a smooth fade-in/out so it feels like a memory
+      glimpse, not a strobe. The route you take accumulates as a dream
+      blueprint behind you.
 
 ## Engine deltas (cumulative)
 
@@ -57,9 +65,6 @@ exit pad, but the *means* of navigation changes every level.
 
 ## Near-term backlog
 
-- [ ] **Level 6 — Wireframe Dream.** White-on-black wireframe world. Solid
-      objects are invisible until you bump them, after which their edges
-      remain drawn. Memory puzzle.
 - [ ] **Level 7 — Schrödinger Doors.** Two doors. Each "is" what you last
       observed it as — open or closed. Looking away resets it. Use peripheral
       vision (FOV-based) to keep doors fixed while you cross.
@@ -96,6 +101,17 @@ exit pad, but the *means* of navigation changes every level.
 - [ ] Generic **interactable raycaster** in `LevelContext`. Right now Gravity
       Cubes rolls its own per-frame ray + aim ring; lift this into the
       engine (LevelContext.aimAt(meshes) → hit) so future levels reuse it.
+
+## Wireframe Dream — possible follow-ups
+
+- [ ] Pillars fade slowly back to invisible after ~30s of not-being-looked-at,
+      so the puzzle gets harder the longer you dawdle ("the dream forgets").
+- [ ] Multi-room version: when you reach an exit, the next room shares the
+      same layout but in the dark again — you have to remember from the
+      flashbacks. Real "memory puzzle" angle from the original brief.
+- [ ] Replace the simple GridHelper floor with a custom shader that draws
+      grid lines fading with distance — currently the grid pops at the fog
+      cutoff. Low priority.
 
 ## Mechanic ideas pile (not yet assigned to levels)
 

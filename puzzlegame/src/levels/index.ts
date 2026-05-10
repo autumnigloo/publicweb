@@ -4,6 +4,7 @@ import { MatrixHallwayLevel } from "./matrixHallway";
 import { TimeSliceLevel } from "./timeSlice";
 import { MirrorMazeLevel } from "./mirrorMaze";
 import { GravityCubesLevel } from "./gravityCubes";
+import { WireframeDreamLevel } from "./wireframeDream";
 
 export function makeLevels(): Level[] {
   return [
@@ -12,5 +13,6 @@ export function makeLevels(): Level[] {
     new TimeSliceLevel(),
     new MirrorMazeLevel(),
     new GravityCubesLevel(),
+    new WireframeDreamLevel(),
   ];
 }
