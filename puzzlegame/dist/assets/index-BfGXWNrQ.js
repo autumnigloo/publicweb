@@ -4475,4 +4475,109 @@ void main() {
         float a = ring * pulse + core;
         gl_FragColor = vec4(1.0, 1.0, 1.0, a);
       }
-    `}))}function Nu(){return[new yl,new Dl,new Ll,new tu,new vu,new ju]}var Pu=document.getElementById(`game`),Fu=document.getElementById(`overlay`),Iu=document.getElementById(`overlay-level-title`),Lu=document.getElementById(`overlay-blurb`),Ru=document.getElementById(`message`),zu=document.getElementById(`level-num`),Bu=document.getElementById(`level-name`),Vu=document.getElementById(`ability-label`),Hu=document.getElementById(`ability-value`),Uu=new ul({canvas:Pu,antialias:!0});Uu.setPixelRatio(Math.min(window.devicePixelRatio,2)),Uu.setSize(window.innerWidth,window.innerHeight);var Wu=new dl;Wu.installInput(Pu);function Gu(){let e=Math.min(window.devicePixelRatio,2);return[Math.max(1,Math.floor(window.innerWidth*e)),Math.max(1,Math.floor(window.innerHeight*e))]}var[Ku,qu]=Gu(),Ju=new Kt(Ku,qu,{minFilter:o,magFilter:o,format:w,depthBuffer:!0}),Yu=new Pn,Xu=new Sa(-1,1,1,-1,0,1),Zu=new J(new Ni(2,2));Zu.frustumCulled=!1,Yu.add(Zu);var Qu=Nu(),$u=0,ed=null,td,nd,rd=0,id=!1;function ad(e,t=3){Ru.innerHTML=e,Ru.classList.add(`show`),rd=t}function od(e,t){Vu.textContent=e,Hu.textContent=t}var sd=()=>({scene:td,world:nd,player:Wu,message:ad,setAbility:od,complete:ld});function cd(e){ed&&ed.dispose?.(sd()),td=new Pn,nd=new pl;let t=new Ta(16777215,.15);td.add(t),$u=e,ed=Qu[e],id=!1,zu.textContent=String(e+1),Bu.textContent=ed.name,ed.init(sd())}function ld(){if(!ed||id)return;id=!0,ad(`✓ ${ed.name} cleared`,2.5);let e=$u+1;if(e>=Qu.length){setTimeout(()=>{ad(`All levels cleared. More coming soon. — Press R to restart from Level 1.`,12)},600);return}setTimeout(()=>{ud(e)},700)}function ud(e){let t=Qu[e];Iu.textContent=`Level ${e+1} — ${t.name}`,Lu.innerHTML=t.blurb,Fu.classList.remove(`hidden`),dd=e}var dd=0;Fu.addEventListener(`click`,()=>{dd!==null&&(cd(dd),dd=null);let e=Pu.requestPointerLock();e&&typeof e.then==`function`&&e.catch(()=>{})}),document.addEventListener(`pointerlockchange`,()=>{document.pointerLockElement===Pu?Fu.classList.add(`hidden`):ed&&Fu.classList.remove(`hidden`)}),document.addEventListener(`pointerlockerror`,()=>{ed&&Fu.classList.remove(`hidden`)}),document.addEventListener(`keydown`,e=>{ed&&(e.code===`KeyE`&&document.pointerLockElement===Pu?ed.ability?.(sd()):e.code===`KeyR`?(dd=null,cd($u)):e.code===`KeyN`&&$u+1<Qu.length&&ud($u+1))}),window.addEventListener(`resize`,()=>{Uu.setSize(window.innerWidth,window.innerHeight),Wu.camera.aspect=window.innerWidth/window.innerHeight,Wu.camera.updateProjectionMatrix();let[e,t]=Gu();Ju.setSize(e,t)}),cd(0);var fd=performance.now();function pd(){let e=performance.now(),t=Math.min(.05,(e-fd)/1e3);fd=e,document.pointerLockElement===Pu&&Wu.update(t,nd),ed?.update(t,sd()),rd>0&&(rd-=t,rd<=0&&Ru.classList.remove(`show`));let n=ed?.postMaterial;n?(Uu.setRenderTarget(Ju),Uu.clear(),Uu.render(td,Wu.camera),Uu.setRenderTarget(null),n.uniforms.tDiffuse&&(n.uniforms.tDiffuse.value=Ju.texture),Zu.material=n,Uu.render(Yu,Xu)):Uu.render(td,Wu.camera),requestAnimationFrame(pd)}pd();
+    `}))}var Nu=3,Pu=4,Fu=-3,Iu=42,Lu=3,Ru=1.8,zu=Ru,Bu=.18,Vu=[{z:6,inverted:!1},{z:16,inverted:!1},{z:26,inverted:!1},{z:34,inverted:!0}],Hu=Math.cos(.28),Uu=28,Wu=2.5,Gu=7,Ku=`
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`,qu=`
+  uniform float uTime;
+  uniform float uOpen;
+  uniform float uInverted;
+  varying vec2 vUv;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  void main() {
+    vec2 uv = vUv;
+
+    // Three-wave interference, like a probability amplitude.
+    float w1 = sin((uv.x * 18.0 + uv.y *  6.0) - uTime * 1.6);
+    float w2 = sin((uv.x *  9.0 - uv.y * 22.0) + uTime * 2.1);
+    float w3 = sin((uv.x * 32.0 + uv.y * 30.0) - uTime * 3.4);
+    float interf = (w1 + w2 + w3) / 3.0;
+
+    // Sparse twinkles drift upward — "virtual particles".
+    float gx = floor(uv.x * 40.0);
+    float gy = floor(uv.y * 50.0 + uTime * 3.0);
+    float twinkle = step(0.986, hash(vec2(gx, gy)));
+
+    // Soft inset frame so the panel reads as a defined object.
+    float edge = smoothstep(0.0, 0.08, uv.x) * smoothstep(1.0, 0.92, uv.x)
+              * smoothstep(0.0, 0.08, uv.y) * smoothstep(1.0, 0.92, uv.y);
+
+    // Standard doors: violet/cyan plasma. Inverted: amber/orange.
+    vec3 closedStd = mix(vec3(0.10, 0.06, 0.32), vec3(0.42, 0.30, 0.95), 0.5 + 0.45 * interf);
+    vec3 closedInv = mix(vec3(0.38, 0.16, 0.04), vec3(1.00, 0.65, 0.18), 0.5 + 0.45 * interf);
+    vec3 closedCol = mix(closedStd, closedInv, uInverted);
+    closedCol += vec3(1.0) * twinkle * 1.4;
+    float closedA = mix(0.62, 0.94, 0.5 + 0.5 * interf) * edge;
+
+    // Open: thin outline only — you can read it as a doorway, not a wall.
+    vec3 openColStd = vec3(0.55, 0.85, 1.0);
+    vec3 openColInv = vec3(1.00, 0.80, 0.55);
+    vec3 openCol = mix(openColStd, openColInv, uInverted);
+    float frameLine = 1.0 - smoothstep(0.0, 0.05, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));
+    float openA = frameLine * 0.55;
+
+    vec3 col = mix(closedCol, openCol, uOpen);
+    float a   = mix(closedA, openA,   uOpen);
+
+    gl_FragColor = vec4(col, a);
+  }
+`;function Ju(e){let t=document.createElement(`canvas`);t.width=256,t.height=256;let n=t.getContext(`2d`);n.clearRect(0,0,256,256);let r=e?`#ffae54`:`#6cd0ff`;n.strokeStyle=r,n.fillStyle=r,n.lineWidth=10,n.lineCap=`round`,n.lineJoin=`round`,n.beginPath(),n.moveTo(40,128),n.bezierCurveTo(80,56,176,56,216,128),n.bezierCurveTo(176,200,80,200,40,128),n.closePath(),n.stroke(),n.beginPath(),n.arc(128,128,28,0,Math.PI*2),n.fill(),e&&(n.strokeStyle=`#ff6038`,n.lineWidth=12,n.beginPath(),n.moveTo(38,220),n.lineTo(220,38),n.stroke());let i=new Si(t);return i.minFilter=o,i.magFilter=o,i.anisotropy=4,i.needsUpdate=!0,i}function Yu(){return new Y({uniforms:{tDiffuse:{value:null},uTime:{value:0},uLock:{value:0}},depthTest:!1,depthWrite:!1,vertexShader:`
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position, 1.0);
+      }
+    `,fragmentShader:`
+      uniform sampler2D tDiffuse;
+      uniform float uTime;
+      uniform float uLock;
+      varying vec2 vUv;
+
+      void main() {
+        vec3 c = texture2D(tDiffuse, vUv).rgb;
+
+        // Crisp scanlines — observation lab CRT.
+        float sl = 0.94 + 0.06 * sin(vUv.y * 900.0);
+        c *= sl;
+
+        // Cool desaturation.
+        float lum = dot(c, vec3(0.299, 0.587, 0.114));
+        vec3 cool = vec3(lum) * vec3(0.85, 0.96, 1.12);
+        c = mix(c, cool, 0.30);
+
+        // Vignette.
+        vec2 d = vUv - 0.5;
+        float vig = 1.0 - smoothstep(0.32, 0.95, length(d));
+        c *= mix(0.62, 1.0, vig);
+
+        // Observer Lock: amber rim flicker so the ability has a strong tell.
+        float lockPulse = 0.5 + 0.5 * sin(uTime * 13.0);
+        c += vec3(0.6, 0.42, 0.10) * uLock * (1.0 - vig) * lockPulse * 0.55;
+
+        gl_FragColor = vec4(c, 1.0);
+      }
+    `})}var Xu=class{constructor(){this.name=`Schrödinger Doors`,this.blurb=`Doors collapse to <b>open</b> the instant you observe them — and re-seal the instant you look away. The fourth glyph is slashed: that door <i>inverts</i> the rule. Press <b>E</b> to lock every door at its current state for 2.5s.`,this.abilityLabel=`Observer Lock (E)`,this.doors=[],this.exitCenter=new W,this.glyphTextures=[],this.lockUntil=0,this.cdDone=0,this.lockedStates=null}init(e){let{scene:t,world:n,player:r}=e;this.doors=[],this.glyphTextures=[],this.lockUntil=0,this.cdDone=0,this.lockedStates=null,t.background=new q(329743),t.fog=new Nn(329743,14,46);let i=new Ta(11585791,.55);t.add(i);let a=new wa(13622527,.45);a.position.set(2,12,0),t.add(a);let o=new wa(6725824,.18);o.position.set(-3,5,10),t.add(o),this.hazeMat=Yu(),this.postMaterial=this.hazeMat;let s=new Wi({color:2107446}),c=new Wi({color:921880}),l=new Wi({color:1449e3}),u=(Fu+Iu)/2,d=Iu-Fu,f=Nu*2,p=Q(0,-.5,u,f+2,1,d+2);t.add($(p,c)),n.add(p);let m=Q(0,Pu+.5,u,f+2,1,d+2);t.add($(m,l)),n.add(m);let h=.4,g=Q(-Nu-h/2,Pu/2,u,h,Pu,d);t.add($(g,s)),n.add(g);let _=Q(Nu+h/2,Pu/2,u,h,Pu,d);t.add($(_,s)),n.add(_);let v=Q(0,Pu/2,Fu-h/2,f+h*2,Pu,h);t.add($(v,s)),n.add(v);let y=Q(0,Pu/2,Iu+h/2,f+h*2,Pu,h);t.add($(y,s)),n.add(y);let b=Math.max(f,d),x=new Ka(b,b,3866528,1456930);x.position.set(0,.02,u);let S=x.material,C=e=>{e.transparent=!0,e.opacity=.45};if(Array.isArray(S))for(let e of S)C(e);else C(S);t.add(x);for(let e of Vu)this.spawnDoor(t,n,e);let w=new Pi(.7,1,48);w.rotateX(-Math.PI/2);let T=new J(w,new zr({color:7131391,transparent:!0,opacity:.55,side:2}));T.position.set(0,.05,0),t.add(T),this.exitCenter.set(0,.05,38.5),this.exitMesh=Zu(),this.exitMesh.position.copy(this.exitCenter),t.add(this.exitMesh),r.reset(new W(0,1.6,0),Math.PI),r.camera.rotation.set(0,Math.PI,0,`YXZ`),e.setAbility(this.abilityLabel,`READY`),e.message(`Look at a door to open it. Read the floor glyphs.`,6)}spawnDoor(e,t,n){let r=new Ei(Lu*2,Ru*2,Bu),i=new Y({uniforms:{uTime:{value:0},uOpen:{value:+!!n.inverted},uInverted:{value:+!!n.inverted}},vertexShader:Ku,fragmentShader:qu,transparent:!0,depthWrite:!1,side:2}),a=new J(r,i);a.position.set(0,zu,n.z),e.add(a);let o=new W(-Lu,0,n.z-Bu/2),s=new W(Lu,Ru*2,n.z+Bu/2),c={min:o.clone(),max:s.clone()};n.inverted&&(c.min.set(1e6,1e6,1e6),c.max.set(1000000.01,1000000.01,1000000.01)),t.add(c);let l=Ju(n.inverted);this.glyphTextures.push(l);let u=new zr({map:l,transparent:!0,depthWrite:!1}),d=new Ni(1.3,1.3);d.rotateX(-Math.PI/2);let f=new J(d,u);f.position.set(0,.04,n.z-1.6),e.add(f),this.doors.push({z:n.z,inverted:n.inverted,panel:a,material:i,collider:c,isOpen:n.inverted,openAmt:+!!n.inverted,closedMin:o,closedMax:s})}ability(e){let t=performance.now()/1e3;t<this.cdDone||(this.lockUntil=t+Wu,this.cdDone=t+Gu,this.lockedStates=this.doors.map(e=>e.isOpen))}update(e,t){let n=performance.now()/1e3,{player:r}=t,i=n<this.lockUntil;i||(this.lockedStates=null);let a=r.forward(),o=1-Math.exp(-e*16);for(let e=0;e<this.doors.length;e++){let t=this.doors[e],s;if(i&&this.lockedStates)s=this.lockedStates[e];else{let e=Et.clamp(r.position.x,-Lu,Lu),n=Et.clamp(r.position.y,zu-Ru,zu+Ru),i=t.z,o=e-r.position.x,c=n-r.position.y,l=i-r.position.z,u=Math.sqrt(o*o+c*c+l*l),d=!1;u<Uu&&u>1e-4?d=(a.x*o+a.y*c+a.z*l)/u>Hu:u<=1e-4&&(d=!0),s=t.inverted?!d:d}t.isOpen=s,t.openAmt+=(+!!s-t.openAmt)*o,t.material.uniforms.uOpen.value=t.openAmt,t.material.uniforms.uTime.value=n,s?(t.collider.min.set(1e6,1e6,1e6),t.collider.max.set(1000000.01,1000000.01,1000000.01)):(t.collider.min.copy(t.closedMin),t.collider.max.copy(t.closedMax))}this.hazeMat.uniforms.uTime.value=n,this.hazeMat.uniforms.uLock.value=+!!i,this.exitMesh.material.uniforms.uTime.value=n;let s=r.position.x-this.exitCenter.x,c=r.position.z-this.exitCenter.z;s*s+c*c<1.1*1.1&&t.complete();let l;l=i?`LOCK ${(this.lockUntil-n).toFixed(1)}s`:n<this.cdDone?`... ${(this.cdDone-n).toFixed(1)}s`:`READY`,t.setAbility(this.abilityLabel,l)}dispose(e){this.postMaterial=void 0;for(let e of this.glyphTextures)e.dispose();this.glyphTextures=[],this.doors=[],this.lockedStates=null}};function Zu(){let e=new Di(1,32);return e.rotateX(-Math.PI/2),new J(e,new Y({transparent:!0,uniforms:{uTime:{value:0}},vertexShader:`
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,fragmentShader:`
+      uniform float uTime;
+      varying vec2 vUv;
+      void main() {
+        float d = distance(vUv, vec2(0.5));
+        float ring = smoothstep(0.5, 0.42, d) - smoothstep(0.42, 0.30, d);
+        float pulse = 0.55 + 0.45 * sin(uTime * 2.4);
+        float core  = smoothstep(0.30, 0.0, d) * 0.5;
+        float a = ring * pulse + core;
+        gl_FragColor = vec4(0.55, 0.85, 1.0, a);
+      }
+    `}))}function Qu(){return[new yl,new Dl,new Ll,new tu,new vu,new ju,new Xu]}var $u=document.getElementById(`game`),ed=document.getElementById(`overlay`),td=document.getElementById(`overlay-level-title`),nd=document.getElementById(`overlay-blurb`),rd=document.getElementById(`message`),id=document.getElementById(`level-num`),ad=document.getElementById(`level-name`),od=document.getElementById(`ability-label`),sd=document.getElementById(`ability-value`),cd=new ul({canvas:$u,antialias:!0});cd.setPixelRatio(Math.min(window.devicePixelRatio,2)),cd.setSize(window.innerWidth,window.innerHeight);var ld=new dl;ld.installInput($u);function ud(){let e=Math.min(window.devicePixelRatio,2);return[Math.max(1,Math.floor(window.innerWidth*e)),Math.max(1,Math.floor(window.innerHeight*e))]}var[dd,fd]=ud(),pd=new Kt(dd,fd,{minFilter:o,magFilter:o,format:w,depthBuffer:!0}),md=new Pn,hd=new Sa(-1,1,1,-1,0,1),gd=new J(new Ni(2,2));gd.frustumCulled=!1,md.add(gd);var _d=Qu(),vd=0,yd=null,bd,xd,Sd=0,Cd=!1;function wd(e,t=3){rd.innerHTML=e,rd.classList.add(`show`),Sd=t}function Td(e,t){od.textContent=e,sd.textContent=t}var Ed=()=>({scene:bd,world:xd,player:ld,message:wd,setAbility:Td,complete:Od});function Dd(e){yd&&yd.dispose?.(Ed()),bd=new Pn,xd=new pl;let t=new Ta(16777215,.15);bd.add(t),vd=e,yd=_d[e],Cd=!1,id.textContent=String(e+1),ad.textContent=yd.name,yd.init(Ed())}function Od(){if(!yd||Cd)return;Cd=!0,wd(`✓ ${yd.name} cleared`,2.5);let e=vd+1;if(e>=_d.length){setTimeout(()=>{wd(`All levels cleared. More coming soon. — Press R to restart from Level 1.`,12)},600);return}setTimeout(()=>{kd(e)},700)}function kd(e){let t=_d[e];td.textContent=`Level ${e+1} — ${t.name}`,nd.innerHTML=t.blurb,ed.classList.remove(`hidden`),Ad=e}var Ad=0;ed.addEventListener(`click`,()=>{Ad!==null&&(Dd(Ad),Ad=null);let e=$u.requestPointerLock();e&&typeof e.then==`function`&&e.catch(()=>{})}),document.addEventListener(`pointerlockchange`,()=>{document.pointerLockElement===$u?ed.classList.add(`hidden`):yd&&ed.classList.remove(`hidden`)}),document.addEventListener(`pointerlockerror`,()=>{yd&&ed.classList.remove(`hidden`)}),document.addEventListener(`keydown`,e=>{yd&&(e.code===`KeyE`&&document.pointerLockElement===$u?yd.ability?.(Ed()):e.code===`KeyR`?(Ad=null,Dd(vd)):e.code===`KeyN`&&vd+1<_d.length&&kd(vd+1))}),window.addEventListener(`resize`,()=>{cd.setSize(window.innerWidth,window.innerHeight),ld.camera.aspect=window.innerWidth/window.innerHeight,ld.camera.updateProjectionMatrix();let[e,t]=ud();pd.setSize(e,t)}),Dd(0);var jd=performance.now();function Md(){let e=performance.now(),t=Math.min(.05,(e-jd)/1e3);jd=e,document.pointerLockElement===$u&&ld.update(t,xd),yd?.update(t,Ed()),Sd>0&&(Sd-=t,Sd<=0&&rd.classList.remove(`show`));let n=yd?.postMaterial;n?(cd.setRenderTarget(pd),cd.clear(),cd.render(bd,ld.camera),cd.setRenderTarget(null),n.uniforms.tDiffuse&&(n.uniforms.tDiffuse.value=pd.texture),gd.material=n,cd.render(md,hd)):cd.render(bd,ld.camera),requestAnimationFrame(Md)}Md();

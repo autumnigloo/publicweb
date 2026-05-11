@@ -46,6 +46,17 @@ exit pad, but the *means* of navigation changes every level.
       a 7s cooldown, with a smooth fade-in/out so it feels like a memory
       glimpse, not a strobe. The route you take accumulates as a dream
       blueprint behind you.
+- [x] **Level 7 — Schrödinger Doors.** Cool teal observation-lab corridor
+      with scan-line + cool-desaturation post. Four quantum-panel doors
+      block the way; each is open only while its closest-point falls inside
+      a ~16° central-FOV cone of the camera forward. The fourth door
+      *inverts* the rule (observation collapses it shut) and is colour-coded
+      amber instead of violet. Floor glyphs in front of each door tell you
+      which rule applies — an eye (observe-to-open) or a slashed eye
+      (observe-to-close). Looking down to read the slashed glyph naturally
+      removes the inverted door from gaze, which is also the solution.
+      E = Observer Lock: freezes every door at its current state for 2.5s
+      on a 7s cooldown.
 
 ## Engine deltas (cumulative)
 
@@ -65,9 +76,6 @@ exit pad, but the *means* of navigation changes every level.
 
 ## Near-term backlog
 
-- [ ] **Level 7 — Schrödinger Doors.** Two doors. Each "is" what you last
-      observed it as — open or closed. Looking away resets it. Use peripheral
-      vision (FOV-based) to keep doors fixed while you cross.
 - [ ] **Level 8 — Heat Vision.** Thermal palette (blue → red). Some walls are
       hot (lethal), some are cold (passable but invisible without heat-sense).
 - [ ] **Level 9 — Inverted Color.** Negative-color world. Press E to invert
@@ -76,6 +84,17 @@ exit pad, but the *means* of navigation changes every level.
 - [ ] **Level 10 — Recursive Room.** Standing on the exit pad teleports you to
       a smaller copy of the same room, and so on. Find the level where the
       "exit" is actually solvable (perhaps via a key you carry across scales).
+
+## Schrödinger Doors — possible follow-ups
+
+- [ ] Door 5 with a *cooldown lockout* — observation re-seals it permanently
+      after the first peek, so you need to cross it without ever centering it
+      in FOV. Makes Observer Lock essential.
+- [ ] Side-passage door that requires looking 90° to the side while moving
+      forward — really tests the "track-while-walking" muscle.
+- [ ] Audible "decoherence hiss" when a door collapses (needs WebAudio first).
+- [ ] Hint geometry: faint chevrons on the floor indicating which way to look
+      for inverted doors (a pre-glyph visual breadcrumb).
 
 ## Engine TODO
 

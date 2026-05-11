@@ -5,6 +5,7 @@ import { TimeSliceLevel } from "./timeSlice";
 import { MirrorMazeLevel } from "./mirrorMaze";
 import { GravityCubesLevel } from "./gravityCubes";
 import { WireframeDreamLevel } from "./wireframeDream";
+import { SchrodingerDoorsLevel } from "./schrodingerDoors";
 
 export function makeLevels(): Level[] {
   return [
@@ -14,5 +15,6 @@ export function makeLevels(): Level[] {
     new MirrorMazeLevel(),
     new GravityCubesLevel(),
     new WireframeDreamLevel(),
+    new SchrodingerDoorsLevel(),
   ];
 }
