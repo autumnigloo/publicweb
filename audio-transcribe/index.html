@@ -84,6 +84,38 @@
     button.secondary:hover { background: #4f6ef720; }
     button.secondary:disabled { border-color: #2a2a3a; color: #444; background: transparent; }
 
+    button.danger {
+      background: transparent;
+      border: 1px solid #eb5757;
+      color: #eb5757;
+    }
+    button.danger:hover { background: #eb575720; }
+    button.danger:disabled { border-color: #2a2a3a; color: #444; background: transparent; }
+
+    .rec-row { display: flex; gap: 0.5rem; }
+    .rec-row > button { width: auto; }
+    .rec-row > #record-btn { flex: 1; }
+    .rec-row > #delete-btn { flex: 0 0 auto; padding-left: 1.1rem; padding-right: 1.1rem; }
+
+    #record-btn.recording { background: #eb5757; }
+    #record-btn.recording:hover  { background: #f06e6e; }
+    #record-btn.recording:active { background: #d44a4a; }
+    #record-btn.recording::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      background: #fff;
+      border-radius: 50%;
+      margin-right: 0.5rem;
+      vertical-align: middle;
+      animation: rec-pulse 1.2s infinite ease-in-out;
+    }
+    @keyframes rec-pulse {
+      0%, 100% { opacity: 1;   transform: scale(1); }
+      50%      { opacity: 0.4; transform: scale(0.85); }
+    }
+
     .diff-row {
       display: flex;
       justify-content: flex-end;
@@ -271,6 +303,11 @@
     <div id="picker-text">Tap to choose an audio file<br><span class="meta">or share from the Recorder app</span></div>
   </label>
 
+  <div class="rec-row">
+    <button id="record-btn">Record</button>
+    <button id="delete-btn" class="danger" hidden>Delete</button>
+  </div>
+
   <div class="progress" id="progress"></div>
 
   <div class="diff-row" id="diff-row" hidden>
@@ -328,6 +365,8 @@
   const fileInput    = document.getElementById('file-input');
   const picker       = document.getElementById('picker');
   const pickerText   = document.getElementById('picker-text');
+  const recordBtn    = document.getElementById('record-btn');
+  const deleteBtn    = document.getElementById('delete-btn');
   const cutBtn       = document.getElementById('cut-btn');
   const diffBtn      = document.getElementById('diff-btn');
   const diffRow      = document.getElementById('diff-row');
@@ -368,11 +407,20 @@
   }
 
   /* -------- Busy / output state -------- */
+  let isBusy = false;
   function setBusy(busy) {
+    isBusy = busy;
     progressEl.classList.toggle('busy', busy);
-    fileInput.disabled = busy;
-    picker.style.pointerEvents = busy ? 'none' : '';
-    picker.style.opacity = busy ? '0.6' : '';
+    recordBtn.disabled = busy;
+    deleteBtn.disabled = busy || recState === 'idle';
+    updatePickerLock();
+  }
+
+  function updatePickerLock() {
+    const locked = isBusy || recState !== 'idle';
+    fileInput.disabled = locked;
+    picker.style.pointerEvents = locked ? 'none' : '';
+    picker.style.opacity = locked ? '0.5' : '';
   }
 
   function updateOutputButtons() {
@@ -518,6 +566,181 @@
     const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (f) handleFile(f);
   });
+
+  /* -------- In-app recording --------
+     States: 'idle' → 'recording' → 'stopped' → (transcribe) → 'idle' */
+  let recState = 'idle';
+  let mediaRecorder = null;
+  let recStream = null;
+  let recChunks = [];
+  let recBlob = null;
+  let recMime = '';
+  let recStartedAt = 0;
+  let recTickTimer = null;
+
+  function pickRecMime() {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4;codecs=mp4a.40.2',
+      'audio/mp4',
+      'audio/aac',
+      'audio/ogg;codecs=opus',
+      'audio/ogg'
+    ];
+    if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+    for (const m of candidates) {
+      if (MediaRecorder.isTypeSupported(m)) return m;
+    }
+    return '';
+  }
+
+  function extForMime(mime) {
+    if (!mime) return 'webm';
+    if (mime.includes('webm')) return 'webm';
+    if (mime.includes('mp4'))  return 'm4a';
+    if (mime.includes('aac'))  return 'm4a';
+    if (mime.includes('ogg'))  return 'ogg';
+    if (mime.includes('wav'))  return 'wav';
+    return 'webm';
+  }
+
+  function setRecState(state) {
+    recState = state;
+    recordBtn.classList.toggle('recording', state === 'recording');
+    if (state === 'idle') {
+      recordBtn.textContent = 'Record';
+      recordBtn.disabled = false;
+      deleteBtn.hidden = true;
+      deleteBtn.disabled = true;
+    } else if (state === 'recording') {
+      recordBtn.textContent = 'Stop';
+      recordBtn.disabled = false;
+      deleteBtn.hidden = false;
+      deleteBtn.disabled = false;
+    } else if (state === 'stopped') {
+      recordBtn.textContent = 'Transcribe';
+      recordBtn.disabled = false;
+      deleteBtn.hidden = false;
+      deleteBtn.disabled = false;
+    }
+    updatePickerLock();
+  }
+
+  function tickRecLabel() {
+    if (recState !== 'recording') return;
+    const secs = Math.floor((performance.now() - recStartedAt) / 1000);
+    const mm = Math.floor(secs / 60);
+    const ss = String(secs % 60).padStart(2, '0');
+    recordBtn.textContent = `Stop · ${mm}:${ss}`;
+  }
+
+  function releaseStream() {
+    if (recStream) {
+      try { recStream.getTracks().forEach(t => t.stop()); } catch {}
+      recStream = null;
+    }
+  }
+
+  async function startRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      notify('Microphone not available in this browser.', 'err');
+      return;
+    }
+    try {
+      recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      notify('Microphone permission denied.', 'err');
+      return;
+    }
+    recMime = pickRecMime();
+    try {
+      mediaRecorder = recMime
+        ? new MediaRecorder(recStream, { mimeType: recMime })
+        : new MediaRecorder(recStream);
+    } catch (err) {
+      notify('Recording unsupported: ' + err.message, 'err');
+      releaseStream();
+      return;
+    }
+
+    recChunks = [];
+    recBlob = null;
+    mediaRecorder.ondataavailable = e => {
+      if (e.data && e.data.size > 0) recChunks.push(e.data);
+    };
+    mediaRecorder.onstop = () => {
+      const mime = mediaRecorder.mimeType || recMime || 'audio/webm';
+      recBlob = recChunks.length ? new Blob(recChunks, { type: mime }) : null;
+      releaseStream();
+      if (recBlob) {
+        setRecState('stopped');
+        recordBtn.textContent = `Transcribe · ${formatBytes(recBlob.size)}`;
+        notify('Recorded ' + formatBytes(recBlob.size) + ' — tap Transcribe.', 'ok');
+      } else {
+        setRecState('idle');
+      }
+    };
+
+    mediaRecorder.start();
+    recStartedAt = performance.now();
+    setRecState('recording');
+    tickRecLabel();
+    clearInterval(recTickTimer);
+    recTickTimer = setInterval(tickRecLabel, 500);
+    notify('Recording…', 'busy');
+  }
+
+  function stopRecording() {
+    clearInterval(recTickTimer);
+    recTickTimer = null;
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      try { mediaRecorder.stop(); } catch {}
+    } else {
+      releaseStream();
+      setRecState('idle');
+    }
+  }
+
+  function deleteRecording() {
+    clearInterval(recTickTimer);
+    recTickTimer = null;
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.ondataavailable = null;
+      mediaRecorder.onstop = null;
+      try { mediaRecorder.stop(); } catch {}
+    }
+    releaseStream();
+    mediaRecorder = null;
+    recChunks = [];
+    recBlob = null;
+    setRecState('idle');
+    notify('Recording deleted.', 'ok');
+  }
+
+  async function transcribeRecording() {
+    if (!recBlob) { setRecState('idle'); return; }
+    const ext = extForMime(recBlob.type);
+    const file = new File([recBlob], `recording.${ext}`, { type: recBlob.type || 'audio/webm' });
+    setFilePreview(file);
+    // Pre-clear local rec state; setBusy will lock UI during the request.
+    mediaRecorder = null;
+    recChunks = [];
+    recBlob = null;
+    try {
+      await runTranscribeAndCleanup(file);
+    } finally {
+      setRecState('idle');
+    }
+  }
+
+  recordBtn.addEventListener('click', () => {
+    if (recState === 'idle')      startRecording();
+    else if (recState === 'recording') stopRecording();
+    else if (recState === 'stopped')   transcribeRecording();
+  });
+
+  deleteBtn.addEventListener('click', deleteRecording);
 
   /* -------- Pipeline: transcribe → cleanup (when OR key set) -------- */
   async function runTranscribeAndCleanup(file) {
@@ -775,6 +998,7 @@
   } else {
     setDiffOn(false);
   }
+  setRecState('idle');
 
   loadSharedFile();
 </script>
