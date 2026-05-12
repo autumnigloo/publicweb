@@ -6,6 +6,7 @@ import { MirrorMazeLevel } from "./mirrorMaze";
 import { GravityCubesLevel } from "./gravityCubes";
 import { WireframeDreamLevel } from "./wireframeDream";
 import { SchrodingerDoorsLevel } from "./schrodingerDoors";
+import { HeatVisionLevel } from "./heatVision";
 
 export function makeLevels(): Level[] {
   return [
@@ -16,5 +17,6 @@ export function makeLevels(): Level[] {
     new GravityCubesLevel(),
     new WireframeDreamLevel(),
     new SchrodingerDoorsLevel(),
+    new HeatVisionLevel(),
   ];
 }

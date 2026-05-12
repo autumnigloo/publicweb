@@ -57,6 +57,18 @@ exit pad, but the *means* of navigation changes every level.
       removes the inverted door from gaze, which is also the solution.
       E = Observer Lock: freezes every door at its current state for 2.5s
       on a 7s cooldown.
+- [x] **Level 8 — Heat Vision.** Dim industrial room with a 5×5 field of
+      vertical pillars. Cold structural pillars block movement and read as
+      dark cyan-grey in normal vision. Heat bars (lethal on touch via a
+      proximity check) are nearly invisible "glass" in normal vision and
+      blaze through an IR-camera palette in thermal mode. E toggles
+      Thermal Lens — a post-process that recolours the framebuffer through
+      a deep-purple→red→orange→yellow→white temperature ramp, picking out
+      the high-red heat-bar fragments while desaturating everything else.
+      Tradeoff: thermal mode washes the cold pillars to uniform purple, so
+      you have to flip-flop between senses to actually navigate. Smooth
+      lerp on the toggle (~6/s) so it feels like a sensor warming up.
+      Touching a heat bar respawns the player at the start pad.
 
 ## Engine deltas (cumulative)
 
@@ -76,14 +88,30 @@ exit pad, but the *means* of navigation changes every level.
 
 ## Near-term backlog
 
-- [ ] **Level 8 — Heat Vision.** Thermal palette (blue → red). Some walls are
-      hot (lethal), some are cold (passable but invisible without heat-sense).
 - [ ] **Level 9 — Inverted Color.** Negative-color world. Press E to invert
       back to normal — but only some objects exist in one polarity. Solve by
       toggling.
 - [ ] **Level 10 — Recursive Room.** Standing on the exit pad teleports you to
       a smaller copy of the same room, and so on. Find the level where the
       "exit" is actually solvable (perhaps via a key you carry across scales).
+
+## Heat Vision — possible follow-ups
+
+- [ ] **Pulsing heat bars.** Each bar cycles with a phase so it has a brief
+      "cool" window (~0.6s every 3s) where touch is safe. Adds a real
+      timing puzzle on top of the navigation puzzle. Phase variable already
+      exists (`uPhase`) — just wire a cool-window check against
+      `sin(uTime + uPhase)` into both the kill check and the bar's alpha.
+- [ ] **Thermal cooldown.** Currently the toggle is free, which is fine for
+      a first puzzle. Once a level needs commitment (e.g. timed bars), give
+      Thermal Lens a duration + cooldown so you can't peek mid-cross.
+- [ ] **Hot wall surfaces.** Beyond bars, paint sections of wall/floor as
+      hot. Requires the heat-detection material to be applied to a plane
+      strip, plus an AABB-style proximity check for irregular hot zones.
+- [ ] **Soft respawn flash.** Right now contact teleports silently. Quick
+      red full-screen flash + a beep would sell the "you burned" moment.
+      Worth promoting to a shared `LevelContext.respawn(pos, yaw)` helper
+      since this is the second level (after Time Slice) that needs one.
 
 ## Schrödinger Doors — possible follow-ups
 
