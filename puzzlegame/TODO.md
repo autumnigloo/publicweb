@@ -69,6 +69,22 @@ exit pad, but the *means* of navigation changes every level.
       you have to flip-flop between senses to actually navigate. Smooth
       lerp on the toggle (~6/s) so it feels like a sensor warming up.
       Touching a heat bar respawns the player at the start pad.
+- [x] **Level 9 — Inverted Color.** Long corridor cut into three obstacle
+      zones. Two layers of solid objects, RED and CYAN. Polarity flips
+      between POSITIVE (RED solid, CYAN intangible) and NEGATIVE (CYAN
+      solid, RED intangible). E toggles polarity and the entire framebuffer
+      is colour-inverted by `createColorInvertMaterial` — uPolarity 0→1
+      crossfade with a brief additive flash + scanline intensification on
+      the transition for tactile feedback. Dynamic colliders are spliced
+      in/out of `world.solids` on flip (a `staticSolidCount` index is
+      recorded after the static shell so the splice is O(N) with low
+      constants). Intangible objects render at 0.22 opacity with depthWrite
+      off; tangible objects are opaque. Layout solve: NEG to pass red wall
+      and walk the cyan bridge over pit 1, POS to walk the red bridge over
+      pit 2 and pass the cyan wall, exit. Squash-prevention: ability is
+      refused (HUD message) if flipping would put the player inside a
+      would-be-solid. Falling into a pit respawns at the start pad with a
+      flash.
 
 ## Engine deltas (cumulative)
 
@@ -85,15 +101,38 @@ exit pad, but the *means* of navigation changes every level.
 - [x] First level using a per-frame **camera-forward raycast** for
       object selection (Gravity Cubes). The aimed cube gets a yellow edge
       ring; HUD shows next-state preview ("FROZEN → FALL").
+- [x] First level that **mutates `world.solids` on demand** (Inverted Color).
+      Records `staticSolidCount` after the static shell is built, then on
+      ability rebuilds `world.solids = static.concat(activeDynamics)`. Cheap
+      and avoids needing per-Box "active" flags in `BoxWorld`. Pattern is
+      reusable for any future "phasing" mechanic.
 
 ## Near-term backlog
 
-- [ ] **Level 9 — Inverted Color.** Negative-color world. Press E to invert
-      back to normal — but only some objects exist in one polarity. Solve by
-      toggling.
 - [ ] **Level 10 — Recursive Room.** Standing on the exit pad teleports you to
       a smaller copy of the same room, and so on. Find the level where the
       "exit" is actually solvable (perhaps via a key you carry across scales).
+- [ ] **Level 11 — Phase Shift Pursuit.** A "ghost" copy of you trails ~2 s
+      behind, replaying your past inputs. Some pressure plates need to be held
+      while you stand on others — only the ghost can do it. Visual: the world
+      drawn twice with the ghost lane desaturated. (From the ideas pile.)
+
+## Inverted Color — possible follow-ups
+
+- [ ] **Three-layer polarity** (RED / CYAN / NEUTRAL). E cycles through, so the
+      puzzle becomes "find a sequence" rather than "find a single state". Would
+      need a HUD chip showing which polarity is currently solid.
+- [ ] **Moving polarity objects.** A red elevator that only carries you in
+      POSITIVE; you have to flip mid-ride to land on a cyan ledge. Reuses the
+      dynamic-collider infrastructure (Gravity Cubes already does mutable
+      bounds; combine with polarity gating).
+- [ ] **Flip cost / cooldown.** Currently flipping is free. A 1.5 s cooldown
+      would force commitment and let us escalate later zones with timed gaps.
+- [ ] **Audio "polarity click".** A short reversed-reverb sting on flip would
+      really sell the visual invert. Blocked on WebAudio infrastructure.
+- [ ] **In-pit cinematic.** When the player falls into a pit, drop them past a
+      short reveal of the opposite-polarity floor (a tease of the "other side")
+      before respawning. Sells the polarity metaphor without a tutorial.
 
 ## Heat Vision — possible follow-ups
 

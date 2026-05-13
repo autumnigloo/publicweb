@@ -7,6 +7,7 @@ import { GravityCubesLevel } from "./gravityCubes";
 import { WireframeDreamLevel } from "./wireframeDream";
 import { SchrodingerDoorsLevel } from "./schrodingerDoors";
 import { HeatVisionLevel } from "./heatVision";
+import { InvertedColorLevel } from "./invertedColor";
 
 export function makeLevels(): Level[] {
   return [
@@ -18,5 +19,6 @@ export function makeLevels(): Level[] {
     new WireframeDreamLevel(),
     new SchrodingerDoorsLevel(),
     new HeatVisionLevel(),
+    new InvertedColorLevel(),
   ];
 }
