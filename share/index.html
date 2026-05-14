@@ -195,6 +195,8 @@
       return [...new Set(matches)];
     }
 
+    if (location.search) history.replaceState(null, '', location.pathname);
+
     if (incoming) {
       const current = textarea.value.trimEnd();
       textarea.value = current ? current + '\n' + incoming : incoming;
@@ -205,8 +207,6 @@
       // Flash to signal new content arrived
       textarea.classList.add('flash');
       setTimeout(() => textarea.classList.remove('flash'), 600);
-      // Remove query params without reloading
-      history.replaceState(null, '', location.pathname);
     }
 
     textarea.addEventListener('input', () => {
