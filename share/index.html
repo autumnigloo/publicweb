@@ -191,8 +191,8 @@
 
     function extractUrls(str) {
       const matches = str.match(/https?:\/\/[^\s<>"{}|\\^`[\]]+/g) || [];
-      // Deduplicate while preserving order
-      return [...new Set(matches)];
+      const stripped = matches.map(u => u.split('?')[0]);
+      return [...new Set(stripped)];
     }
 
     if (location.search) history.replaceState(null, '', location.pathname);
