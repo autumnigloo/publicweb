@@ -109,9 +109,24 @@ function onLevelComplete() {
     }, 600);
     return;
   }
-  setTimeout(() => {
-    showOverlayFor(next);
-  }, 700);
+  // If pointer-lock is still engaged, auto-advance without showing the
+  // overlay — releasing the lock would force the user to press Esc and then
+  // fight the browser's post-Esc cooldown to re-acquire it (the classic
+  // "click did nothing" trap). Show the briefing as a non-blocking message
+  // instead. If the user has already released pointer-lock, fall back to the
+  // overlay so they have a clear click target.
+  if (document.pointerLockElement === canvas) {
+    setTimeout(() => {
+      if (!levelCompleted) return; // user pressed R/N already
+      const lvl = levels[next];
+      loadLevel(next);
+      showMessage(`Level ${next + 1} — ${lvl.name}<br><br>${lvl.blurb}`, 6);
+    }, 700);
+  } else {
+    setTimeout(() => {
+      showOverlayFor(next);
+    }, 700);
+  }
 }
 
 function showOverlayFor(idx: number) {
@@ -123,28 +138,48 @@ function showOverlayFor(idx: number) {
 }
 
 let pendingLoadIdx: number | null = 0;
+// True while we want pointer-lock but it hasn't engaged yet (e.g. blocked by
+// the post-Esc cooldown). pointerlockchange resolves this to false.
+let wantPointerLock = false;
+let retryTimer: number | null = null;
+
+function tryAcquirePointerLock() {
+  wantPointerLock = true;
+  let retriesLeft = 6; // ~2.4s of 400ms retries — covers the post-Esc cooldown
+  const attempt = () => {
+    if (!wantPointerLock || document.pointerLockElement === canvas) return;
+    const req = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+    if (req && typeof req.then === "function") {
+      req.catch(() => {
+        // Browsers refuse pointer-lock for ~1.5s after Esc. Retry a few times
+        // so a single overlay click reliably enters the level.
+        if (retriesLeft-- <= 0) return;
+        if (retryTimer !== null) clearTimeout(retryTimer);
+        retryTimer = window.setTimeout(attempt, 400);
+      });
+    }
+  };
+  attempt();
+}
 
 overlay.addEventListener("click", () => {
   if (pendingLoadIdx !== null) {
     loadLevel(pendingLoadIdx);
     pendingLoadIdx = null;
   }
-  // Don't hide the overlay yet — wait for pointerlockchange to confirm the
-  // lock actually engaged. Browsers silently refuse pointer-lock for ~1.5s
-  // after Esc, and previously we'd hide the overlay anyway, leaving the user
-  // stranded in an unlocked level with no way back.
-  const req = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
-  if (req && typeof req.then === "function") {
-    req.catch(() => {
-      /* silent reject — overlay is still visible so user can retry */
-    });
-  }
+  tryAcquirePointerLock();
 });
 
 document.addEventListener("pointerlockchange", () => {
   if (document.pointerLockElement === canvas) {
+    wantPointerLock = false;
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
     overlay.classList.add("hidden");
   } else if (currentLevel) {
+    wantPointerLock = false;
     overlay.classList.remove("hidden");
   }
 });
@@ -153,9 +188,8 @@ document.addEventListener("pointerlockerror", () => {
   if (currentLevel) overlay.classList.remove("hidden");
 });
 
-// Global hotkeys. R (restart) and N (next) work even when pointer-lock isn't
-// active, so the player isn't stranded if a lock-grab fails or while the
-// overlay is up. E still requires pointer-lock since it's a gameplay action.
+// Global hotkeys. R (restart) and N (next/skip) work even when pointer-lock
+// isn't active. E still requires pointer-lock since it's a gameplay action.
 document.addEventListener("keydown", (e) => {
   if (!currentLevel) return;
   if (e.code === "KeyE" && document.pointerLockElement === canvas) {
@@ -163,8 +197,15 @@ document.addEventListener("keydown", (e) => {
   } else if (e.code === "KeyR") {
     pendingLoadIdx = null;
     loadLevel(currentIdx);
+    tryAcquirePointerLock();
   } else if (e.code === "KeyN") {
-    if (currentIdx + 1 < levels.length) showOverlayFor(currentIdx + 1);
+    // Actually skip to the next level — previously this only updated the
+    // overlay text, so users pressing N to skip went nowhere.
+    if (currentIdx + 1 < levels.length) {
+      pendingLoadIdx = null;
+      loadLevel(currentIdx + 1);
+      tryAcquirePointerLock();
+    }
   }
 });
 
