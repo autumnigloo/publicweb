@@ -442,18 +442,35 @@
   function clearSnapshot() {
     localStorage.removeItem(KEY_DIFF_BEFORE);
     localStorage.removeItem(KEY_DIFF_AFTER);
-    if (diffOn) setDiffOn(false);
+    if (diffMode !== 0) setDiffMode(0);
   }
 
-  let diffOn = false;
-  function setDiffOn(on) {
-    diffOn = !!on && hasSnapshot();
-    transcript.hidden = diffOn;
-    diffView.hidden   = !diffOn;
-    diffBtn.classList.toggle('toggled', diffOn);
-    diffBtn.textContent = diffOn ? 'Edit' : 'Diff';
-    localStorage.setItem(KEY_DIFF_ON, diffOn ? '1' : '0');
-    if (diffOn) renderSnapshotDiff();
+  // diffMode: 0 = processed/edit, 1 = original transcription, 2 = diff
+  let diffMode = 0;
+
+  function renderRawTranscription() {
+    const before = localStorage.getItem(KEY_DIFF_BEFORE) || '';
+    if (!before) {
+      diffView.innerHTML = '<div class="diff-empty">No original transcription snapshot.</div>';
+      return;
+    }
+    diffView.textContent = before;
+  }
+
+  // Button label tells you what the next click will show.
+  const DIFF_MODE_NEXT_LABELS = ['Original', 'Diff', 'Processed'];
+
+  function setDiffMode(mode) {
+    if (!hasSnapshot()) mode = 0;
+    diffMode = mode;
+    const showOverlay = mode !== 0;
+    transcript.hidden = showOverlay;
+    diffView.hidden   = !showOverlay;
+    diffBtn.classList.toggle('toggled', showOverlay);
+    diffBtn.textContent = DIFF_MODE_NEXT_LABELS[mode];
+    localStorage.setItem(KEY_DIFF_ON, String(mode));
+    if (mode === 1) renderRawTranscription();
+    if (mode === 2) renderSnapshotDiff();
   }
 
   function renderSnapshotDiff() {
@@ -878,7 +895,8 @@
       saveSnapshot(beforeSnapshot, transcript.value);
       persistTranscript();
       updateOutputButtons();
-      if (diffOn) renderSnapshotDiff();
+      if (diffMode === 2) renderSnapshotDiff();
+      else if (diffMode === 1) renderRawTranscription();
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
       notify('Cleaned in ' + secs + 's.', 'ok');
     } catch (err) {
@@ -908,7 +926,7 @@
 
   diffBtn.addEventListener('click', () => {
     if (!hasSnapshot()) return;
-    setDiffOn(!diffOn);
+    setDiffMode((diffMode + 1) % 3);
   });
 
   /* -------- Persist transcript text -------- */
@@ -993,11 +1011,8 @@
   const cachedTranscript = localStorage.getItem(KEY_TRANSCRIPT);
   if (cachedTranscript) transcript.value = cachedTranscript;
   updateOutputButtons();
-  if (localStorage.getItem(KEY_DIFF_ON) === '1' && hasSnapshot()) {
-    setDiffOn(true);
-  } else {
-    setDiffOn(false);
-  }
+  const savedMode = parseInt(localStorage.getItem(KEY_DIFF_ON) || '0', 10);
+  setDiffMode((savedMode >= 0 && savedMode <= 2) ? savedMode : 0);
   setRecState('idle');
 
   loadSharedFile();
