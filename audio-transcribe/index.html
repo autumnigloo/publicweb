@@ -758,7 +758,7 @@
   async function runTranscribeAndCleanup(file) {
     const text = await transcribe(file);
     if (text && getKeys().openrouter) {
-      await cleanupTranscript({ rangeStart: transcript.value.length - text.length });
+      await cleanupTranscript();
     }
   }
 
