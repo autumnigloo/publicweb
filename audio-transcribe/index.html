@@ -257,8 +257,10 @@
       outline: none;
       font-family: monospace;
     }
-    input:focus, #keys-input:focus { border-color: #4f6ef7; }
-    #keys-input { resize: vertical; min-height: 3.6rem; line-height: 1.4; }
+    input:focus, #keys-input:focus, #prompt-input:focus { border-color: #4f6ef7; }
+    #keys-input, #prompt-input { resize: vertical; line-height: 1.4; }
+    #keys-input { min-height: 3.6rem; }
+    #prompt-input { min-height: 10rem; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.85rem; }
 
     .snackbar {
       position: fixed;
@@ -336,6 +338,10 @@
         <label for="or-model-input">OpenRouter model</label>
         <input type="text" id="or-model-input" placeholder="deepseek/deepseek-v4-flash" spellcheck="false" autocomplete="off">
       </div>
+      <div>
+        <label for="prompt-input">Post-processing instructions</label>
+        <textarea id="prompt-input" spellcheck="false" autocomplete="off" placeholder="Leave blank to use the built-in prompt…"></textarea>
+      </div>
       <button class="secondary" id="save-settings">Save</button>
     </div>
   </details>
@@ -344,18 +350,40 @@
 <div class="snackbar" id="snackbar" role="status" aria-live="polite"></div>
 
 <script>
-  const KEY_KEYS         = 'audio-transcribe-keys';
-  const KEY_MODEL        = 'audio-transcribe-model';
-  const KEY_LANG         = 'audio-transcribe-lang';
-  const KEY_OR_MODEL     = 'audio-transcribe-or-model';
-  const KEY_TRANSCRIPT   = 'audio-transcribe-transcript';
-  const KEY_DIFF_BEFORE  = 'audio-transcribe-diff-before';
-  const KEY_DIFF_AFTER   = 'audio-transcribe-diff-after';
-  const KEY_DIFF_ON      = 'audio-transcribe-diff-on';
-  const LEGACY_KEY_GROQ  = 'audio-transcribe-groq-key';
-  const LEGACY_KEY_OR    = 'audio-transcribe-or-key';
-  const DEFAULT_MODEL    = 'whisper-large-v3-turbo';
-  const DEFAULT_OR_MODEL = 'deepseek/deepseek-v4-flash';
+  const KEY_KEYS          = 'audio-transcribe-keys';
+  const KEY_MODEL         = 'audio-transcribe-model';
+  const KEY_LANG          = 'audio-transcribe-lang';
+  const KEY_OR_MODEL      = 'audio-transcribe-or-model';
+  const KEY_SYSTEM_PROMPT = 'audio-transcribe-system-prompt';
+  const KEY_TRANSCRIPT    = 'audio-transcribe-transcript';
+  const KEY_DIFF_BEFORE   = 'audio-transcribe-diff-before';
+  const KEY_DIFF_AFTER    = 'audio-transcribe-diff-after';
+  const KEY_DIFF_ON       = 'audio-transcribe-diff-on';
+  const LEGACY_KEY_GROQ   = 'audio-transcribe-groq-key';
+  const LEGACY_KEY_OR     = 'audio-transcribe-or-key';
+  const DEFAULT_MODEL     = 'whisper-large-v3-turbo';
+  const DEFAULT_OR_MODEL  = 'deepseek/deepseek-v4-flash';
+  const DEFAULT_SYSTEM_PROMPT = [
+    'You are a dictation post-processor for a single-speaker recording.',
+    'Treat the input as raw speech that the speaker is *building up over time*, and produce the speaker’s intended FINAL text.',
+    '',
+    'Apply two kinds of edits:',
+    '',
+    '1. Cleanup (always):',
+    '   - fix punctuation, capitalization, and obvious word-recognition errors',
+    '   - remove filler words (um, uh, like, you know) and stutters',
+    '   - remove false starts and self-corrections, keeping only the corrected version',
+    '   - add paragraph breaks where appropriate',
+    '',
+    '2. Execute meta-commands the speaker addresses to you. The speaker may issue editing instructions mid-stream — those instructions must be APPLIED to the surrounding content and then REMOVED from the output. Examples:',
+    '   - “Actually, his name was Ben.” → update every reference to that same person earlier in the text to “Ben”, then drop the instruction.',
+    '   - “Ignore the previous section.” / “Scratch that last paragraph.” / “Strike that.” → delete the referenced section and drop the instruction.',
+    '   - “Make this section sound more professional.” / “Rewrite the intro as a bullet list.” → rewrite the referenced span accordingly and drop the instruction.',
+    '   - “Replace X with Y.” / “Change every ‘foo’ to ‘bar’.” → apply the replacement and drop the instruction.',
+    '   Only treat something as a meta-command if it is clearly directed at the post-processor (cues like “actually,”, “scratch that”, “ignore”, “delete”, “remove”, “replace”, “change”, “make this …”, “rewrite …”). When in doubt, KEEP the text as content.',
+    '',
+    'Do not summarize, paraphrase, translate, or invent content beyond what is needed to execute a meta-command. Output ONLY the resulting plain-text transcript — no preamble, no quotes, no commentary.'
+  ].join('\n');
 
   const fileInput    = document.getElementById('file-input');
   const picker       = document.getElementById('picker');
@@ -371,8 +399,9 @@
   const keysInput    = document.getElementById('keys-input');
   const modelInput   = document.getElementById('model-input');
   const langInput    = document.getElementById('lang-input');
-  const orModelInput = document.getElementById('or-model-input');
-  const saveBtn      = document.getElementById('save-settings');
+  const orModelInput  = document.getElementById('or-model-input');
+  const promptInput   = document.getElementById('prompt-input');
+  const saveBtn       = document.getElementById('save-settings');
   const settings     = document.getElementById('settings');
   const snackbar     = document.getElementById('snackbar');
 
@@ -831,27 +860,7 @@
 
     const beforeSnapshot = transcript.value;
 
-    const system = [
-      'You are a dictation post-processor for a single-speaker recording.',
-      'Treat the input as raw speech that the speaker is *building up over time*, and produce the speaker’s intended FINAL text.',
-      '',
-      'Apply two kinds of edits:',
-      '',
-      '1. Cleanup (always):',
-      '   - fix punctuation, capitalization, and obvious word-recognition errors',
-      '   - remove filler words (um, uh, like, you know) and stutters',
-      '   - remove false starts and self-corrections, keeping only the corrected version',
-      '   - add paragraph breaks where appropriate',
-      '',
-      '2. Execute meta-commands the speaker addresses to you. The speaker may issue editing instructions mid-stream — those instructions must be APPLIED to the surrounding content and then REMOVED from the output. Examples:',
-      '   - "Actually, his name was Ben." → update every reference to that same person earlier in the text to "Ben", then drop the instruction.',
-      '   - "Ignore the previous section." / "Scratch that last paragraph." / "Strike that." → delete the referenced section and drop the instruction.',
-      '   - "Make this section sound more professional." / "Rewrite the intro as a bullet list." → rewrite the referenced span accordingly and drop the instruction.',
-      '   - "Replace X with Y." / "Change every ‘foo’ to ‘bar’." → apply the replacement and drop the instruction.',
-      '   Only treat something as a meta-command if it is clearly directed at the post-processor (cues like "actually,", "scratch that", "ignore", "delete", "remove", "replace", "change", "make this …", "rewrite …"). When in doubt, KEEP the text as content.',
-      '',
-      'Do not summarize, paraphrase, translate, or invent content beyond what is needed to execute a meta-command. Output ONLY the resulting plain-text transcript — no preamble, no quotes, no commentary.'
-    ].join('\n');
+    const system = (localStorage.getItem(KEY_SYSTEM_PROMPT) || ‘’).trim() || DEFAULT_SYSTEM_PROMPT;
 
     try {
       const t0 = performance.now();
@@ -953,19 +962,21 @@
     }
   }
   keysInput.value    = storedKeys;
-  modelInput.value   = localStorage.getItem(KEY_MODEL)    || '';
-  langInput.value    = localStorage.getItem(KEY_LANG)     || '';
-  orModelInput.value = localStorage.getItem(KEY_OR_MODEL) || '';
+  modelInput.value   = localStorage.getItem(KEY_MODEL)         || '';
+  langInput.value    = localStorage.getItem(KEY_LANG)          || '';
+  orModelInput.value = localStorage.getItem(KEY_OR_MODEL)      || '';
+  promptInput.value  = localStorage.getItem(KEY_SYSTEM_PROMPT) || '';
   const { groq: loadedGroq } = parseKeys(storedKeys);
   if (!loadedGroq) settings.open = true;
 
   saveBtn.addEventListener('click', () => {
     const { openrouter, groq } = parseKeys(keysInput.value);
     const normalized = (openrouter || groq) ? (openrouter + '\n' + groq) : '';
-    localStorage.setItem(KEY_KEYS,     normalized);
-    localStorage.setItem(KEY_MODEL,    modelInput.value.trim());
-    localStorage.setItem(KEY_LANG,     langInput.value.trim());
-    localStorage.setItem(KEY_OR_MODEL, orModelInput.value.trim());
+    localStorage.setItem(KEY_KEYS,          normalized);
+    localStorage.setItem(KEY_MODEL,         modelInput.value.trim());
+    localStorage.setItem(KEY_LANG,          langInput.value.trim());
+    localStorage.setItem(KEY_OR_MODEL,      orModelInput.value.trim());
+    localStorage.setItem(KEY_SYSTEM_PROMPT, promptInput.value.trim());
     keysInput.value = normalized;
     notify('Settings saved.', 'ok');
   });
