@@ -560,7 +560,7 @@
   }
 
   // Button label tells you what the next click will show.
-  const DIFF_MODE_NEXT_LABELS = ['Original', 'Diff', 'Processed'];
+  const DIFF_MODE_LABELS = ['Processed', 'Original', 'Diff'];
 
   function setDiffMode(mode) {
     if (!hasSnapshot()) mode = 0;
@@ -569,7 +569,7 @@
     transcript.hidden = showOverlay;
     diffView.hidden   = !showOverlay;
     diffBtn.classList.toggle('toggled', showOverlay);
-    diffBtn.textContent = DIFF_MODE_NEXT_LABELS[mode];
+    diffBtn.textContent = DIFF_MODE_LABELS[mode];
     localStorage.setItem(KEY_DIFF_ON, String(mode));
     if (mode === 1) renderRawTranscription();
     if (mode === 2) renderSnapshotDiff();
