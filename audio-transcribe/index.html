@@ -991,12 +991,15 @@
 
   /* -------- Buttons -------- */
   cutBtn.addEventListener('click', async () => {
-    const text = transcript.value;
+    const useOriginal = diffMode === 1;
+    const text = useOriginal
+      ? (localStorage.getItem(KEY_DIFF_BEFORE) || '')
+      : transcript.value;
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
     } catch (e) {
-      transcript.select();
+      if (!useOriginal) transcript.select();
       try { document.execCommand('copy'); } catch {}
     }
     transcript.value = '';
