@@ -436,7 +436,7 @@
   const LEGACY_KEY_GROQ   = 'audio-transcribe-groq-key';
   const LEGACY_KEY_OR     = 'audio-transcribe-or-key';
   const DEFAULT_MODEL     = 'whisper-large-v3-turbo';
-  const DEFAULT_OR_MODEL  = 'deepseek/deepseek-v4-flash';
+  const DEFAULT_OR_MODEL  = 'google/gemini-3.1-flash-lite';
   const DEFAULT_SYSTEM_PROMPT = [
     'You are a dictation post-processor for a single-speaker recording.',
     'Treat the input as raw speech that the speaker is *building up over time*, and produce the speaker’s intended FINAL text.',
@@ -903,8 +903,7 @@
       }
       const data = await res.json();
       const text = (data.text || '').trim();
-      const sep = transcript.value.trim() ? '\n\n' : '';
-      transcript.value = transcript.value + sep + text;
+      transcript.value = text;
       persistTranscript();
       updateOutputButtons();
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
