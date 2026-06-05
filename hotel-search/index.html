@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hotel Search</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f13;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 1.5rem 0.75rem;
+    }
+
+    .card {
+      background: #1a1a24;
+      border: 1px solid #2a2a3a;
+      border-radius: 14px;
+      padding: 1.2rem;
+      width: 100%;
+      max-width: 560px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+      align-self: flex-start;
+    }
+
+    h1 {
+      font-size: 1.2rem;
+      font-weight: 400;
+      letter-spacing: 0.08em;
+      color: #fff;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      flex: 1;
+    }
+
+    label {
+      font-size: 0.78rem;
+      color: #888;
+    }
+
+    input, textarea, select {
+      background: #0f0f13;
+      border: 1px solid #2a2a3a;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 0.9rem;
+      padding: 0.55rem 0.75rem;
+      width: 100%;
+      outline: none;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus { border-color: #4f6ef7; }
+
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(0.7);
+      cursor: pointer;
+    }
+
+    textarea#cities {
+      resize: vertical;
+      min-height: 7rem;
+      line-height: 1.5;
+    }
+
+    .row {
+      display: flex;
+      gap: 0.7rem;
+    }
+
+    button {
+      background: #4f6ef7;
+      color: #fff;
+      border: none;
+      border-radius: 9px;
+      padding: 0.7rem 1rem;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      letter-spacing: 0.02em;
+      width: 100%;
+    }
+    button:hover { background: #5f7ef8; }
+    button:active { transform: scale(0.97); background: #3a5ae0; }
+    button:disabled { background: #2a2a3a; color: #666; cursor: default; transform: none; }
+
+    #links-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .links-note {
+      font-size: 0.78rem;
+      color: #888;
+    }
+
+    .link-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.6rem 0.8rem;
+      background: #0f0f13;
+      border: 1px solid #2a2a3a;
+      border-radius: 8px;
+      text-decoration: none;
+      color: #c8c8e0;
+      font-size: 0.9rem;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .link-item:hover { background: #1a1a2e; border-color: #4f6ef7; color: #fff; }
+    .link-item .city-name { flex: 1; }
+    .link-item .ext { font-size: 0.75rem; color: #666; }
+
+    .error {
+      font-size: 0.82rem;
+      color: #eb5757;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>Hotel Search</h1>
+
+  <div class="field">
+    <label for="cities">Cities — one per line</label>
+    <textarea id="cities" placeholder="Paris&#10;Berlin&#10;Amsterdam" spellcheck="false"></textarea>
+  </div>
+
+  <div class="row">
+    <div class="field">
+      <label for="checkin">Check-in</label>
+      <input type="date" id="checkin">
+    </div>
+    <div class="field">
+      <label for="checkout">Check-out</label>
+      <input type="date" id="checkout">
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="field">
+      <label for="guests">Guests</label>
+      <input type="number" id="guests" value="2" min="1" max="30">
+    </div>
+    <div class="field">
+      <label for="max-price">Max price / night</label>
+      <input type="number" id="max-price" placeholder="Any" min="1">
+    </div>
+    <div class="field">
+      <label for="currency">Currency</label>
+      <select id="currency">
+        <option value="EUR">EUR</option>
+        <option value="USD">USD</option>
+        <option value="GBP">GBP</option>
+        <option value="CHF">CHF</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="min-rating">Min review score (0 – 10)</label>
+    <input type="number" id="min-rating" value="7" min="0" max="10" step="0.5">
+  </div>
+
+  <div id="error" class="error" hidden></div>
+
+  <button id="open-btn">Open searches in tabs</button>
+
+  <div id="links-section" hidden>
+    <div class="links-note">Tabs blocked? Click each link below:</div>
+  </div>
+</div>
+
+<script>
+  const citiesEl   = document.getElementById('cities');
+  const checkinEl  = document.getElementById('checkin');
+  const checkoutEl = document.getElementById('checkout');
+  const guestsEl   = document.getElementById('guests');
+  const priceEl    = document.getElementById('max-price');
+  const currencyEl = document.getElementById('currency');
+  const ratingEl   = document.getElementById('min-rating');
+  const openBtn    = document.getElementById('open-btn');
+  const errorEl    = document.getElementById('error');
+  const linksSection = document.getElementById('links-section');
+
+  // Default dates: today + 7 days
+  const today = new Date();
+  const next  = new Date(today);
+  next.setDate(today.getDate() + 7);
+  checkinEl.value  = today.toISOString().slice(0, 10);
+  checkoutEl.value = next.toISOString().slice(0, 10);
+
+  // Persist inputs
+  const FIELDS = ['cities', 'checkin', 'checkout', 'guests', 'max-price', 'currency', 'min-rating'];
+  FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    const key = 'hotel-search-' + id;
+    const saved = localStorage.getItem(key);
+    if (saved !== null) el.value = saved;
+    el.addEventListener('input', () => localStorage.setItem(key, el.value));
+    el.addEventListener('change', () => localStorage.setItem(key, el.value));
+  });
+
+  function buildUrl(city, checkin, checkout, guests, maxPrice, currency, minRating) {
+    const params = new URLSearchParams({
+      ss: city,
+      checkin,
+      checkout,
+      group_adults: guests,
+      no_rooms: 1,
+      lang: 'en-us',
+    });
+    const filters = [];
+    if (maxPrice) filters.push(`price=${currency}-0-${maxPrice}-1`);
+    if (minRating) filters.push(`review_score=${Math.round(parseFloat(minRating) * 10)}`);
+    if (filters.length) params.set('nflt', filters.join(';'));
+    return 'https://www.booking.com/searchresults.html?' + params;
+  }
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.hidden = !msg;
+  }
+
+  openBtn.addEventListener('click', () => {
+    showError('');
+
+    const cities = citiesEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!cities.length)   { showError('Enter at least one city.'); return; }
+    if (!checkinEl.value)  { showError('Set a check-in date.'); return; }
+    if (!checkoutEl.value) { showError('Set a check-out date.'); return; }
+    if (checkinEl.value >= checkoutEl.value) { showError('Check-out must be after check-in.'); return; }
+
+    const urls = cities.map(city => ({
+      city,
+      url: buildUrl(
+        city,
+        checkinEl.value,
+        checkoutEl.value,
+        guestsEl.value || 2,
+        priceEl.value,
+        currencyEl.value,
+        ratingEl.value
+      )
+    }));
+
+    // Rebuild fallback link list
+    linksSection.querySelectorAll('a').forEach(a => a.remove());
+    urls.forEach(({ city, url }) => {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.className = 'link-item';
+      a.innerHTML = `<span class="city-name">${city}</span><span class="ext">booking.com ↗</span>`;
+      linksSection.appendChild(a);
+    });
+    linksSection.hidden = false;
+
+    // Open tabs with staggered delay so browsers are less likely to block
+    urls.forEach(({ url }, i) => {
+      setTimeout(() => window.open(url, '_blank', 'noopener'), i * 150);
+    });
+  });
+</script>
+</body>
+</html>
