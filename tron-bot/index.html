@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPN-Tron Bot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0a0a10;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 1rem 0.75rem;
+    }
+    .app {
+      width: 100%;
+      max-width: 700px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      align-self: flex-start;
+    }
+    h1 {
+      font-size: 1.3rem;
+      font-weight: 400;
+      letter-spacing: 0.12em;
+      color: #0ff;
+      text-shadow: 0 0 12px #0ff8;
+      text-transform: uppercase;
+    }
+    .card {
+      background: #12121e;
+      border: 1px solid #1e1e30;
+      border-radius: 12px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
+    }
+    .card-title {
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #555;
+    }
+    .row { display: flex; gap: 0.6rem; }
+    .field { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; }
+    label { font-size: 0.72rem; color: #666; }
+    input, select {
+      background: #0a0a14;
+      border: 1px solid #2a2a3a;
+      border-radius: 7px;
+      color: #e0e0e0;
+      font-size: 0.88rem;
+      padding: 0.5rem 0.65rem;
+      width: 100%;
+      outline: none;
+      font-family: monospace;
+    }
+    input:focus, select:focus { border-color: #0ff6; }
+
+    button {
+      background: #0a2a2a;
+      color: #0ff;
+      border: 1px solid #0ff4;
+      border-radius: 8px;
+      padding: 0.65rem 1rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, box-shadow 0.15s;
+      letter-spacing: 0.05em;
+      width: 100%;
+    }
+    button:hover { background: #0e3838; box-shadow: 0 0 12px #0ff3; }
+    button:active { background: #082020; }
+    button:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
+    button.danger { color: #f55; border-color: #f554; background: #2a0a0a; }
+    button.danger:hover { background: #381010; box-shadow: 0 0 12px #f553; }
+
+    .status-row { display: flex; align-items: center; gap: 0.6rem; }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #333;
+      flex-shrink: 0;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .dot.connecting { background: #fa0; box-shadow: 0 0 6px #fa0; animation: pulse 1s infinite; }
+    .dot.connected  { background: #0f8; box-shadow: 0 0 6px #0f8; }
+    .dot.playing    { background: #0ff; box-shadow: 0 0 8px #0ff; animation: pulse 0.8s infinite; }
+    .dot.dead       { background: #f44; box-shadow: 0 0 6px #f44; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .status-text { font-size: 0.82rem; color: #888; }
+
+    .stats-row {
+      display: flex;
+      gap: 1rem;
+    }
+    .stat { text-align: center; flex: 1; }
+    .stat .val { font-size: 1.5rem; font-weight: 300; color: #0ff; font-variant-numeric: tabular-nums; }
+    .stat .lbl { font-size: 0.65rem; color: #555; letter-spacing: 0.08em; text-transform: uppercase; }
+    .stat.loss .val { color: #f44; }
+
+    /* Canvas */
+    #canvas-wrap {
+      position: relative;
+      background: #050508;
+      border: 1px solid #1a1a28;
+      border-radius: 8px;
+      overflow: hidden;
+      width: 100%;
+      aspect-ratio: 1;
+    }
+    canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+    #overlay-msg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      letter-spacing: 0.1em;
+      color: #0ff8;
+      text-shadow: 0 0 12px #0ff;
+      pointer-events: none;
+    }
+
+    /* Direction scores */
+    .dir-scores {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.4rem;
+    }
+    .dir-score {
+      background: #0a0a14;
+      border: 1px solid #1e1e2e;
+      border-radius: 6px;
+      padding: 0.4rem 0.3rem;
+      text-align: center;
+    }
+    .dir-score .arrow { font-size: 1rem; display: block; }
+    .dir-score .score-val { font-size: 0.75rem; color: #0ff; font-family: monospace; }
+    .dir-score .dir-name { font-size: 0.6rem; color: #555; text-transform: uppercase; letter-spacing: 0.05em; }
+    .dir-score.chosen { border-color: #0ff6; background: #0a1e1e; }
+    .dir-score.blocked { opacity: 0.3; }
+
+    /* Log */
+    #log {
+      background: #070710;
+      border: 1px solid #1a1a28;
+      border-radius: 8px;
+      padding: 0.6rem 0.8rem;
+      height: 9rem;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 0.75rem;
+      line-height: 1.6;
+    }
+    .log-line { color: #556; }
+    .log-line.info  { color: #8af; }
+    .log-line.game  { color: #0ff; }
+    .log-line.win   { color: #0f8; }
+    .log-line.lose  { color: #f44; }
+    .log-line.move  { color: #888; }
+    .log-line.err   { color: #f84; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <h1>⚡ GPN-Tron Bot</h1>
+
+  <!-- Config -->
+  <div class="card">
+    <div class="card-title">Connection</div>
+    <div class="row">
+      <div class="field" style="flex:2">
+        <label>Proxy host (run server.js locally)</label>
+        <input id="ws-host" value="localhost" spellcheck="false">
+      </div>
+      <div class="field" style="flex:1">
+        <label>Proxy port</label>
+        <input id="ws-port" value="8080" type="number">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:2">
+        <label>Game server host</label>
+        <input id="game-host" value="151.216.211.107" spellcheck="false">
+      </div>
+      <div class="field" style="flex:1">
+        <label>Game port</label>
+        <input id="game-port" value="4000" type="number">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Username</label>
+        <input id="username" value="bot" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input id="password" type="password" value="bot" autocomplete="off">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Strategy</label>
+        <select id="strategy">
+          <option value="flood">Flood fill (maximize space)</option>
+          <option value="random">Random (survive only)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Auto-rejoin</label>
+        <select id="auto-rejoin">
+          <option value="1">Yes — rejoin after each game</option>
+          <option value="0">No — stop after game ends</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <button id="start-btn">Connect &amp; Start Bot</button>
+      <button id="stop-btn" class="danger" disabled>Disconnect</button>
+    </div>
+  </div>
+
+  <!-- Status + Stats -->
+  <div class="card">
+    <div class="status-row">
+      <div class="dot" id="status-dot"></div>
+      <div class="status-text" id="status-text">Disconnected</div>
+    </div>
+    <div class="stats-row">
+      <div class="stat"><div class="val" id="stat-wins">0</div><div class="lbl">Wins</div></div>
+      <div class="stat loss"><div class="val" id="stat-losses">0</div><div class="lbl">Losses</div></div>
+      <div class="stat"><div class="val" id="stat-players">—</div><div class="lbl">Players</div></div>
+      <div class="stat"><div class="val" id="stat-tick">—</div><div class="lbl">Tick</div></div>
+    </div>
+  </div>
+
+  <!-- Game board -->
+  <div id="canvas-wrap">
+    <canvas id="canvas" width="200" height="200"></canvas>
+    <div id="overlay-msg">Waiting for game…</div>
+  </div>
+
+  <!-- Direction scores -->
+  <div class="card">
+    <div class="card-title">Bot decision — last tick</div>
+    <div class="dir-scores">
+      <div class="dir-score" id="score-up">
+        <span class="arrow">↑</span>
+        <span class="score-val" id="val-up">—</span>
+        <span class="dir-name">Up</span>
+      </div>
+      <div class="dir-score" id="score-right">
+        <span class="arrow">→</span>
+        <span class="score-val" id="val-right">—</span>
+        <span class="dir-name">Right</span>
+      </div>
+      <div class="dir-score" id="score-down">
+        <span class="arrow">↓</span>
+        <span class="score-val" id="val-down">—</span>
+        <span class="dir-name">Down</span>
+      </div>
+      <div class="dir-score" id="score-left">
+        <span class="arrow">←</span>
+        <span class="score-val" id="val-left">—</span>
+        <span class="dir-name">Left</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <div class="card-title">Event log</div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+  // ── DOM refs ──────────────────────────────────────────────────────────────
+  const startBtn     = document.getElementById('start-btn');
+  const stopBtn      = document.getElementById('stop-btn');
+  const statusDot    = document.getElementById('status-dot');
+  const statusText   = document.getElementById('status-text');
+  const statWins     = document.getElementById('stat-wins');
+  const statLosses   = document.getElementById('stat-losses');
+  const statPlayers  = document.getElementById('stat-players');
+  const statTick     = document.getElementById('stat-tick');
+  const overlayMsg   = document.getElementById('overlay-msg');
+  const logEl        = document.getElementById('log');
+  const canvas       = document.getElementById('canvas');
+  const ctx          = canvas.getContext('2d');
+
+  // ── Persistent config ─────────────────────────────────────────────────────
+  const CFG_KEYS = ['ws-host','ws-port','game-host','game-port','username','strategy','auto-rejoin'];
+  CFG_KEYS.forEach(id => {
+    const el = document.getElementById(id);
+    const saved = localStorage.getItem('tron-' + id);
+    if (saved !== null) el.value = saved;
+    el.addEventListener('change', () => localStorage.setItem('tron-' + id, el.value));
+  });
+
+  // ── Player colours ─────────────────────────────────────────────────────────
+  const COLOURS = ['#00ffff','#ff8c00','#00ff88','#ff4466','#bb88ff','#ffff00','#ff66cc','#88ccff'];
+  function playerColour(id) { return COLOURS[id % COLOURS.length]; }
+
+  // ── Game state ─────────────────────────────────────────────────────────────
+  let gridW = 0, gridH = 0;
+  let grid = null;        // Uint8Array, 0 = empty, else player id+1
+  let myId = -1;
+  let playerPos = {};     // id → {x,y}
+  let alivePlayers = new Set();
+  let tickCount = 0;
+  let wins = 0, losses = 0;
+  let inGame = false;
+
+  function resetGame(w, h, id) {
+    gridW = w; gridH = h; myId = id;
+    grid = new Uint8Array(w * h);
+    playerPos = {};
+    alivePlayers = new Set();
+    tickCount = 0;
+    inGame = true;
+    canvas.width  = w;
+    canvas.height = h;
+    overlayMsg.style.display = 'none';
+    setStatus('playing', `In game — ${w}×${h} — me: player ${id}`);
+    log(`New game ${w}x${h}, I am player ${id}`, 'game');
+    renderGrid();
+  }
+
+  // ── Flood-fill AI ──────────────────────────────────────────────────────────
+  const DIRS = [
+    { name: 'up',    dx:  0, dy: -1 },
+    { name: 'right', dx:  1, dy:  0 },
+    { name: 'down',  dx:  0, dy:  1 },
+    { name: 'left',  dx: -1, dy:  0 },
+  ];
+
+  function floodFill(startX, startY) {
+    if (startX < 0 || startX >= gridW || startY < 0 || startY >= gridH) return 0;
+    const idx0 = startY * gridW + startX;
+    if (grid[idx0] !== 0) return 0;
+
+    const visited = new Uint8Array(gridW * gridH);
+    const stack = [idx0];
+    let count = 0;
+    while (stack.length) {
+      const idx = stack.pop();
+      if (visited[idx]) continue;
+      visited[idx] = 1;
+      count++;
+      const x = idx % gridW, y = (idx / gridW) | 0;
+      if (x > 0            && !grid[idx-1]     && !visited[idx-1])     stack.push(idx-1);
+      if (x < gridW - 1    && !grid[idx+1]     && !visited[idx+1])     stack.push(idx+1);
+      if (y > 0            && !grid[idx-gridW] && !visited[idx-gridW]) stack.push(idx-gridW);
+      if (y < gridH - 1    && !grid[idx+gridW] && !visited[idx+gridW]) stack.push(idx+gridW);
+    }
+    return count;
+  }
+
+  function chooseMove() {
+    const pos = playerPos[myId];
+    if (!pos) return 'up';
+
+    const strategy = document.getElementById('strategy').value;
+    const scores = {};
+    let bestDir = null, bestScore = -1;
+
+    for (const { name, dx, dy } of DIRS) {
+      const nx = pos.x + dx, ny = pos.y + dy;
+      if (nx < 0 || nx >= gridW || ny < 0 || ny >= gridH || grid[ny * gridW + nx] !== 0) {
+        scores[name] = -1; // blocked
+        continue;
+      }
+      if (strategy === 'flood') {
+        // Temporarily mark cell to avoid counting it twice
+        grid[ny * gridW + nx] = 255;
+        const s = floodFill(nx, ny);
+        grid[ny * gridW + nx] = 0;
+        scores[name] = s;
+        if (s > bestScore) { bestScore = s; bestDir = name; }
+      } else {
+        scores[name] = 1;
+        if (!bestDir) bestDir = name;
+      }
+    }
+
+    updateDirScores(scores, bestDir);
+    return bestDir || DIRS.find(d => {
+      const nx = pos.x + d.dx, ny = pos.y + d.dy;
+      return nx >= 0 && nx < gridW && ny >= 0 && ny < gridH;
+    })?.name || 'up';
+  }
+
+  function updateDirScores(scores, chosen) {
+    for (const { name } of DIRS) {
+      const el  = document.getElementById('score-' + name);
+      const val = document.getElementById('val-' + name);
+      const s   = scores[name] ?? '—';
+      val.textContent = s === -1 ? '✗' : (s === '—' ? '—' : s);
+      el.classList.toggle('chosen',  name === chosen);
+      el.classList.toggle('blocked', s === -1);
+    }
+  }
+
+  // ── Canvas render ──────────────────────────────────────────────────────────
+  function renderGrid() {
+    if (!grid) return;
+    ctx.clearRect(0, 0, gridW, gridH);
+    for (let i = 0; i < grid.length; i++) {
+      if (grid[i] === 0) continue;
+      const id = grid[i] - 1;
+      const x = i % gridW, y = (i / gridW) | 0;
+      ctx.fillStyle = playerColour(id);
+      ctx.fillRect(x, y, 1, 1);
+    }
+    // Draw current head positions with a brighter dot
+    for (const [id, pos] of Object.entries(playerPos)) {
+      if (!alivePlayers.has(Number(id))) continue;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(pos.x, pos.y, 1, 1);
+    }
+  }
+
+  // ── Log ────────────────────────────────────────────────────────────────────
+  function log(msg, type = '') {
+    const d = document.createElement('div');
+    d.className = 'log-line ' + type;
+    const ts = new Date().toTimeString().slice(0,8);
+    d.textContent = `[${ts}] ${msg}`;
+    logEl.appendChild(d);
+    if (logEl.children.length > 200) logEl.removeChild(logEl.firstChild);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // ── Status ─────────────────────────────────────────────────────────────────
+  function setStatus(state, text) {
+    statusDot.className = 'dot ' + state;
+    statusText.textContent = text;
+  }
+
+  // ── WebSocket + message handling ───────────────────────────────────────────
+  let ws = null;
+  let lineBuffer = '';
+
+  function send(msg) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(msg + '\n');
+  }
+
+  function handleLine(line) {
+    if (!line) return;
+    if (line === '__connected__') {
+      setStatus('connected', 'Connected — joining…');
+      log('TCP connected, joining game', 'info');
+      const user = document.getElementById('username').value.trim() || 'bot';
+      const pass = document.getElementById('password').value.trim() || 'bot';
+      send(`join|${user}|${pass}`);
+      return;
+    }
+    if (line.startsWith('__error__|')) {
+      log('Connection error: ' + line.slice(10), 'err');
+      setStatus('', 'Error');
+      return;
+    }
+
+    const parts = line.split('|');
+    const type  = parts[0];
+
+    if (type === 'motd') {
+      log('Server: ' + parts.slice(1).join('|'), 'info');
+    } else if (type === 'error') {
+      log('Server error: ' + parts.slice(1).join('|'), 'err');
+    } else if (type === 'game') {
+      const w = parseInt(parts[1], 10);
+      const h = parseInt(parts[2], 10);
+      const id = parseInt(parts[3], 10);
+      resetGame(w, h, id);
+      statTick.textContent = 0;
+    } else if (type === 'pos') {
+      const id = parseInt(parts[1], 10);
+      const x  = parseInt(parts[2], 10);
+      const y  = parseInt(parts[3], 10);
+      playerPos[id] = { x, y };
+      alivePlayers.add(id);
+      if (grid) grid[y * gridW + x] = id + 1;
+      statPlayers.textContent = alivePlayers.size;
+    } else if (type === 'player') {
+      const id   = parseInt(parts[1], 10);
+      const name = parts.slice(2).join('|');
+      log(`Player ${id}: ${name}`, 'info');
+    } else if (type === 'tick') {
+      tickCount++;
+      statTick.textContent = tickCount;
+      renderGrid();
+      if (inGame && alivePlayers.has(myId)) {
+        const dir = chooseMove();
+        send(`move|${dir}`);
+        log(`tick ${tickCount} → move ${dir}`, 'move');
+      }
+    } else if (type === 'die') {
+      for (let i = 1; i < parts.length; i++) {
+        const id = parseInt(parts[i], 10);
+        alivePlayers.delete(id);
+        if (id === myId) {
+          inGame = false;
+          log('I died.', 'lose');
+          setStatus('dead', 'Dead — waiting for next game');
+          overlayMsg.textContent = '💀 Dead';
+          overlayMsg.style.display = '';
+        } else {
+          log(`Player ${id} died`, '');
+        }
+      }
+      statPlayers.textContent = alivePlayers.size;
+    } else if (type === 'win') {
+      wins++;
+      statWins.textContent = wins;
+      log(`WIN! (${wins}W / ${losses}L)`, 'win');
+      inGame = false;
+      overlayMsg.textContent = '🏆 WIN';
+      overlayMsg.style.display = '';
+      setStatus('connected', `Won! ${wins}W / ${losses}L`);
+      scheduleRejoin();
+    } else if (type === 'lose') {
+      losses++;
+      statLosses.textContent = losses;
+      log(`Lost. (${wins}W / ${losses}L)`, 'lose');
+      inGame = false;
+      scheduleRejoin();
+    }
+  }
+
+  function scheduleRejoin() {
+    const auto = document.getElementById('auto-rejoin').value;
+    if (auto === '1' && ws && ws.readyState === WebSocket.OPEN) {
+      setTimeout(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          log('Rejoining…', 'info');
+          const user = document.getElementById('username').value.trim() || 'bot';
+          const pass = document.getElementById('password').value.trim() || 'bot';
+          send(`join|${user}|${pass}`);
+        }
+      }, 800);
+    }
+  }
+
+  function connect() {
+    const wsHost   = document.getElementById('ws-host').value.trim();
+    const wsPort   = document.getElementById('ws-port').value.trim();
+    const gameHost = document.getElementById('game-host').value.trim();
+    const gamePort = document.getElementById('game-port').value.trim();
+
+    const url = `ws://${wsHost}:${wsPort}?host=${encodeURIComponent(gameHost)}&port=${gamePort}`;
+    log(`Connecting via proxy at ${url}`, 'info');
+    setStatus('connecting', 'Connecting…');
+
+    ws = new WebSocket(url);
+    ws.onopen = () => log('WebSocket open', 'info');
+    ws.onmessage = e => {
+      lineBuffer += e.data;
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop();
+      lines.forEach(handleLine);
+    };
+    ws.onclose = () => {
+      setStatus('', 'Disconnected');
+      log('WebSocket closed', 'err');
+      ws = null;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      overlayMsg.textContent = 'Disconnected';
+      overlayMsg.style.display = '';
+    };
+    ws.onerror = () => {
+      log('WebSocket error — is server.js running?', 'err');
+    };
+
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+  }
+
+  function disconnect() {
+    if (ws) { ws.close(); ws = null; }
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    setStatus('', 'Disconnected');
+  }
+
+  startBtn.addEventListener('click', connect);
+  stopBtn.addEventListener('click', disconnect);
+
+  // Initial overlay
+  overlayMsg.textContent = 'Waiting for game…';
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+</script>
+</body>
+</html>
