@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Infinite Labyrinth · Below the Surface</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; overflow:hidden; }
+#hud {
+  position:fixed; bottom:2rem; width:100%; text-align:center;
+  color:#ffffff33; font:.65rem/1 'Courier New',monospace;
+  letter-spacing:.4em; text-transform:uppercase; pointer-events:none;
+  transition:opacity 2s;
+}
+</style>
+</head>
+<body>
+<div id="hud">Infinite Labyrinth &nbsp;·&nbsp; Below the Surface</div>
+<script type="importmap">
+{
+  "imports": {
+    "three":          "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/":  "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE                from 'three';
+import { EffectComposer }        from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }            from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass }       from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass }            from 'three/addons/postprocessing/ShaderPass.js';
+
+// ── RENDERER ─────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping  = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.prepend(renderer.domElement);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(78, innerWidth / innerHeight, 0.4, 2500);
+
+window.addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  composer.setSize(innerWidth, innerHeight);
+});
+
+// ── POST-PROCESSING ───────────────────────────────────────────────────────────
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.0, 0.5, 0.8);
+composer.addPass(bloom);
+
+const uwPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, depth: { value: 0 } },
+  vertexShader: `varying vec2 v; void main(){ v=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float depth; varying vec2 v;
+    void main(){
+      vec4 c = texture2D(tDiffuse, v);
+      // Underwater: teal shift + caustic ripple on edges
+      float ripple = sin(v.x*60.0)*sin(v.y*60.0)*0.012*depth;
+      vec3 t = mix(c.rgb, c.rgb * vec3(0.12, 0.42, 0.78) + ripple, depth);
+      float vign = 1.0 - dot(v-0.5, v-0.5)*2.8;
+      gl_FragColor = vec4(t * clamp(vign,0.,1.), c.a);
+    }`,
+});
+composer.addPass(uwPass);
+
+// ── ATMOSPHERE ────────────────────────────────────────────────────────────────
+scene.background = new THREE.Color(0x060d1a);
+const fogAbove = new THREE.FogExp2(0x0b1828, 0.0016);
+const fogBelow = new THREE.FogExp2(0x010c14, 0.020);
+scene.fog = fogAbove;
+
+// ── LIGHTING ──────────────────────────────────────────────────────────────────
+const ambAbove = new THREE.AmbientLight(0x102040, 2.2);
+const sun      = new THREE.DirectionalLight(0x6688bb, 3.0);
+sun.position.set(150, 400, 100);
+scene.add(ambAbove, sun);
+
+const ambBelow = new THREE.AmbientLight(0x001830, 4.5);
+ambBelow.visible = false;
+scene.add(ambBelow);
+
+// ── OCEAN SURFACE ─────────────────────────────────────────────────────────────
+const oceanMat = new THREE.ShaderMaterial({
+  uniforms: { t: { value: 0 }, cam: { value: new THREE.Vector3() } },
+  side: THREE.DoubleSide, transparent: true, depthWrite: false,
+  vertexShader: `
+    uniform float t;
+    varying vec3 vP, vN;
+    void main(){
+      vec3 p = position;
+      p.z += sin(p.x*.042+t)*cos(p.y*.031+t*.88)*3.2
+           + sin(p.x*.019-t*.63)*sin(p.y*.026+t*1.18)*4.5
+           + cos((p.x+p.y)*.011+t*1.6)*1.8;
+      // approximate normal
+      float dx = cos(p.x*.042+t)*3.2*.042 - cos(p.x*.019-t*.63)*4.5*.019;
+      float dy = -sin(p.y*.031+t*.88)*3.2*.031 + sin(p.y*.026+t*1.18)*4.5*.026;
+      vN = normalize(normalMatrix * vec3(-dx,-dy,1.));
+      vP = (modelMatrix * vec4(p,1.)).xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p,1.);
+    }`,
+  fragmentShader: `
+    uniform vec3 cam;
+    varying vec3 vP, vN;
+    void main(){
+      vec3 view = normalize(cam - vP);
+      float fr = pow(1.0 - max(dot(normalize(vN), view), 0.0), 4.0);
+      vec3 col = mix(vec3(.008,.038,.12), vec3(.025,.21,.5), fr)
+               + vec3(.55,.78,1.) * pow(fr, 7.0) * .45;
+      gl_FragColor = vec4(col, .82 + fr*.13);
+    }`,
+});
+const ocean = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000, 80, 80), oceanMat);
+ocean.rotation.x = -Math.PI / 2;
+scene.add(ocean);
+
+// Seafloor
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(5000, 5000),
+  new THREE.MeshStandardMaterial({ color: 0x040508, roughness: 1 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -230;
+scene.add(floor);
+
+// ── WATER SLIDES ──────────────────────────────────────────────────────────────
+const rng = (a, b) => a + Math.random() * (b - a);
+
+const slideMats = [0xeef6ff, 0x99ddff, 0xffeeaa, 0xffbbdd, 0x88ffee, 0xffdd88]
+  .map(c => new THREE.MeshPhongMaterial({
+    color: c, shininess: 160, transparent: true, opacity: 0.88, side: THREE.DoubleSide,
+  }));
+
+function makeSlide(cx, cz) {
+  const pts = [];
+  const baseY = rng(28, 105), radius = rng(28, 75);
+  const turns = 1 + Math.floor(Math.random() * 2), tilt = rng(-.35, .35);
+  const rise  = rng(2, 6);
+
+  for (let i = 0; i <= turns * 14; i++) {
+    const a = (i / (turns * 14)) * Math.PI * 2 * turns;
+    const r = radius * (1 + .3 * Math.sin(a * 1.8 + tilt));
+    pts.push(new THREE.Vector3(
+      cx + Math.cos(a) * r,
+      baseY + Math.sin(a * 1.2 + tilt) * 22 + i * rise * .1,
+      cz + Math.sin(a) * r
+    ));
+  }
+  // Occasional loop-the-loop
+  if (Math.random() > .38) {
+    const [lx, lz, ly] = [cx + rng(-45, 45), cz + rng(-45, 45), pts.at(-1).y];
+    for (let i = 0; i <= 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      pts.push(new THREE.Vector3(lx + Math.cos(a) * 16, ly + Math.sin(a) * 16, lz));
+    }
+  }
+
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const geo   = new THREE.TubeGeometry(curve, Math.max(80, pts.length * 6), rng(1.3, 2.8), 10);
+  return new THREE.Mesh(geo, slideMats[Math.floor(Math.random() * slideMats.length)]);
+}
+
+// 6×6 grid + scatter
+for (let i = 0; i < 6; i++)
+  for (let j = 0; j < 6; j++)
+    scene.add(makeSlide((i - 2.5) * 165 + rng(-25, 25), (j - 2.5) * 165 + rng(-25, 25)));
+for (let k = 0; k < 28; k++)
+  scene.add(makeSlide(rng(-520, 520), rng(-520, 520)));
+
+// ── UNDERWATER CITY ───────────────────────────────────────────────────────────
+const CITY_TOP = -55;
+
+const stoneMat = new THREE.MeshStandardMaterial({ color: 0x161320, roughness: .94, metalness: .06 });
+const darkMat  = new THREE.MeshStandardMaterial({ color: 0x0c0a10, roughness: 1 });
+
+function addLight(group, y, color) {
+  const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 3.5 });
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(.65, 8, 8), mat);
+  orb.position.y = y;
+  const pl = new THREE.PointLight(color, 4, 75);
+  pl.position.y = y;
+  group.add(orb, pl);
+}
+
+function makeTower(x, z, h, r) {
+  const g = new THREE.Group();
+  const sides = 5 + Math.floor(Math.random() * 3);
+  // Shaft
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(r * .65, r, h, sides), stoneMat);
+  shaft.position.y = -h / 2;
+  g.add(shaft);
+  // Ornate belt
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(r * .82, r * .13, 6, sides), stoneMat);
+  belt.position.y = -h * .33;
+  g.add(belt);
+  // Spire
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(r * .65, h * .65, sides), darkMat);
+  spire.position.y = -h - h * .325;
+  g.add(spire);
+  // Buttress turrets
+  for (let i = 0; i < sides; i++) {
+    const a = (i / sides) * Math.PI * 2;
+    const bt = new THREE.Mesh(new THREE.CylinderGeometry(r * .17, r * .21, h * .44, 4), stoneMat);
+    bt.position.set(Math.cos(a) * r * .9, -h * .22, Math.sin(a) * r * .9);
+    const bs = new THREE.Mesh(new THREE.ConeGeometry(r * .17, h * .27, 4), darkMat);
+    bs.position.set(Math.cos(a) * r * .9, -h * .44 - h * .135, Math.sin(a) * r * .9);
+    g.add(bt, bs);
+  }
+  addLight(g, -h * .12, Math.random() > .45 ? 0xff9933 : 0x33aaff);
+  g.position.set(x, CITY_TOP, z);
+  scene.add(g);
+}
+
+function makeCathedral(x, z) {
+  const g = new THREE.Group();
+  const w = rng(13, 21), d = rng(18, 34), h = rng(42, 82);
+  // Nave
+  const nave = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), stoneMat);
+  nave.position.y = -h / 2;
+  g.add(nave);
+  // Pitched roof (rotated box)
+  const roof = new THREE.Mesh(new THREE.CylinderGeometry(0, w * .72, h * .38, 4), darkMat);
+  roof.position.y = -h - h * .19;
+  g.add(roof);
+  // Bell tower
+  const bt = new THREE.Mesh(new THREE.BoxGeometry(w * .37, h * 1.55, w * .37), stoneMat);
+  bt.position.set(0, -h * .775, d * .37);
+  g.add(bt);
+  const bs = new THREE.Mesh(new THREE.ConeGeometry(w * .185, h * .52, 4), darkMat);
+  bs.position.set(0, -h * 1.555 - h * .26, d * .37);
+  g.add(bs);
+  // Lancet window glows
+  const winMat = new THREE.MeshStandardMaterial({ color: 0x1a2a55, emissive: 0x162248, emissiveIntensity: 2 });
+  [-1, 0, 1].forEach(i => {
+    const wn = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 7), winMat);
+    wn.position.set(w * .51, -h * .36 + i * 11, 0);
+    const wn2 = wn.clone(); wn2.position.x = -w * .51; wn2.rotation.y = Math.PI;
+    g.add(wn, wn2);
+  });
+  addLight(g, -h * .22, 0xff8822);
+  g.position.set(x, CITY_TOP, z);
+  scene.add(g);
+}
+
+// Arch bridge between two XZ points
+const tubeMat = new THREE.MeshStandardMaterial({ color: 0x131018, roughness: .9 });
+function makeArch(ax, az, bx, bz, y) {
+  const pts = [];
+  const len = Math.hypot(bx - ax, bz - az);
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    pts.push(new THREE.Vector3(ax + (bx - ax) * t, y - Math.sin(t * Math.PI) * len * .22, az + (bz - az) * t));
+  }
+  scene.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 1.1, 6), tubeMat));
+}
+
+// City layout — positions chosen to leave corridors for the camera
+const towers = [
+  // Inner ring (camera navigates between these)
+  [90, 0, 55, 6], [-90, 0, 55, 6], [0, 90, 55, 6], [0, -90, 55, 6],
+  [65, 65, 48, 5], [65, -65, 48, 5], [-65, 65, 48, 5], [-65, -65, 48, 5],
+  // Mid ring
+  [170, 0, 80, 8], [-170, 0, 80, 8], [0, 170, 80, 8], [0, -170, 80, 8],
+  [125, 125, 70, 7], [125, -125, 70, 7], [-125, 125, 70, 7], [-125, -125, 70, 7],
+  [180, 75, 65, 6], [-180, 75, 65, 6], [180, -75, 65, 6], [-180, -75, 65, 6],
+  [75, 180, 65, 6], [-75, 180, 65, 6], [75, -180, 65, 6], [-75, -180, 65, 6],
+  // Outer
+  [260, 0, 100, 9], [-260, 0, 100, 9], [0, 260, 100, 9], [0, -260, 100, 9],
+  [195, 195, 90, 8], [-195, 195, 90, 8], [195, -195, 90, 8], [-195, -195, 90, 8],
+];
+towers.forEach(([x, z, h, r]) => makeTower(x + rng(-8, 8), z + rng(-8, 8), h, r));
+
+const cathedrals = [
+  [0, 130], [130, 0], [-130, 0], [0, -130],
+  [200, 100], [-200, 100], [200, -100], [-200, -100],
+  [100, 200], [-100, 200], [100, -200], [-100, -200],
+];
+cathedrals.forEach(([x, z]) => makeCathedral(x + rng(-10, 10), z + rng(-10, 10)));
+
+// Arch bridges
+[
+  [0, -90, 0, -170], [0, 90, 0, 170], [90, 0, 170, 0], [-90, 0, -170, 0],
+  [65, 65, 125, 125], [-65, 65, -125, 125], [65, -65, 125, -125], [-65, -65, -125, -125],
+  [90, 0, 65, 65], [0, 90, 65, 65], [-90, 0, -65, 65], [0, -90, 65, -65],
+].forEach(([ax, az, bx, bz]) => makeArch(ax, az, bx, bz, CITY_TOP - 28 - rng(0, 15)));
+
+// ── BIOLUMINESCENT PARTICLES ──────────────────────────────────────────────────
+const N = 600;
+const pPos = new Float32Array(N * 3);
+const pVel = new Float32Array(N * 3);
+for (let i = 0; i < N; i++) {
+  pPos[i*3]   = rng(-300, 300);
+  pPos[i*3+1] = rng(CITY_TOP - 180, CITY_TOP + 8);
+  pPos[i*3+2] = rng(-300, 300);
+  pVel[i*3]   = rng(-.08, .08);
+  pVel[i*3+1] = rng(.015, .06);
+  pVel[i*3+2] = rng(-.08, .08);
+}
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ color: 0x22ffaa, size: 0.55, sizeAttenuation: true }));
+scene.add(particles);
+
+// ── CAMERA PATH ───────────────────────────────────────────────────────────────
+// 60 s total: 0–0.5 above water (slides), 0.5–1.0 below (city)
+const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
+
+const abovePts = [
+  // Wide arc through the slide labyrinth, gradually spiraling inward and descending
+  v3( 320,  82, -30), v3( 240, 100, 185), v3(  70, 115, 310),
+  v3(-185, 100, 250), v3(-330,  85,  60), v3(-290,  95,-190),
+  v3( -75, 108,-315), v3( 165,  88,-260), v3( 280,  72, -90),
+  v3( 180,  65,  60), v3(  80,  58, 105), v3(  30,  52,  50),
+  // Tighter spiral, diving toward surface
+  v3( -30,  46, -25), v3(  25,  40,  35), v3( -15,  33, -10),
+  v3(   5,  24,   8), v3(   0,  14,   0), v3(   0,   4,   0),
+  v3(   0,  -2,   0), // break the surface
+];
+
+const belowPts = [
+  // Descend into city, weaving between tower corridors
+  v3(   0, -18,   0), v3( -20, -40, -55), v3(  35, -62,-115),
+  v3(  40, -74, -80), v3(  40, -76, -40), // south corridor between [0,-90] and [90,0]
+  v3(  40, -77,   0), v3( 110, -75,   0), // east into mid-ring gap
+  v3( 145, -73,  55), v3( 140, -72, 115), // sweeping past [125,125]
+  v3(  80, -74, 150), v3(   0, -76, 145), // west along north street
+  v3( -70, -75, 120), v3(-130, -73,  55), // NW quadrant
+  v3(-140, -72,   0), v3(-100, -74, -65), // south-west
+  v3( -40, -76, -120),v3(  40, -75,-160), // south corridor
+  v3(  80, -72, -120),v3(  50, -70, -60), // looping back
+];
+
+const allPts = [...abovePts, ...belowPts];
+const camPath = new THREE.CatmullRomCurve3(allPts, false, 'catmullrom', 0.5);
+
+// ── ANIMATION ─────────────────────────────────────────────────────────────────
+const DURATION = 60_000;
+const clock = new THREE.Clock();
+let elapsed = 0;
+const lookTarget = new THREE.Vector3();
+const bgAbove = new THREE.Color(0x060d1a);
+const bgBelow = new THREE.Color(0x010810);
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  elapsed = (elapsed + dt * 1000) % DURATION;
+  const t = elapsed / DURATION;
+
+  // Camera position + look-ahead
+  const pos   = camPath.getPointAt(t);
+  const ahead = camPath.getPointAt(Math.min(t + 0.006, 0.999));
+  camera.position.copy(pos);
+  lookTarget.copy(ahead).add(new THREE.Vector3(0, -0.5, 0)); // slight downward lean
+  camera.lookAt(lookTarget);
+
+  const camY  = camera.position.y;
+  const depth = camY < 0 ? Math.min(-camY / 70, 1) : 0; // 0=surface → 1=deep
+
+  // Animate water
+  oceanMat.uniforms.t.value   += dt;
+  oceanMat.uniforms.cam.value.copy(camera.position);
+
+  // Atmosphere swap
+  if (depth > 0.04) {
+    scene.fog = fogBelow;
+    scene.background = bgBelow.clone().lerp(new THREE.Color(0x000508), depth * .5);
+    ambAbove.visible = false; sun.visible = false;
+    ambBelow.visible = true;
+    bloom.strength   = 1.9;
+    bloom.threshold  = 0.55;
+  } else {
+    scene.fog = fogAbove;
+    scene.background = bgAbove;
+    ambAbove.visible = true; sun.visible = true;
+    ambBelow.visible = false;
+    bloom.strength   = 1.0;
+    bloom.threshold  = 0.8;
+  }
+  uwPass.uniforms.depth.value = Math.pow(depth, .6); // perceptual ease
+
+  // Drift particles
+  const pa = pGeo.attributes.position.array;
+  for (let i = 0; i < N; i++) {
+    pa[i*3]   += pVel[i*3];
+    pa[i*3+1] += pVel[i*3+1];
+    pa[i*3+2] += pVel[i*3+2];
+    if (pa[i*3+1] > CITY_TOP + 8) pa[i*3+1] = CITY_TOP - 175;
+  }
+  pGeo.attributes.position.needsUpdate = true;
+
+  composer.render();
+}
+
+animate();
+</script>
+</body>
+</html>
