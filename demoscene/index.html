@@ -37,7 +37,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping  = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.8;
 document.body.prepend(renderer.domElement);
 
 const scene  = new THREE.Scene();
@@ -77,15 +77,16 @@ composer.addPass(uwPass);
 scene.background = new THREE.Color(0x060d1a);
 const fogAbove = new THREE.FogExp2(0x0b1828, 0.0016);
 const fogBelow = new THREE.FogExp2(0x010c14, 0.020);
-scene.fog = fogAbove;
+const dynFog   = new THREE.FogExp2(0x0b1828, 0.0016);
+scene.fog = dynFog;
 
 // ── LIGHTING ──────────────────────────────────────────────────────────────────
-const ambAbove = new THREE.AmbientLight(0x102040, 2.2);
-const sun      = new THREE.DirectionalLight(0x6688bb, 3.0);
+const ambAbove = new THREE.AmbientLight(0x2040a0, 4.5);
+const sun      = new THREE.DirectionalLight(0x88aadd, 6.0);
 sun.position.set(150, 400, 100);
 scene.add(ambAbove, sun);
 
-const ambBelow = new THREE.AmbientLight(0x001830, 4.5);
+const ambBelow = new THREE.AmbientLight(0x002040, 8.0);
 ambBelow.visible = false;
 scene.add(ambBelow);
 
@@ -179,8 +180,8 @@ for (let k = 0; k < 28; k++)
 // ── UNDERWATER CITY ───────────────────────────────────────────────────────────
 const CITY_TOP = -55;
 
-const stoneMat = new THREE.MeshStandardMaterial({ color: 0x161320, roughness: .94, metalness: .06 });
-const darkMat  = new THREE.MeshStandardMaterial({ color: 0x0c0a10, roughness: 1 });
+const stoneMat = new THREE.MeshStandardMaterial({ color: 0x2a2238, roughness: .92, metalness: .08 });
+const darkMat  = new THREE.MeshStandardMaterial({ color: 0x1a1525, roughness: 1 });
 
 function addLight(group, y, color) {
   const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 3.5 });
@@ -311,44 +312,42 @@ const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ color: 0x22f
 scene.add(particles);
 
 // ── CAMERA PATH ───────────────────────────────────────────────────────────────
-// 60 s total: 0–0.5 above water (slides), 0.5–1.0 below (city)
+// 30 s total: wide arc above → inward spiral → diagonal surface dive → city
 const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
 
-const abovePts = [
-  // Wide arc through the slide labyrinth, gradually spiraling inward and descending
+const camPts = [
+  // Wide arc through the slide labyrinth
   v3( 320,  82, -30), v3( 240, 100, 185), v3(  70, 115, 310),
   v3(-185, 100, 250), v3(-330,  85,  60), v3(-290,  95,-190),
   v3( -75, 108,-315), v3( 165,  88,-260), v3( 280,  72, -90),
-  v3( 180,  65,  60), v3(  80,  58, 105), v3(  30,  52,  50),
-  // Tighter spiral, diving toward surface
-  v3( -30,  46, -25), v3(  25,  40,  35), v3( -15,  33, -10),
-  v3(   5,  24,   8), v3(   0,  14,   0), v3(   0,   4,   0),
-  v3(   0,  -2,   0), // break the surface
+  // Spiral inward, descending toward surface
+  v3( 180,  65,  60), v3(  80,  55, 105), v3(  20,  46,  60),
+  v3( -30,  38,  10), v3(  50,  28,  55), v3( 100,  16,  75),
+  // Diagonal surface crossing — steady lateral motion through y=0
+  v3( 115,   2,  85), v3( 115, -16,  85), v3( 100, -36,  72),
+  v3(  72, -50,  50),
+  // Into city corridors
+  v3(  40, -62,  10), v3(  35, -68, -50),
+  v3(  40, -74, -80), v3(  40, -76, -40),
+  v3(  40, -77,   0), v3( 110, -75,   0),
+  v3( 145, -73,  55), v3( 140, -72, 115),
+  v3(  80, -74, 150), v3(   0, -76, 145),
+  v3( -70, -75, 120), v3(-130, -73,  55),
+  v3(-140, -72,   0), v3(-100, -74, -65),
+  v3( -40, -76, -120), v3(  40, -75,-160),
+  v3(  80, -72, -120), v3(  50, -70, -60),
 ];
-
-const belowPts = [
-  // Descend into city, weaving between tower corridors
-  v3(   0, -18,   0), v3( -20, -40, -55), v3(  35, -62,-115),
-  v3(  40, -74, -80), v3(  40, -76, -40), // south corridor between [0,-90] and [90,0]
-  v3(  40, -77,   0), v3( 110, -75,   0), // east into mid-ring gap
-  v3( 145, -73,  55), v3( 140, -72, 115), // sweeping past [125,125]
-  v3(  80, -74, 150), v3(   0, -76, 145), // west along north street
-  v3( -70, -75, 120), v3(-130, -73,  55), // NW quadrant
-  v3(-140, -72,   0), v3(-100, -74, -65), // south-west
-  v3( -40, -76, -120),v3(  40, -75,-160), // south corridor
-  v3(  80, -72, -120),v3(  50, -70, -60), // looping back
-];
-
-const allPts = [...abovePts, ...belowPts];
-const camPath = new THREE.CatmullRomCurve3(allPts, false, 'catmullrom', 0.5);
+const camPath = new THREE.CatmullRomCurve3(camPts, false, 'catmullrom', 0.5);
 
 // ── ANIMATION ─────────────────────────────────────────────────────────────────
-const DURATION = 60_000;
+const DURATION = 30_000;
 const clock = new THREE.Clock();
 let elapsed = 0;
 const lookTarget = new THREE.Vector3();
-const bgAbove = new THREE.Color(0x060d1a);
-const bgBelow = new THREE.Color(0x010810);
+const bgAbove     = new THREE.Color(0x060d1a);
+const bgBelow     = new THREE.Color(0x010810);
+const fogColAbove = new THREE.Color(0x0b1828);
+const fogColBelow = new THREE.Color(0x010c14);
 
 function animate() {
   requestAnimationFrame(animate);
@@ -370,22 +369,16 @@ function animate() {
   oceanMat.uniforms.t.value   += dt;
   oceanMat.uniforms.cam.value.copy(camera.position);
 
-  // Atmosphere swap
-  if (depth > 0.04) {
-    scene.fog = fogBelow;
-    scene.background = bgBelow.clone().lerp(new THREE.Color(0x000508), depth * .5);
-    ambAbove.visible = false; sun.visible = false;
-    ambBelow.visible = true;
-    bloom.strength   = 1.9;
-    bloom.threshold  = 0.55;
-  } else {
-    scene.fog = fogAbove;
-    scene.background = bgAbove;
-    ambAbove.visible = true; sun.visible = true;
-    ambBelow.visible = false;
-    bloom.strength   = 1.0;
-    bloom.threshold  = 0.8;
-  }
+  // Smooth atmosphere transition (smoothstep from depth 0.03 → 0.43)
+  const sd = (d => { const t = Math.max(0, Math.min(1, (d - 0.03) / 0.40)); return t * t * (3 - 2 * t); })(depth);
+  scene.background = bgAbove.clone().lerp(bgBelow, sd);
+  dynFog.color.lerpColors(fogColAbove, fogColBelow, sd);
+  dynFog.density = 0.0016 + sd * (0.020 - 0.0016);
+  ambAbove.intensity = 4.5 * (1 - sd); sun.intensity = 6.0 * (1 - sd);
+  ambBelow.intensity = 8.0 * sd;
+  ambAbove.visible = sd < 0.99; sun.visible = sd < 0.99; ambBelow.visible = sd > 0.01;
+  bloom.strength   = 1.0 + sd * 1.2;
+  bloom.threshold  = 0.80 - sd * 0.35;
   uwPass.uniforms.depth.value = Math.pow(depth, .6); // perceptual ease
 
   // Drift particles
