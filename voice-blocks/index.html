@@ -34,12 +34,6 @@ body {
   gap: 0.7rem;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-.header h1 { font-size: 0.9rem; font-weight: 400; letter-spacing: 0.08em; color: #666; }
 
 #clear-btn {
   background: #1c1c26;
@@ -191,10 +185,6 @@ label { font-size: 0.75rem; color: #777; }
 </head>
 <body>
 <div class="card">
-  <div class="header">
-    <h1>Voice Blocks</h1>
-  </div>
-
   <button id="clear-btn" disabled>Cut</button>
 
   <textarea id="editor" placeholder="Press Record to begin…" spellcheck="true"></textarea>
@@ -204,8 +194,8 @@ label { font-size: 0.75rem; color: #777; }
 
   <div class="bottom-controls">
     <button class="icon" id="prev-btn" title="Previous block">←</button>
-    <span class="block-num" id="block-num">1 / 1</span>
     <button class="icon" id="next-btn" title="Next block">→</button>
+    <span class="block-num" id="block-num">1 / 1</span>
     <button class="icon" id="undo-btn" title="Undo">↩</button>
     <button class="icon" id="redo-btn" title="Redo">↪</button>
     <button class="icon" id="add-btn" title="Add block after current">+</button>
