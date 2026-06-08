@@ -1,0 +1,17 @@
+{
+  "name": "Voice Blocks",
+  "short_name": "VoiceBlocks",
+  "description": "Block-based voice dictation with AI post-processing and editing",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f0f13",
+  "theme_color": "#0f0f13",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
