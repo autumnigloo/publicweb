@@ -37,50 +37,26 @@ body {
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-shrink: 0;
 }
 .header h1 { font-size: 0.9rem; font-weight: 400; letter-spacing: 0.08em; color: #666; }
 
-#settings-btn {
-  background: none; border: none; color: #555; font-size: 1.1rem;
-  cursor: pointer; padding: 0.2rem 0.35rem; border-radius: 6px; line-height: 1;
-}
-#settings-btn:hover { color: #999; background: #252530; }
-
-.top-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-shrink: 0;
-}
-
-button.icon {
-  background: #252530;
-  border: 1px solid #353545;
-  border-radius: 8px;
-  color: #c0c0d8;
-  font-size: 1.15rem;
-  width: 2.5rem;
-  height: 2.5rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s;
-  padding: 0;
-}
-button.icon:hover { background: #30304a; border-color: #4f6ef7; }
-button.icon:disabled { color: #3a3a4a; background: #1e1e28; border-color: #252530; cursor: default; }
-
-.block-num {
-  font-size: 0.78rem;
+#clear-btn {
+  background: #1c1c26;
+  border: 1px solid #2a2a3a;
+  border-radius: 10px;
   color: #666;
-  min-width: 2.8rem;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  width: 100%;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
+#clear-btn:hover { background: #252530; border-color: #444; color: #bbb; }
+#clear-btn:disabled { opacity: 0.35; cursor: default; }
+#clear-btn.del { background: #1a0f0f; border-color: #4a1f1f; color: #b05050; }
+#clear-btn.del:hover { background: #241515; border-color: #c0392b; color: #e06060; }
 
 #editor {
   flex: 1;
@@ -110,6 +86,10 @@ button.icon:disabled { color: #3a3a4a; background: #1e1e28; border-color: #25253
   cursor: pointer;
   transition: background 0.15s, transform 0.1s;
   flex-shrink: 0;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
 }
 #record-btn:hover { background: #5f7ef8; }
 #record-btn:disabled { background: #2a2a3a; color: #666; cursor: default; }
@@ -122,28 +102,40 @@ button.icon:disabled { color: #3a3a4a; background: #1e1e28; border-color: #25253
 }
 #status.err { color: #eb5757; }
 
-.bottom-area {
+.bottom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   flex-shrink: 0;
-  margin-top: 0.5rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid #1e1e2a;
 }
+.bar-spacer { flex: 1; }
 
-#clear-btn {
-  background: #1c1c26;
-  border: 1px solid #2a2a3a;
-  border-radius: 10px;
-  color: #666;
-  font-size: 0.85rem;
-  padding: 0.6rem 1rem;
+button.icon {
+  background: #252530;
+  border: 1px solid #353545;
+  border-radius: 8px;
+  color: #c0c0d8;
+  font-size: 1.15rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  width: 100%;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  padding: 0;
 }
-#clear-btn:hover { background: #252530; border-color: #444; color: #bbb; }
-#clear-btn:disabled { opacity: 0.35; cursor: default; }
-#clear-btn.del { background: #1a0f0f; border-color: #4a1f1f; color: #b05050; }
-#clear-btn.del:hover { background: #241515; border-color: #c0392b; color: #e06060; }
+button.icon:hover { background: #30304a; border-color: #4f6ef7; }
+button.icon:disabled { color: #3a3a4a; background: #1e1e28; border-color: #252530; cursor: default; }
+
+.block-num {
+  font-size: 0.78rem;
+  color: #666;
+  min-width: 2.8rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Settings modal */
 #modal {
@@ -195,47 +187,30 @@ label { font-size: 0.75rem; color: #777; }
   width: 100%;
 }
 #config-box:focus { border-color: #4a60c8; }
-
-.msep { border: none; border-top: 1px solid #252530; margin: 0.2rem 0; }
-
-#cut-all-btn {
-  background: #120808;
-  border: 1px solid #3a1515;
-  border-radius: 8px;
-  color: #7a3535;
-  font-size: 0.78rem;
-  padding: 0.5rem 0.75rem;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-#cut-all-btn:hover { background: #1e0e0e; border-color: #8b2222; color: #cc5555; }
-.cut-all-hint { font-size: 0.72rem; color: #4a3a3a; }
 </style>
 </head>
 <body>
 <div class="card">
   <div class="header">
     <h1>Voice Blocks</h1>
-    <button id="settings-btn" title="Settings">⚙</button>
   </div>
 
-  <div class="top-controls">
-    <button class="icon" id="prev-btn" title="Previous block">←</button>
-    <span class="block-num" id="block-num">1 / 1</span>
-    <button class="icon" id="next-btn" title="Next block">→</button>
-    <button class="icon" id="undo-btn" title="Undo">↩</button>
-    <button class="icon" id="redo-btn" title="Redo">↪</button>
-    <button class="icon" id="add-btn" title="Add block after current">+</button>
-  </div>
+  <button id="clear-btn" disabled>Cut</button>
 
   <textarea id="editor" placeholder="Press Record to begin…" spellcheck="true"></textarea>
 
   <button id="record-btn">Record</button>
   <div id="status"></div>
 
-  <div class="bottom-area">
-    <button id="clear-btn" disabled>Clear</button>
+  <div class="bottom-controls">
+    <button class="icon" id="prev-btn" title="Previous block">←</button>
+    <span class="block-num" id="block-num">1 / 1</span>
+    <button class="icon" id="next-btn" title="Next block">→</button>
+    <button class="icon" id="undo-btn" title="Undo">↩</button>
+    <button class="icon" id="redo-btn" title="Redo">↪</button>
+    <button class="icon" id="add-btn" title="Add block after current">+</button>
+    <div class="bar-spacer"></div>
+    <button class="icon" id="settings-btn" title="Settings">⚙</button>
   </div>
 </div>
 
@@ -250,12 +225,6 @@ label { font-size: 0.75rem; color: #777; }
       <label for="config-box">Config — one value per line: Groq key · OpenRouter key · model</label>
       <textarea id="config-box" rows="3" autocomplete="off" autocorrect="off" spellcheck="false"
         placeholder="gsk_…&#10;sk-or-…&#10;google/gemini-3.1-flash-lite"></textarea>
-    </div>
-    <hr class="msep">
-    <div class="field">
-      <label>Danger zone</label>
-      <button id="cut-all-btn">Cut All — copy all blocks to clipboard and reset</button>
-      <span class="cut-all-hint">Joins all blocks with blank lines, copies to clipboard, then clears everything.</span>
     </div>
   </div>
 </div>
@@ -387,19 +356,6 @@ clearBtn.onclick = async () => {
   render();
 };
 
-// ── cut-all ───────────────────────────────────────────────────────────────────
-g('cut-all-btn').onclick = async () => {
-  const all = blocks.map(b => b.text).filter(t => t.trim()).join('\n\n');
-  if (!all) { setStatus('Nothing to cut.'); closeModal(); return; }
-  try { await navigator.clipboard.writeText(all); } catch {}
-  blocks = [mkBlock()];
-  ci = 0;
-  persist();
-  render();
-  setStatus('All blocks copied to clipboard and cleared.');
-  closeModal();
-};
-
 // ── context builder ───────────────────────────────────────────────────────────
 function buildContext(idx) {
   const prev = blocks.slice(0, idx).map(b => b.text).filter(t => t.trim());
@@ -445,10 +401,31 @@ async function llm(sys, user) {
   return (await r.json()).choices[0].message.content.trim();
 }
 
-// ── recording ─────────────────────────────────────────────────────────────────
+// ── recording + long-press cut-all ────────────────────────────────────────────
 let mr = null, chunks = [], recording = false;
+let lpTimer = null, lpFired = false;
 
-recBtn.onclick = async () => {
+async function cutAll() {
+  const all = blocks.map(b => b.text).filter(t => t.trim()).join('\n\n');
+  if (all) { try { await navigator.clipboard.writeText(all); } catch {} }
+  blocks = [mkBlock()]; ci = 0;
+  persist(); render();
+  setStatus(all ? 'All blocks copied and cleared.' : 'Cleared.');
+}
+
+recBtn.addEventListener('contextmenu', e => e.preventDefault());
+
+recBtn.addEventListener('pointerdown', () => {
+  if (recording) return;
+  lpFired = false;
+  lpTimer = setTimeout(() => { lpFired = true; lpTimer = null; cutAll(); }, 700);
+});
+recBtn.addEventListener('pointerup',     () => { clearTimeout(lpTimer); lpTimer = null; });
+recBtn.addEventListener('pointercancel', () => { clearTimeout(lpTimer); lpTimer = null; });
+
+recBtn.addEventListener('click', async () => {
+  if (lpFired) { lpFired = false; return; }
+
   if (recording) { mr.stop(); return; }
   if (!localStorage.getItem(SK.groq)) {
     setStatus('No Groq API key — open Settings.', true); return;
@@ -482,11 +459,8 @@ recBtn.onclick = async () => {
       if (empty) {
         if (orKey) {
           setStatus('Processing…');
-          const userMsg  = ctx
-            ? `${ctx}---\nTranscription to clean up:\n${whisper}`
-            : whisper;
+          const userMsg   = ctx ? `${ctx}---\nTranscription to clean up:\n${whisper}` : whisper;
           const processed = await llm(SYS_CLEAN, userMsg);
-          // raw whisper on undo stack so pressing Undo reveals pre-processing text
           b.us = [whisper]; b.rs = [];
           b.text = processed;
           persist();
@@ -520,7 +494,7 @@ recBtn.onclick = async () => {
   recBtn.textContent = 'Stop';
   recBtn.classList.add('recording');
   setStatus('Recording…');
-};
+});
 
 // ── PWA ───────────────────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
