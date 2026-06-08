@@ -214,7 +214,7 @@ label { font-size: 0.75rem; color: #777; }
     </div>
     <div class="field grow">
       <label for="config-box">Config — one value per line: Groq key · OpenRouter key · model</label>
-      <textarea id="config-box" autocomplete="off" autocorrect="off" spellcheck="false"
+      <textarea id="config-box" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
         placeholder="gsk_…&#10;sk-or-…&#10;google/gemini-3.1-flash-lite"></textarea>
     </div>
   </div>
@@ -237,7 +237,7 @@ function loadS() {
   configEl.value = [groq, or, model].join('\n');
 }
 function saveS() {
-  const [groq = '', or = '', model = ''] = configEl.value.split('\n').map(s => s.trim());
+  const [groq = '', or = '', model = ''] = configEl.value.split('\n').map(s => s.trim().replace(/\r/g, ''));
   localStorage.setItem(SK.groq, groq);
   localStorage.setItem(SK.or,   or);
   localStorage.setItem(SK.orm,  model || DEF_MODEL);
