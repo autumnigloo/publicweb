@@ -149,8 +149,7 @@ button.icon:disabled { color: #3a3a4a; background: #1e1e28; border-color: #25253
   width: 100%; max-width: 480px;
   display: flex; flex-direction: column; gap: 0.85rem;
   margin-top: 1rem;
-  max-height: calc(100dvh - 3rem);
-  overflow-y: auto;
+  height: calc(100dvh - 3rem);
 }
 
 .mhead {
@@ -165,6 +164,7 @@ button.icon:disabled { color: #3a3a4a; background: #1e1e28; border-color: #25253
 .mclose:hover { color: #ccc; background: #252530; }
 
 .field { display: flex; flex-direction: column; gap: 0.3rem; }
+.field.grow { flex: 1; }
 label { font-size: 0.75rem; color: #777; }
 
 #config-box {
@@ -179,6 +179,7 @@ label { font-size: 0.75rem; color: #777; }
   resize: none;
   line-height: 1.8;
   width: 100%;
+  flex: 1;
 }
 #config-box:focus { border-color: #4a60c8; }
 </style>
@@ -211,9 +212,9 @@ label { font-size: 0.75rem; color: #777; }
       <span>Settings</span>
       <button class="mclose" id="mclose">✕ Close</button>
     </div>
-    <div class="field">
+    <div class="field grow">
       <label for="config-box">Config — one value per line: Groq key · OpenRouter key · model</label>
-      <textarea id="config-box" rows="3" autocomplete="off" autocorrect="off" spellcheck="false"
+      <textarea id="config-box" autocomplete="off" autocorrect="off" spellcheck="false"
         placeholder="gsk_…&#10;sk-or-…&#10;google/gemini-3.1-flash-lite"></textarea>
     </div>
   </div>
