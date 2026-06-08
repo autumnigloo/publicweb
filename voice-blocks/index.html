@@ -180,17 +180,20 @@ button.icon:disabled { color: #444; background: #1e1e28; border-color: #252530; 
 .field { display: flex; flex-direction: column; gap: 0.3rem; }
 label { font-size: 0.75rem; color: #777; }
 
-input[type=password], input[type=text] {
+#config-box {
   background: #0f0f13;
   border: 1px solid #2a2a3a;
   border-radius: 8px;
   color: #e0e0e0;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   padding: 0.52rem 0.75rem;
   outline: none;
-  font-family: inherit;
+  font-family: 'Courier New', monospace;
+  resize: none;
+  line-height: 1.8;
+  width: 100%;
 }
-input:focus { border-color: #4a60c8; }
+#config-box:focus { border-color: #4a60c8; }
 
 .msep { border: none; border-top: 1px solid #252530; margin: 0.2rem 0; }
 
@@ -245,16 +248,9 @@ input:focus { border-color: #4a60c8; }
       <button class="mclose" id="mclose">✕ Close</button>
     </div>
     <div class="field">
-      <label for="groq-key">Groq API key (Whisper)</label>
-      <input type="password" id="groq-key" placeholder="gsk_…" autocomplete="off" spellcheck="false">
-    </div>
-    <div class="field">
-      <label for="or-key">OpenRouter API key (post-processing)</label>
-      <input type="password" id="or-key" placeholder="sk-or-…" autocomplete="off" spellcheck="false">
-    </div>
-    <div class="field">
-      <label for="or-model">OpenRouter model</label>
-      <input type="text" id="or-model" placeholder="google/gemini-3.1-flash-lite" spellcheck="false">
+      <label for="config-box">Config — one value per line: Groq key · OpenRouter key · model</label>
+      <textarea id="config-box" rows="3" autocomplete="off" autocorrect="off" spellcheck="false"
+        placeholder="gsk_…&#10;sk-or-…&#10;google/gemini-3.1-flash-lite"></textarea>
     </div>
     <hr class="msep">
     <div class="field">
@@ -272,18 +268,20 @@ const DEF_MODEL = 'google/gemini-3.1-flash-lite';
 const g = id => document.getElementById(id);
 
 // ── settings modal ────────────────────────────────────────────────────────────
-const modal  = g('modal');
-const groqEl = g('groq-key'), orEl = g('or-key'), ormEl = g('or-model');
+const modal    = g('modal');
+const configEl = g('config-box');
 
 function loadS() {
-  groqEl.value = localStorage.getItem(SK.groq) || '';
-  orEl.value   = localStorage.getItem(SK.or)   || '';
-  ormEl.value  = localStorage.getItem(SK.orm)  || DEF_MODEL;
+  const groq  = localStorage.getItem(SK.groq) || '';
+  const or    = localStorage.getItem(SK.or)   || '';
+  const model = localStorage.getItem(SK.orm)  || DEF_MODEL;
+  configEl.value = [groq, or, model].join('\n');
 }
 function saveS() {
-  localStorage.setItem(SK.groq, groqEl.value.trim());
-  localStorage.setItem(SK.or,   orEl.value.trim());
-  localStorage.setItem(SK.orm,  ormEl.value.trim() || DEF_MODEL);
+  const [groq = '', or = '', model = ''] = configEl.value.split('\n').map(s => s.trim());
+  localStorage.setItem(SK.groq, groq);
+  localStorage.setItem(SK.or,   or);
+  localStorage.setItem(SK.orm,  model || DEF_MODEL);
 }
 function closeModal() { saveS(); modal.setAttribute('hidden', ''); }
 
