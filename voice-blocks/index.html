@@ -93,8 +93,17 @@ body {
 #status {
   font-size: 0.78rem; color: #666;
   text-align: center; min-height: 1rem; flex-shrink: 0;
+  border-radius: 8px; padding: 0.1rem 0;
+  transition: background 0.15s, padding 0.15s;
 }
-#status.err { color: #eb5757; }
+#status.err  { color: #eb5757; }
+#status.cmd  {
+  color: #a0a0c8; background: #1e1e2e;
+  border: 1px solid #2a2a42;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
 
 .bottom-controls {
   display: flex;
@@ -294,10 +303,22 @@ function render() {
   clearBtn.disabled    = empty && blocks.length === 1;
 }
 
+let cmdTimer = null;
+
 function setStatus(msg, err = false) {
+  clearTimeout(cmdTimer); cmdTimer = null;
   statusEl.textContent = msg;
   statusEl.className = err ? 'err' : '';
 }
+
+function showCmd(cmd) {
+  clearTimeout(cmdTimer);
+  statusEl.textContent = cmd;
+  statusEl.className = 'cmd';
+  cmdTimer = setTimeout(() => setStatus(''), 5000);
+}
+
+statusEl.addEventListener('click', () => { if (statusEl.className === 'cmd') setStatus(''); });
 
 // sync manual textarea edits (no undo for manual typing)
 editor.addEventListener('input', () => { cb().text = editor.value; persist(); render(); });
@@ -471,7 +492,7 @@ recBtn.addEventListener('click', async () => {
         b.text = edited;
         persist();
       }
-      setStatus('');
+      empty ? setStatus('') : showCmd(whisper);
     } catch (e) {
       setStatus(e.message, true);
     } finally {
