@@ -492,6 +492,18 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 
 // ── init ──────────────────────────────────────────────────────────────────────
 loadData();
+
+// Handle incoming Web Share Target (Android "Share with")
+const _sp = new URLSearchParams(location.search);
+const _shared = (_sp.get('text') || _sp.get('url') || '').trim();
+if (_shared) {
+  const paras = _shared.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  blocks = (paras.length ? paras : [_shared]).map(p => mkBlock(p));
+  ci = 0;
+  persist();
+  history.replaceState(null, '', location.pathname);
+}
+
 render();
 </script>
 </body>
