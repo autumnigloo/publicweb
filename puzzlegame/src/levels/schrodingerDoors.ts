@@ -419,6 +419,7 @@ export class SchrodingerDoorsLevel implements Level {
     if (!locked) this.lockedStates = null;
 
     const fwd = player.forward();
+    const eye = player.eyePos();
     const smoothK = 1 - Math.exp(-dt * 16); // fast visual snap, not instant
 
     for (let i = 0; i < this.doors.length; i++) {
@@ -427,24 +428,20 @@ export class SchrodingerDoorsLevel implements Level {
       if (locked && this.lockedStates) {
         isOpen = this.lockedStates[i];
       } else {
-        // Closest point on the door panel rectangle to the player. Using the
+        // Closest point on the door panel rectangle to the eye. Using the
         // closest point (not the panel center) prevents trivial "auto-open"
         // when the player walks within ~1m of an inverted door — the panel
         // still subtends most of the FOV.
-        const cx = THREE.MathUtils.clamp(
-          player.position.x,
-          -DOOR_HALF_W,
-          DOOR_HALF_W
-        );
+        const cx = THREE.MathUtils.clamp(eye.x, -DOOR_HALF_W, DOOR_HALF_W);
         const cy = THREE.MathUtils.clamp(
-          player.position.y,
+          eye.y,
           DOOR_CENTER_Y - DOOR_HALF_H,
           DOOR_CENTER_Y + DOOR_HALF_H
         );
         const cz = d.z;
-        const dx = cx - player.position.x;
-        const dy = cy - player.position.y;
-        const dz = cz - player.position.z;
+        const dx = cx - eye.x;
+        const dy = cy - eye.y;
+        const dz = cz - eye.z;
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         let observed = false;
         if (dist < OBS_RANGE && dist > 1e-4) {

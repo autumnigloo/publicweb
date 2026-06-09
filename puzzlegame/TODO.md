@@ -106,6 +106,27 @@ exit pad, but the *means* of navigation changes every level.
       ability rebuilds `world.solids = static.concat(activeDynamics)`. Cheap
       and avoids needing per-Box "active" flags in `BoxWorld`. Pattern is
       reusable for any future "phasing" mechanic.
+- [x] **Eye-height fix.** The collision body is a single sphere at
+      `player.position`, so the camera (which sat exactly at that point)
+      rested at 0.35 m — the whole game played at ankle height. The camera
+      now rides `eyeOffset = 1.25` above the sphere for a standing eye height
+      of 1.6 m. Anything gaze-driven (Gravity Cubes aim ray, Schrödinger
+      observation cone, Echo pulse origin, Time Slice eye-glow) uses
+      `player.eyePos()`.
+- [x] **Camera is added to each level's scene.** Camera-attached children
+      (the Time Slice / Mirror Maze death-flash overlays) never rendered
+      before because the camera wasn't in the scene graph.
+- [x] **Pause safety.** `LevelContext.paused` is true while pointer-lock is
+      released; Time Slice freezes world-time and both it and Heat Vision
+      skip kill checks while paused. Pointer-lock release / window blur also
+      clears held keys and horizontal velocity (no more "walks forever after
+      alt-tab", no more getting lasered while reading the menu).
+- [x] **Scene teardown.** `loadLevel` traverses the outgoing scene and
+      disposes geometries/materials (plus the level's post material), so
+      R-restarts no longer leak GPU resources.
+- [x] **Save progress (localStorage).** Furthest-reached level is persisted
+      (`puzzlegame.progress`) and the game boots there; N skips forward and
+      wraps to Level 1 after the last level.
 
 ## Near-term backlog
 
@@ -169,7 +190,7 @@ exit pad, but the *means* of navigation changes every level.
 - [ ] Footstep audio + per-level ambience (low-priority but huge for mood).
 - [ ] Smarter pointer-lock UX: don't auto-show overlay on every brief
       defocus; debounce ~0.3s.
-- [ ] Save progress (localStorage). Skip-completed-levels nav.
+- [x] Save progress (localStorage); game resumes at the furthest level.
 - [ ] Optimize collision: BVH or grid for many-box levels. Current O(N) per
       axis is fine while N stays small.
 - [x] Basic death / respawn flow (Time Slice teleports to start + red flash

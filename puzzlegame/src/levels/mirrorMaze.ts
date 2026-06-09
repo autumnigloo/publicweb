@@ -310,7 +310,7 @@ export class MirrorMazeLevel implements Level {
     side: Side,
     isReal: boolean,
     glyph: string,
-    _floorMat: THREE.Material
+    floorMat: THREE.Material
   ): ArchwayInfo {
     const out = sideOutward(side);
     const o = origin;
@@ -371,6 +371,22 @@ export class MirrorMazeLevel implements Level {
       scene.add(boxMesh(top, this.wallMat));
       world.add(top);
     }
+
+    // --- alcove floor strip from the chamber floor out to the mirror plane.
+    // The chamber floor slab only spans ROOM_S, so without this the player
+    // falls into a void slot the moment they step through any archway —
+    // for fakes that meant dropping between the wall and the mirror panel,
+    // for the real one it meant triggering the teleport mid-fall.
+    const alcoveDepth = WALL_T + BACKWALL_DIST;
+    const alcoveCenter = new THREE.Vector3()
+      .copy(o)
+      .add(out.clone().multiplyScalar(ROOM_S / 2 + alcoveDepth / 2));
+    const alcoveB =
+      side === "N" || side === "S"
+        ? box(alcoveCenter.x, -0.5, alcoveCenter.z, ARCH_W, 1, alcoveDepth)
+        : box(alcoveCenter.x, -0.5, alcoveCenter.z, alcoveDepth, 1, ARCH_W);
+    scene.add(boxMesh(alcoveB, floorMat));
+    world.add(alcoveB);
 
     // --- mirror back-wall for fake archways
     const outerCenter = new THREE.Vector3()

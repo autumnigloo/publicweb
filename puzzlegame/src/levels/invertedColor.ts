@@ -40,7 +40,8 @@ const MID2_Z1 = 21;          // mid platform 2 spans [18, 21]
 const RED_BRIDGE_Z0 = 21;
 const RED_BRIDGE_Z1 = 24;    // pit 2 = [21, 24]; red bridge spans it
 const PRE_CYAN_Z0 = 24;
-const PRE_CYAN_Z1 = 25;      // small landing
+const PRE_CYAN_Z1 = 26;      // landing runs under the cyan wall to the exit
+                             // platform — the wall is a barrier, not a pit
 const CYAN_WALL_Z = 25.6;    // cyan wall slab at z ≈ 25.6
 const EXIT_Z0 = 26;
 const EXIT_Z1 = 33;          // exit platform spans [26, 33]

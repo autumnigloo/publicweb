@@ -226,11 +226,38 @@ export class GravityCubesLevel implements Level {
     // --- relax collisions a few iterations.
     // Frozen cubes act as immovable walls; only moving cubes get pushed back.
     const colSize = CUBE_S;
+    const pr = player.radius * 0.9;
+    const playerTop = player.position.y + player.radius;
+    const playerBottom = player.position.y - player.radius;
     for (let iter = 0; iter < 6; iter++) {
       let changed = false;
       const order = [...this.cubes].sort((a, b) => a.pos.y - b.pos.y);
       for (const c of order) {
         if (c.gravity === 0) continue;
+
+        // The player blocks cubes: a falling cube rests on their head and a
+        // rising cube waits beneath their feet instead of enveloping the
+        // collision sphere (which would trap the player inside the cube,
+        // since BoxWorld.collides would then always be true). The speed
+        // threshold filters out the micro-velocity that settled cubes pick up
+        // each frame from gravity integration before being clamped — without
+        // it, brushing a resting cube would pop it onto your head.
+        if (
+          Math.abs(c.pos.x - player.position.x) < CUBE_HALF + pr &&
+          Math.abs(c.pos.z - player.position.z) < CUBE_HALF + pr
+        ) {
+          const bottom = c.pos.y - CUBE_HALF;
+          const top = c.pos.y + CUBE_HALF;
+          if (c.vel < -0.5 && bottom < playerTop && bottom > playerBottom - CUBE_S) {
+            c.pos.y = playerTop + CUBE_HALF;
+            c.vel = 0;
+            changed = true;
+          } else if (c.vel > 0.5 && top > playerBottom && top < playerTop + CUBE_S) {
+            c.pos.y = playerBottom - CUBE_HALF;
+            c.vel = 0;
+            changed = true;
+          }
+        }
 
         // Floor / ceiling.
         if (c.pos.y - CUBE_HALF < FLOOR_Y) {
@@ -286,8 +313,10 @@ export class GravityCubesLevel implements Level {
     }
 
     // --- aim raycast: find the closest cube the camera is looking at.
+    // Cast from the eye, not the collision-sphere center, so the ray matches
+    // what the crosshair is actually over.
     const fwd = player.forward();
-    this.raycaster.set(player.position, fwd);
+    this.raycaster.set(player.eyePos(), fwd);
     this.raycaster.far = RAYCAST_RANGE;
     const cubeMeshes = this.cubes.map((c) => c.mesh);
     const hits = this.raycaster.intersectObjects(cubeMeshes, false);

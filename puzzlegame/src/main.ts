@@ -47,6 +47,27 @@ const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
 postQuad.frustumCulled = false;
 postScene.add(postQuad);
 
+// --- Progress (furthest level reached) ---
+const PROGRESS_KEY = "puzzlegame.progress";
+function loadProgress(max: number): number {
+  try {
+    const n = parseInt(localStorage.getItem(PROGRESS_KEY) ?? "0", 10);
+    return Number.isFinite(n) ? Math.min(Math.max(n, 0), max) : 0;
+  } catch {
+    return 0;
+  }
+}
+function saveProgress(idx: number) {
+  try {
+    const prev = parseInt(localStorage.getItem(PROGRESS_KEY) ?? "0", 10);
+    if (!Number.isFinite(prev) || idx > prev) {
+      localStorage.setItem(PROGRESS_KEY, String(idx));
+    }
+  } catch {
+    /* private mode etc. — progress just isn't saved */
+  }
+}
+
 // --- Game state ---
 const levels = makeLevels();
 let currentIdx = 0;
@@ -71,18 +92,42 @@ const makeContext = (): LevelContext => ({
   scene: scene!,
   world: world!,
   player,
+  paused: document.pointerLockElement !== canvas,
   message: showMessage,
   setAbility,
   complete: onLevelComplete,
 });
 
+// Free GPU resources held by a scene's meshes. Materials/geometries may be
+// shared between meshes; dispose() is idempotent so double-disposal is fine.
+function disposeScene(s: THREE.Scene) {
+  s.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.geometry) mesh.geometry.dispose();
+    const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+    if (Array.isArray(mat)) for (const m of mat) m.dispose();
+    else if (mat) mat.dispose();
+  });
+}
+
 function loadLevel(idx: number) {
   if (currentLevel) {
+    const oldPost = currentLevel.postMaterial;
     currentLevel.dispose?.(makeContext());
+    oldPost?.dispose();
+    if (scene) {
+      // Detach the camera first so it (and anything a level left attached to
+      // it) survives the scene teardown.
+      scene.remove(player.camera);
+      disposeScene(scene);
+    }
   }
 
   scene = new THREE.Scene();
   world = new BoxWorld();
+  // The camera must be in the scene graph for camera-attached children
+  // (death-flash overlays etc.) to render.
+  scene.add(player.camera);
 
   // Default lighting; levels may override.
   const amb = new THREE.AmbientLight(0xffffff, 0.15);
@@ -104,11 +149,12 @@ function onLevelComplete() {
   const next = currentIdx + 1;
   if (next >= levels.length) {
     setTimeout(() => {
-      showMessage("All levels cleared. More coming soon. — Press R to restart from Level 1.", 12);
+      showMessage("All levels cleared. More coming soon. — Press N to play again from Level 1.", 12);
       // Stay on the final level rendering-wise.
     }, 600);
     return;
   }
+  saveProgress(next);
   // If pointer-lock is still engaged, auto-advance without showing the
   // overlay — releasing the lock would force the user to press Esc and then
   // fight the browser's post-Esc cooldown to re-acquire it (the classic
@@ -180,9 +226,19 @@ document.addEventListener("pointerlockchange", () => {
     overlay.classList.add("hidden");
   } else if (currentLevel) {
     wantPointerLock = false;
+    // Drop any held movement so the level doesn't keep simulating a moving
+    // player while paused (Time Slice's world-time is speed-driven, and a key
+    // held across the Esc would otherwise stay "down" forever).
+    player.keys.clear();
+    player.velocity.x = 0;
+    player.velocity.z = 0;
     overlay.classList.remove("hidden");
   }
 });
+
+// Keyup events are lost when the window loses focus — clear held keys so they
+// don't stick (the classic "walks forever after alt-tab" bug).
+window.addEventListener("blur", () => player.keys.clear());
 
 document.addEventListener("pointerlockerror", () => {
   if (currentLevel) overlay.classList.remove("hidden");
@@ -200,12 +256,11 @@ document.addEventListener("keydown", (e) => {
     tryAcquirePointerLock();
   } else if (e.code === "KeyN") {
     // Actually skip to the next level — previously this only updated the
-    // overlay text, so users pressing N to skip went nowhere.
-    if (currentIdx + 1 < levels.length) {
-      pendingLoadIdx = null;
-      loadLevel(currentIdx + 1);
-      tryAcquirePointerLock();
-    }
+    // overlay text, so users pressing N to skip went nowhere. Wraps back to
+    // Level 1 after the last level.
+    pendingLoadIdx = null;
+    loadLevel((currentIdx + 1) % levels.length);
+    tryAcquirePointerLock();
   }
 });
 
@@ -217,9 +272,11 @@ window.addEventListener("resize", () => {
   sceneRT.setSize(w, h);
 });
 
-// Initialize first level so we have a scene to render even before the
-// overlay is dismissed (gives the menu a moving backdrop too).
-loadLevel(0);
+// Initialize the furthest-reached level (saved in localStorage) so returning
+// players continue where they left off. Also gives the menu a moving backdrop.
+const startIdx = loadProgress(levels.length - 1);
+loadLevel(startIdx);
+showOverlayFor(startIdx);
 
 let prevTime = performance.now();
 function animate() {

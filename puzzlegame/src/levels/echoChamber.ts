@@ -38,6 +38,7 @@ export class EchoChamberLevel implements Level {
 
   init(ctx: LevelContext) {
     const { scene, world, player } = ctx;
+    this.cooldown = 0;
     scene.background = new THREE.Color(0x010204);
     scene.fog = new THREE.FogExp2(0x000000, 0.035);
 
@@ -124,7 +125,7 @@ export class EchoChamberLevel implements Level {
     scene.add(this.wave.mesh);
 
     // Initial pulse so the player can see the room briefly.
-    setTimeout(() => this.echo.pulse(player.position.clone()), 250);
+    setTimeout(() => this.echo.pulse(player.eyePos()), 250);
 
     ctx.setAbility(this.abilityLabel, "READY");
     ctx.message("Press E to ping. Find the green exit.", 4);
@@ -132,14 +133,15 @@ export class EchoChamberLevel implements Level {
 
   ability(ctx: LevelContext) {
     if (this.cooldown > 0) return;
-    this.echo.pulse(ctx.player.position.clone());
-    this.wave.pulse(ctx.player.position.clone());
+    const origin = ctx.player.eyePos();
+    this.echo.pulse(origin);
+    this.wave.pulse(origin);
     this.cooldown = this.cooldownTime;
   }
 
   update(dt: number, ctx: LevelContext) {
     this.cooldown = Math.max(0, this.cooldown - dt);
-    this.echo.update(ctx.player.position);
+    this.echo.update(ctx.player.eyePos());
     this.wave.update();
     (this.exitMesh.material as THREE.ShaderMaterial).uniforms.uTime.value =
       performance.now() / 1000;

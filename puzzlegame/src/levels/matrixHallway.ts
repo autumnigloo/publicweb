@@ -35,6 +35,13 @@ export class MatrixHallwayLevel implements Level {
 
   init(ctx: LevelContext) {
     const { scene, world, player } = ctx;
+
+    // Reset per-init state so R-restart doesn't accumulate orphaned materials.
+    this.fakeMaterials = [];
+    this.allMatrixMaterials = [];
+    this.revealUntil = 0;
+    this.cooldownDone = 0;
+
     scene.background = new THREE.Color(0x000000);
     scene.fog = new THREE.FogExp2(0x000000, 0.02);
 

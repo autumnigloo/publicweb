@@ -226,6 +226,9 @@ export class TimeSliceLevel implements Level {
     const moveFrac = Math.min(1, speed2D / player.walkSpeed);
     let targetScale = 0.04 + 0.96 * moveFrac;
     if (now < this.freezeUntil) targetScale = 0.0;
+    // While the pause overlay is up the world holds its breath entirely — the
+    // lasers must not creep into a player who can't move.
+    if (ctx.paused) targetScale = 0.0;
 
     // Smooth time-scale changes so it doesn't snap.
     const k = 1 - Math.exp(-dt * 8);
@@ -236,7 +239,7 @@ export class TimeSliceLevel implements Level {
     for (const m of this.wallMats) {
       m.uniforms.uWorldTime.value = this.worldTime;
       m.uniforms.uTimeScale.value = this.timeScale;
-      m.uniforms.uPlayerY.value = player.position.y;
+      m.uniforms.uPlayerY.value = player.position.y + player.eyeOffset;
     }
 
     // Lasers.
@@ -261,7 +264,7 @@ export class TimeSliceLevel implements Level {
       // Lethal collision: vertical bar at (xNow, *, l.zPos), thickness ~LASER_THICKNESS.
       const dx = player.position.x - xNow;
       const dz = player.position.z - l.zPos;
-      if (Math.hypot(dx, dz) < LASER_KILL_RADIUS) {
+      if (!ctx.paused && Math.hypot(dx, dz) < LASER_KILL_RADIUS) {
         this.killAndRespawn(ctx);
         break;
       }

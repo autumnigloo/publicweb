@@ -325,17 +325,19 @@ export class HeatVisionLevel implements Level {
     this.thermalMat.uniforms.uTime.value = now;
     this.thermalMat.uniforms.uTherm.value = this.thermalNow;
 
-    // Lethal proximity check.
+    // Lethal proximity check (skipped while paused — no dying in the menu).
     const px = player.position.x;
     const pz = player.position.z;
     const killSq = HEAT_KILL_R * HEAT_KILL_R;
-    for (const hb of this.heatBars) {
-      const dx = px - hb.pos.x;
-      const dz = pz - hb.pos.z;
-      if (dx * dx + dz * dz < killSq) {
-        player.reset(this.respawn, Math.PI);
-        ctx.message("🔥 Burned. Scan in thermal before committing.", 2.5);
-        return;
+    if (!ctx.paused) {
+      for (const hb of this.heatBars) {
+        const dx = px - hb.pos.x;
+        const dz = pz - hb.pos.z;
+        if (dx * dx + dz * dz < killSq) {
+          player.reset(this.respawn, Math.PI);
+          ctx.message("🔥 Burned. Scan in thermal before committing.", 2.5);
+          return;
+        }
       }
     }
 

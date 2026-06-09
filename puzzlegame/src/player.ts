@@ -20,9 +20,19 @@ export class Player {
   readonly walkSpeed = 4.5;
   readonly jumpVel = 5.6;
   readonly gravity = 18;
+  // The collision body is a single sphere at `position`; the camera rides
+  // this far above it so the standing eye height is radius + eyeOffset = 1.6m
+  // (without the offset the eye sat at sphere-rest height, 0.35m — the whole
+  // game looked like it was played at ankle height).
+  readonly eyeOffset = 1.25;
 
   onGround = false;
   keys = new Set<string>();
+
+  // Last reset position/yaw — used by the fall safety net so falling out of
+  // the world returns you to the level's most recent spawn, not world origin.
+  private spawnPos = new THREE.Vector3(0, 5, 0);
+  private spawnYaw = 0;
 
   constructor() {
     this.camera = new THREE.PerspectiveCamera(
@@ -35,6 +45,8 @@ export class Player {
 
   reset(pos: THREE.Vector3, yaw = 0) {
     this.position.copy(pos);
+    this.spawnPos.copy(pos);
+    this.spawnYaw = yaw;
     this.velocity.set(0, 0, 0);
     this.yaw = yaw;
     this.pitch = 0;
@@ -43,7 +55,7 @@ export class Player {
     // the next physics tick (e.g. while pointer-lock is still being acquired
     // after a level transition — otherwise the new scene renders from the
     // previous level's last camera position and looks completely black).
-    this.camera.position.copy(pos);
+    this.camera.position.set(pos.x, pos.y + this.eyeOffset, pos.z);
     this.camera.rotation.set(0, yaw, 0, "YXZ");
   }
 
@@ -115,12 +127,15 @@ export class Player {
 
     // Hard floor safety net.
     if (this.position.y < -50) {
-      this.position.set(0, 5, 0);
-      this.velocity.set(0, 0, 0);
+      this.reset(this.spawnPos, this.spawnYaw);
     }
 
     // Update camera transform.
-    this.camera.position.copy(this.position);
+    this.camera.position.set(
+      this.position.x,
+      this.position.y + this.eyeOffset,
+      this.position.z
+    );
     this.camera.rotation.set(this.pitch, this.yaw, 0, "YXZ");
   }
 
@@ -128,5 +143,14 @@ export class Player {
     const v = new THREE.Vector3(0, 0, -1);
     v.applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, "YXZ"));
     return v;
+  }
+
+  // World-space eye position (where the camera is).
+  eyePos(): THREE.Vector3 {
+    return new THREE.Vector3(
+      this.position.x,
+      this.position.y + this.eyeOffset,
+      this.position.z
+    );
   }
 }

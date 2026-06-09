@@ -6,6 +6,9 @@ export interface LevelContext {
   scene: THREE.Scene;
   world: BoxWorld;
   player: Player;
+  // True while pointer-lock is released (overlay up). Levels should keep
+  // animating shaders but must not kill/respawn the player while paused.
+  paused: boolean;
   // Show a transient HUD message.
   message: (text: string, duration?: number) => void;
   // Update the ability label/value in the HUD.
