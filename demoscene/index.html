@@ -37,7 +37,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping  = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.8;
+renderer.toneMappingExposure = 2.2;
 document.body.prepend(renderer.domElement);
 
 const scene  = new THREE.Scene();
@@ -66,7 +66,7 @@ const uwPass = new ShaderPass({
       vec4 c = texture2D(tDiffuse, v);
       // Underwater: teal shift + caustic ripple on edges
       float ripple = sin(v.x*60.0)*sin(v.y*60.0)*0.012*depth;
-      vec3 t = mix(c.rgb, c.rgb * vec3(0.12, 0.42, 0.78) + ripple, depth);
+      vec3 t = mix(c.rgb, c.rgb * vec3(0.30, 0.62, 0.92) + vec3(0.0,0.02,0.04) + ripple, depth);
       float vign = 1.0 - dot(v-0.5, v-0.5)*2.8;
       gl_FragColor = vec4(t * clamp(vign,0.,1.), c.a);
     }`,
@@ -81,14 +81,53 @@ const dynFog   = new THREE.FogExp2(0x0b1828, 0.0016);
 scene.fog = dynFog;
 
 // ── LIGHTING ──────────────────────────────────────────────────────────────────
-const ambAbove = new THREE.AmbientLight(0x2040a0, 4.5);
-const sun      = new THREE.DirectionalLight(0x88aadd, 6.0);
+const ambAbove = new THREE.HemisphereLight(0x6080d0, 0x203050, 5.0);
+const sun      = new THREE.DirectionalLight(0xbbccee, 7.0);
 sun.position.set(150, 400, 100);
 scene.add(ambAbove, sun);
 
-const ambBelow = new THREE.AmbientLight(0x002040, 8.0);
+const ambBelow = new THREE.AmbientLight(0x0a3050, 9.0);
 ambBelow.visible = false;
 scene.add(ambBelow);
+
+// ── SKY: gradient dome, moon, stars ───────────────────────────────────────────
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: { dim: { value: 1 } },
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  vertexShader: `varying vec3 vW; void main(){ vW=(modelMatrix*vec4(position,1.)).xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: `
+    uniform float dim; varying vec3 vW;
+    void main(){
+      float h = normalize(vW).y;
+      vec3 zen = vec3(.015,.03,.09), hor = vec3(.10,.16,.30);
+      vec3 col = mix(hor, zen, clamp(h*1.6, 0., 1.));
+      col += vec3(.05,.07,.12) * pow(max(1.-abs(h), 0.), 6.);  // horizon haze band
+      gl_FragColor = vec4(col * dim, 1.);
+    }`,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(2000, 24, 16), skyMat);
+scene.add(sky);
+
+const moon = new THREE.Mesh(
+  new THREE.CircleGeometry(70, 40),
+  new THREE.MeshBasicMaterial({ color: 0xe8eeff, fog: false, transparent: true })
+);
+moon.position.set(600, 700, -1500);
+moon.lookAt(0, 0, 0);
+scene.add(moon);
+
+const starN = 900, starPos = new Float32Array(starN * 3);
+for (let i = 0; i < starN; i++) {
+  const a = Math.random() * Math.PI * 2, e = Math.acos(Math.random() * .92); // upper sky
+  starPos[i*3]   = Math.sin(e) * Math.cos(a) * 1900;
+  starPos[i*3+1] = Math.cos(e) * 1900;
+  starPos[i*3+2] = Math.sin(e) * Math.sin(a) * 1900;
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const starMat = new THREE.PointsMaterial({ color: 0xccddff, size: 2.2, sizeAttenuation: false, fog: false, transparent: true });
+const stars = new THREE.Points(starGeo, starMat);
+scene.add(stars);
 
 // ── OCEAN SURFACE ─────────────────────────────────────────────────────────────
 const oceanMat = new THREE.ShaderMaterial({
@@ -115,9 +154,10 @@ const oceanMat = new THREE.ShaderMaterial({
     void main(){
       vec3 view = normalize(cam - vP);
       float fr = pow(1.0 - max(dot(normalize(vN), view), 0.0), 4.0);
-      vec3 col = mix(vec3(.008,.038,.12), vec3(.025,.21,.5), fr)
-               + vec3(.55,.78,1.) * pow(fr, 7.0) * .45;
-      gl_FragColor = vec4(col, .82 + fr*.13);
+      vec3 col = mix(vec3(.012,.06,.16), vec3(.05,.30,.62), fr)
+               + vec3(.6,.82,1.) * pow(fr, 7.0) * .55;
+      // mostly clear looking straight down (city visible), reflective at grazing angles
+      gl_FragColor = vec4(col, .38 + fr*.5);
     }`,
 });
 const ocean = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000, 80, 80), oceanMat);
@@ -136,9 +176,10 @@ scene.add(floor);
 // ── WATER SLIDES ──────────────────────────────────────────────────────────────
 const rng = (a, b) => a + Math.random() * (b - a);
 
-const slideMats = [0xeef6ff, 0x99ddff, 0xffeeaa, 0xffbbdd, 0x88ffee, 0xffdd88]
+const slideMats = [0x88ccff, 0x66e0ff, 0xffd966, 0xff8fc8, 0x4dffd2, 0xffaa55, 0xb38fff]
   .map(c => new THREE.MeshPhongMaterial({
-    color: c, shininess: 160, transparent: true, opacity: 0.88, side: THREE.DoubleSide,
+    color: c, emissive: c, emissiveIntensity: 0.22,
+    shininess: 180, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
   }));
 
 function makeSlide(cx, cz) {
@@ -184,10 +225,10 @@ const stoneMat = new THREE.MeshStandardMaterial({ color: 0x2a2238, roughness: .9
 const darkMat  = new THREE.MeshStandardMaterial({ color: 0x1a1525, roughness: 1 });
 
 function addLight(group, y, color) {
-  const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 3.5 });
-  const orb = new THREE.Mesh(new THREE.SphereGeometry(.65, 8, 8), mat);
+  const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 6 });
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(.9, 8, 8), mat);
   orb.position.y = y;
-  const pl = new THREE.PointLight(color, 4, 75);
+  const pl = new THREE.PointLight(color, 8, 100);
   pl.position.y = y;
   group.add(orb, pl);
 }
@@ -240,7 +281,7 @@ function makeCathedral(x, z) {
   bs.position.set(0, -h * 1.555 - h * .26, d * .37);
   g.add(bs);
   // Lancet window glows
-  const winMat = new THREE.MeshStandardMaterial({ color: 0x1a2a55, emissive: 0x162248, emissiveIntensity: 2 });
+  const winMat = new THREE.MeshStandardMaterial({ color: 0x1a2a55, emissive: 0x2a44a0, emissiveIntensity: 4 });
   [-1, 0, 1].forEach(i => {
     const wn = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 7), winMat);
     wn.position.set(w * .51, -h * .36 + i * 11, 0);
@@ -294,6 +335,18 @@ cathedrals.forEach(([x, z]) => makeCathedral(x + rng(-10, 10), z + rng(-10, 10))
   [90, 0, 65, 65], [0, 90, 65, 65], [-90, 0, -65, 65], [0, -90, 65, -65],
 ].forEach(([ax, az, bx, bz]) => makeArch(ax, az, bx, bz, CITY_TOP - 28 - rng(0, 15)));
 
+// ── LIGHT BEAMS — city glow piercing the surface ─────────────────────────────
+const beamMat = new THREE.MeshBasicMaterial({
+  color: 0x4488ee, transparent: true, opacity: 0.10,
+  blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+});
+const beamMatWarm = beamMat.clone(); beamMatWarm.color.set(0xee8833);
+[[90, 0], [-90, 0], [0, 130], [130, 0], [-130, 0], [0, -130], [125, 125], [-125, -125]].forEach(([x, z], i) => {
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 5.5, 160, 8, 1, true), i % 3 ? beamMat : beamMatWarm);
+  beam.position.set(x, CITY_TOP + 60, z); // from city up through surface
+  scene.add(beam);
+});
+
 // ── BIOLUMINESCENT PARTICLES ──────────────────────────────────────────────────
 const N = 600;
 const pPos = new Float32Array(N * 3);
@@ -336,8 +389,12 @@ const camPts = [
   v3(-140, -72,   0), v3(-100, -74, -65),
   v3( -40, -76, -120), v3(  40, -75,-160),
   v3(  80, -72, -120), v3(  50, -70, -60),
+  // Ascend back through the surface (above city top at -55, clear of buildings)
+  v3( 100, -45, -40), v3( 170, -18,  -20), v3( 230,  12,  -25),
+  v3( 290,  50, -30),
 ];
-const camPath = new THREE.CatmullRomCurve3(camPts, false, 'catmullrom', 0.5);
+// Closed loop: camera rises out of the water and seamlessly rejoins the start
+const camPath = new THREE.CatmullRomCurve3(camPts, true, 'catmullrom', 0.5);
 
 // ── ANIMATION ─────────────────────────────────────────────────────────────────
 const DURATION = 30_000;
@@ -347,7 +404,7 @@ const lookTarget = new THREE.Vector3();
 const bgAbove     = new THREE.Color(0x060d1a);
 const bgBelow     = new THREE.Color(0x010810);
 const fogColAbove = new THREE.Color(0x0b1828);
-const fogColBelow = new THREE.Color(0x010c14);
+const fogColBelow = new THREE.Color(0x03141f);
 
 function animate() {
   requestAnimationFrame(animate);
@@ -355,9 +412,9 @@ function animate() {
   elapsed = (elapsed + dt * 1000) % DURATION;
   const t = elapsed / DURATION;
 
-  // Camera position + look-ahead
+  // Camera position + look-ahead (wraps on the closed loop)
   const pos   = camPath.getPointAt(t);
-  const ahead = camPath.getPointAt(Math.min(t + 0.006, 0.999));
+  const ahead = camPath.getPointAt((t + 0.006) % 1);
   camera.position.copy(pos);
   lookTarget.copy(ahead).add(new THREE.Vector3(0, -0.5, 0)); // slight downward lean
   camera.lookAt(lookTarget);
@@ -373,10 +430,13 @@ function animate() {
   const sd = (d => { const t = Math.max(0, Math.min(1, (d - 0.03) / 0.40)); return t * t * (3 - 2 * t); })(depth);
   scene.background = bgAbove.clone().lerp(bgBelow, sd);
   dynFog.color.lerpColors(fogColAbove, fogColBelow, sd);
-  dynFog.density = 0.0016 + sd * (0.020 - 0.0016);
-  ambAbove.intensity = 4.5 * (1 - sd); sun.intensity = 6.0 * (1 - sd);
-  ambBelow.intensity = 8.0 * sd;
+  dynFog.density = 0.0016 + sd * (0.013 - 0.0016);
+  ambAbove.intensity = 5.0 * (1 - sd); sun.intensity = 7.0 * (1 - sd);
+  ambBelow.intensity = 9.0 * sd;
   ambAbove.visible = sd < 0.99; sun.visible = sd < 0.99; ambBelow.visible = sd > 0.01;
+  skyMat.uniforms.dim.value = 1 - sd;
+  moon.material.opacity = 1 - sd;
+  starMat.opacity = 1 - sd;
   bloom.strength   = 1.0 + sd * 1.2;
   bloom.threshold  = 0.80 - sd * 0.35;
   uwPass.uniforms.depth.value = Math.pow(depth, .6); // perceptual ease
