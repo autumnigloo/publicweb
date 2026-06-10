@@ -156,7 +156,7 @@
     <div class="settings-body">
       <div>
         <label for="prefix-input">URL prefix to prepend</label>
-        <input type="text" id="prefix-input" placeholder="https://example.com/proxy?url=" spellcheck="false" autocomplete="off">
+        <input type="text" id="prefix-input" placeholder="https://archive.is/" spellcheck="false" autocomplete="off">
       </div>
       <div id="preview"></div>
       <button class="save-btn" id="save-btn">Save</button>
@@ -173,7 +173,7 @@
   const previewEl = document.getElementById('preview');
 
   function getPrefix() {
-    return localStorage.getItem(STORAGE_KEY) ?? '';
+    return localStorage.getItem(STORAGE_KEY) ?? 'https://archive.is/';
   }
 
   function setStatus(msg, type = '') {
