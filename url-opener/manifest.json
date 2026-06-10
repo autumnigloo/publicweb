@@ -1,6 +1,6 @@
 {
-  "name": "URL Opener",
-  "short_name": "URL Opener",
+  "name": "@URL Opener",
+  "short_name": "@URL Opener",
   "description": "Reads a URL from clipboard or share, strips query args, prepends a prefix, and opens it.",
   "start_url": "./",
   "scope": "./",
