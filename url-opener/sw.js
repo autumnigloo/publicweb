@@ -1,4 +1,4 @@
-const CACHE = 'url-opener-v1';
+const CACHE = 'url-opener-v2';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.svg', './icon-512.svg'];
 
 self.addEventListener('install', e => {

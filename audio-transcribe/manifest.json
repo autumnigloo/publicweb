@@ -1,6 +1,6 @@
 {
-  "name": "Audio Transcribe",
-  "short_name": "Transcribe",
+  "name": "@Audio Transcribe",
+  "short_name": "@Transcribe",
   "description": "Share an audio recording and get a Groq Whisper transcript.",
   "start_url": "./",
   "scope": "./",

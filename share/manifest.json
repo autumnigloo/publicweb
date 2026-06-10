@@ -1,6 +1,6 @@
 {
-  "name": "Text Share",
-  "short_name": "TextShare",
+  "name": "@Text Share",
+  "short_name": "@TextShare",
   "description": "Collect shared URLs and text in one editable pad",
   "start_url": "./",
   "scope": "./",
