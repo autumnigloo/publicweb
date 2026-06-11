@@ -225,7 +225,7 @@
       display: block;
       margin-bottom: 0.25rem;
     }
-    input[type="text"], #config-input {
+    input[type="text"], #config-input, select {
       background: #0f0f13;
       border: 1px solid #2a2a3a;
       border-radius: 8px;
@@ -236,8 +236,9 @@
       outline: none;
       font-family: monospace;
     }
-    input:focus, #config-input:focus { border-color: #4f6ef7; }
+    input:focus, #config-input:focus, select:focus { border-color: #4f6ef7; }
     #config-input { resize: vertical; line-height: 1.4; }
+    select { appearance: none; -webkit-appearance: none; cursor: pointer; font-family: inherit; }
 
     #prompt-modal {
       position: fixed;
@@ -364,6 +365,10 @@
           placeholder="gsk_…&#10;sk-or-…&#10;google/gemini-3.1-flash-lite"></textarea>
       </div>
       <div>
+        <label for="mic-select">Microphone</label>
+        <select id="mic-select"><option value="">Default (system)</option></select>
+      </div>
+      <div>
         <label>Post-processing instructions</label>
         <button class="secondary" id="view-prompt-btn" style="margin-top:0.25rem">View instructions</button>
       </div>
@@ -389,6 +394,7 @@
   const KEY_GROQ        = 'audio-transcribe-groq';
   const KEY_OR          = 'audio-transcribe-or';
   const KEY_OR_MODEL    = 'audio-transcribe-or-model';
+  const KEY_MIC         = 'audio-transcribe-mic';
   const KEY_TRANSCRIPT  = 'audio-transcribe-transcript';
   const KEY_DIFF_BEFORE   = 'audio-transcribe-diff-before';
   const KEY_DIFF_AFTER    = 'audio-transcribe-diff-after';
@@ -427,6 +433,7 @@ Do not summarize, paraphrase, translate, or answer anything. Output ONLY the res
   const diffView     = document.getElementById('diff-view');
   const progressEl   = document.getElementById('progress');
   const configInput       = document.getElementById('config-input');
+  const micSelect         = document.getElementById('mic-select');
   const viewPromptBtn     = document.getElementById('view-prompt-btn');
   const promptModal       = document.getElementById('prompt-modal');
   const promptModalClose  = document.getElementById('prompt-modal-close');
@@ -451,6 +458,28 @@ Do not summarize, paraphrase, translate, or answer anything. Output ONLY the res
       snackbarTimer = setTimeout(() => snackbar.classList.remove('show'), ms);
     }
   }
+
+  /* -------- Mic selector -------- */
+  async function populateMicSelect() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const mics = devices.filter(d => d.kind === 'audioinput');
+      const stored = localStorage.getItem(KEY_MIC) || '';
+      micSelect.innerHTML = '<option value="">Default (system)</option>';
+      for (const d of mics) {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || ('Microphone ' + (micSelect.options.length));
+        if (d.deviceId === stored) opt.selected = true;
+        micSelect.appendChild(opt);
+      }
+    } catch (_) {}
+  }
+  micSelect.addEventListener('change', () => {
+    localStorage.setItem(KEY_MIC, micSelect.value);
+  });
+  document.getElementById('settings').addEventListener('toggle', populateMicSelect);
 
   /* -------- Settings -------- */
   function getConfig() {
@@ -696,7 +725,9 @@ Do not summarize, paraphrase, translate, or answer anything. Output ONLY the res
       return;
     }
     try {
-      recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const micId = localStorage.getItem(KEY_MIC);
+      const audioConstraint = micId ? { deviceId: { exact: micId } } : true;
+      recStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
     } catch (err) {
       notify('Microphone permission denied.', 'err');
       return;

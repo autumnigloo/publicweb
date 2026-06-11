@@ -191,6 +191,21 @@ label { font-size: 0.75rem; color: #777; }
   flex: 1;
 }
 #config-box:focus { border-color: #4a60c8; }
+#mic-select {
+  background: #0f0f13;
+  border: 1px solid #2a2a3a;
+  border-radius: 8px;
+  color: #e0e0e0;
+  font-size: 0.82rem;
+  padding: 0.52rem 0.75rem;
+  width: 100%;
+  outline: none;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+#mic-select:focus { border-color: #4a60c8; }
 </style>
 </head>
 <body>
@@ -226,12 +241,16 @@ label { font-size: 0.75rem; color: #777; }
       <textarea id="config-box" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
         placeholder="gsk_…&#10;sk-or-…&#10;google/gemini-3.1-flash-lite"></textarea>
     </div>
+    <div class="field">
+      <label for="mic-select">Microphone</label>
+      <select id="mic-select"><option value="">Default (system)</option></select>
+    </div>
   </div>
 </div>
 
 <script>
 // ── constants ─────────────────────────────────────────────────────────────────
-const SK = { groq: 'vb-groq', or: 'vb-or', orm: 'vb-orm', data: 'vb-data', cur: 'vb-cur' };
+const SK = { groq: 'vb-groq', or: 'vb-or', orm: 'vb-orm', data: 'vb-data', cur: 'vb-cur', mic: 'vb-mic' };
 const DEF_MODEL = 'google/gemini-3.1-flash-lite';
 const g = id => document.getElementById(id);
 
@@ -253,7 +272,26 @@ function saveS() {
 }
 function closeModal() { saveS(); modal.setAttribute('hidden', ''); }
 
-g('settings-btn').onclick = () => { loadS(); modal.removeAttribute('hidden'); };
+const micSelect = g('mic-select');
+async function populateMicSelect() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d => d.kind === 'audioinput');
+    const stored = localStorage.getItem(SK.mic) || '';
+    micSelect.innerHTML = '<option value="">Default (system)</option>';
+    for (const d of mics) {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || ('Microphone ' + micSelect.options.length);
+      if (d.deviceId === stored) opt.selected = true;
+      micSelect.appendChild(opt);
+    }
+  } catch (_) {}
+}
+micSelect.addEventListener('change', () => localStorage.setItem(SK.mic, micSelect.value));
+
+g('settings-btn').onclick = () => { loadS(); populateMicSelect(); modal.removeAttribute('hidden'); };
 g('mclose').onclick = closeModal;
 modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
 
@@ -444,7 +482,9 @@ recBtn.addEventListener('click', async () => {
   }
 
   let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  const micId = localStorage.getItem(SK.mic);
+  const audioConstraint = micId ? { deviceId: { exact: micId } } : true;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint }); }
   catch { setStatus('Microphone access denied.', true); return; }
 
   chunks = [];
