@@ -16,6 +16,10 @@ New projects must always be added as the **first entry** in the `<ul>` in `index
 
 PWA `name` and `short_name` fields in `manifest.json` must always start with `@` (e.g. `"@My App"`). This makes them sort to the top of the Android share-with app list.
 
+## Privacy
+
+This is a **public repository**. Never commit or push personally identifiable information — no real names, email addresses, phone numbers, API keys, tokens, credentials, or any other private data.
+
 ## Service worker versioning
 
 Any project with a `sw.js` must have its cache version constant (e.g. `vb-v1`) incremented on **every commit** that changes any cached file (HTML, JS, CSS, manifest, icons). This ensures installed PWAs pick up the new files immediately. User data in `localStorage` is unaffected by cache version changes.
