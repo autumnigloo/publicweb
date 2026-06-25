@@ -1,0 +1,19 @@
+{
+  "name": "@Arabic Letters",
+  "short_name": "@Arabic",
+  "description": "Learn the Arabic alphabet and its sounds with IPA pronunciation and spaced-repetition flashcards.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f0f13",
+  "theme_color": "#0f0f13",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

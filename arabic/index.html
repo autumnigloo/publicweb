@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f0f13">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <title>Arabic Letters</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a22;
+      --surface2: #14141b;
+      --border: #2a2a38;
+      --text: #e6e6ee;
+      --muted: #888;
+      --gold: #d4a94e;
+      --gold-dim: #8a6f31;
+      --blue: #4f6ef7;
+      --green: #3fb96b;
+      --red: #e0655c;
+      --radius: 12px;
+    }
+
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      min-height: 100dvh;
+      padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+    }
+
+    /* Arabic glyph font stack */
+    .ar {
+      font-family: 'Geeza Pro', 'Noto Naskh Arabic', 'Amiri', 'Scheherazade New', 'Times New Roman', serif;
+      direction: rtl;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      flex-shrink: 0;
+    }
+    header .brand {
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--gold);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    header .brand .glyph { font-size: 1.5rem; }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      margin-left: auto;
+    }
+    .tabs button {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.82rem;
+      padding: 7px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .tabs button.active { background: var(--gold); border-color: var(--gold); color: #1a1208; font-weight: 600; }
+
+    main { flex: 1; display: flex; flex-direction: column; }
+    section[hidden] { display: none !important; }
+
+    /* ---------- Study ---------- */
+    .study-stats {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 12px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      flex-wrap: wrap;
+    }
+    .study-stats .pill {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 5px 11px;
+      border-radius: 999px;
+    }
+    .study-stats .pill b { color: var(--text); }
+    .study-stats .pill.due b { color: var(--gold); }
+    .study-stats .pill.relearn b { color: var(--red); }
+
+    .dir-toggle {
+      display: flex;
+      gap: 0;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .dir-toggle .seg {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.78rem;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .dir-toggle .seg:first-child { border-radius: 8px 0 0 8px; }
+    .dir-toggle .seg:last-child { border-radius: 0 8px 8px 0; border-left: none; }
+    .dir-toggle .seg.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px 20px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 14px;
+      min-height: 300px;
+    }
+    .card .prompt-label { font-size: 0.82rem; color: var(--muted); }
+    .card .big-glyph {
+      font-size: 6.5rem;
+      line-height: 1;
+      color: var(--gold);
+      margin: 6px 0;
+    }
+    .card .big-ipa {
+      font-size: 3rem;
+      color: var(--blue);
+      font-family: 'Doulos SIL', 'Charis SIL', 'Gentium', serif;
+    }
+    .card .answer { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+    .card .name-latin { font-size: 1.5rem; font-weight: 600; color: var(--text); }
+    .card .name-ar { font-size: 2rem; color: var(--gold); }
+    .card .row-meta { display: flex; gap: 18px; font-size: 0.95rem; color: var(--muted); flex-wrap: wrap; justify-content: center; }
+    .card .row-meta .ipa-val { color: var(--blue); font-family: 'Doulos SIL','Charis SIL','Gentium',serif; }
+    .card .hint { font-size: 0.92rem; color: #b7b7c4; max-width: 30ch; line-height: 1.5; }
+    .divider { width: 60%; height: 1px; background: var(--border); margin: 4px 0; }
+
+    .speak-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--gold);
+      border-radius: 999px;
+      padding: 7px 16px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .speak-btn:active { transform: scale(0.96); }
+
+    .actions { display: flex; gap: 10px; margin-top: 14px; flex-shrink: 0; }
+    .actions button {
+      flex: 1;
+      padding: 15px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.98rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: transform 0.1s, opacity 0.15s;
+    }
+    .actions button:active { transform: scale(0.97); }
+    #show-btn { background: var(--gold); color: #1a1208; }
+    #again-btn { background: var(--red); color: #fff; }
+    #good-btn { background: var(--green); color: #fff; }
+
+    .done {
+      text-align: center;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      color: var(--muted);
+    }
+    .done .check { font-size: 3rem; }
+    .done h2 { color: var(--text); font-weight: 500; }
+    .done button {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--gold);
+      padding: 11px 20px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+
+    /* ---------- Letters grid ---------- */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+      gap: 8px;
+    }
+    .cell {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 4px 8px;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .cell:hover { border-color: var(--gold-dim); }
+    .cell .g { font-size: 2.2rem; color: var(--gold); line-height: 1; }
+    .cell .nm { font-size: 0.7rem; color: var(--muted); margin-top: 5px; }
+    .cell .box-dot {
+      position: absolute; top: 6px; right: 6px;
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--border);
+    }
+    .cell .box-dot.b0 { background: var(--red); }
+    .cell .box-dot.b1, .cell .box-dot.b2 { background: var(--gold); }
+    .cell .box-dot.b3, .cell .box-dot.b4 { background: var(--blue); }
+    .cell .box-dot.b5 { background: var(--green); }
+
+    .legend { display:flex; gap:14px; flex-wrap:wrap; justify-content:center; margin-top:14px; font-size:0.72rem; color:var(--muted); }
+    .legend span { display:inline-flex; align-items:center; gap:5px; }
+    .legend i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+
+    /* ---------- Guide ---------- */
+    .guide { display: flex; flex-direction: column; gap: 14px; padding-bottom: 10px; }
+    .guide .intro { font-size: 0.9rem; color: #b7b7c4; line-height: 1.6; }
+    .guide h3 {
+      font-size: 0.95rem; color: var(--gold); margin-top: 6px;
+      border-bottom: 1px solid var(--border); padding-bottom: 6px;
+    }
+    .grow { display: flex; flex-direction: column; gap: 7px; }
+    .ipa-row {
+      display: flex; gap: 12px; align-items: flex-start;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px;
+    }
+    .ipa-row .sym {
+      font-family: 'Doulos SIL','Charis SIL','Gentium',serif;
+      font-size: 1.5rem; color: var(--blue); min-width: 2.4rem; text-align: center; flex-shrink: 0;
+      padding-top: 2px;
+    }
+    .ipa-row .txt { font-size: 0.88rem; line-height: 1.5; color: #cdcdd8; }
+    .ipa-row .txt b { color: var(--text); }
+    .ipa-row .txt .ex { color: var(--gold); }
+    .note { font-size: 0.82rem; color: var(--muted); line-height: 1.55; background: var(--surface2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+    .note code { color: var(--blue); font-family: 'Doulos SIL', monospace; }
+
+    /* ---------- Detail modal ---------- */
+    #detail {
+      position: fixed; inset: 0; background: #000d; z-index: 50;
+      display: none; align-items: flex-start; justify-content: center;
+      padding: 5vh 16px; overflow-y: auto;
+    }
+    #detail:not([hidden]) { display: flex; }
+    .dbox {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 22px; max-width: 420px; width: 100%;
+      display: flex; flex-direction: column; gap: 14px; align-items: center; text-align: center;
+    }
+    .dbox .dglyph { font-size: 5rem; color: var(--gold); line-height: 1; }
+    .dbox .dname { font-size: 1.3rem; font-weight: 600; }
+    .dbox .dname-ar { font-size: 1.6rem; color: var(--gold); }
+    .forms-table { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; width: 100%; }
+    .forms-table .fcol { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 4px; }
+    .forms-table .fcol .fg { font-size: 1.9rem; color: var(--gold); line-height: 1.2; }
+    .forms-table .fcol .fl { font-size: 0.62rem; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .dbox .dhint { font-size: 0.9rem; color: #b7b7c4; line-height: 1.55; }
+    .dbox .dmeta { font-size: 0.95rem; color: var(--muted); display:flex; gap:16px; }
+    .dbox .dmeta .ipa-val { color: var(--blue); font-family:'Doulos SIL','Charis SIL','Gentium',serif; }
+    .dbox .dprog { font-size: 0.78rem; color: var(--muted); }
+    .dbox-close { background: var(--surface2); border:1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 10px 18px; cursor: pointer; font-family: inherit; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="brand"><span class="glyph ar">ع</span> Arabic Letters</span>
+    <nav class="tabs">
+      <button data-tab="study" class="active">Study</button>
+      <button data-tab="letters">Letters</button>
+      <button data-tab="guide">IPA</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- STUDY -->
+    <section id="view-study">
+      <div class="study-stats">
+        <span class="pill due"><b id="s-due">0</b> due</span>
+        <span class="pill"><b id="s-new">0</b> new</span>
+        <span class="pill relearn"><b id="s-relearn">0</b> relearning</span>
+      </div>
+      <div class="dir-toggle">
+        <button class="seg active" data-dir="g2s">Glyph → Sound</button>
+        <button class="seg" data-dir="s2g">Sound → Glyph</button>
+      </div>
+
+      <div id="card-wrap" style="flex:1; display:flex; flex-direction:column;">
+        <div class="card" id="card"></div>
+        <div class="actions" id="actions"></div>
+      </div>
+
+      <div class="done" id="done" hidden>
+        <div class="check">✓</div>
+        <h2 id="done-title">All caught up!</h2>
+        <p id="done-sub"></p>
+        <button id="cram-btn">Study ahead anyway</button>
+      </div>
+    </section>
+
+    <!-- LETTERS -->
+    <section id="view-letters" hidden>
+      <div class="grid" id="grid"></div>
+      <div class="legend">
+        <span><i style="background:var(--border)"></i> unseen</span>
+        <span><i style="background:var(--red)"></i> relearning</span>
+        <span><i style="background:var(--gold)"></i> learning</span>
+        <span><i style="background:var(--blue)"></i> reviewing</span>
+        <span><i style="background:var(--green)"></i> mastered</span>
+      </div>
+    </section>
+
+    <!-- GUIDE -->
+    <section id="view-guide" hidden>
+      <div class="guide" id="guide"></div>
+    </section>
+  </main>
+
+  <!-- Letter detail -->
+  <div id="detail" hidden>
+    <div class="dbox" id="dbox"></div>
+  </div>
+
+  <script>
+  /* ============================================================
+     Data — the 28 Arabic letters
+     ar: isolated glyph · arName: voweled Arabic name (for TTS)
+     tr: transliteration · ipa: IPA · hint: pronunciation note
+     forms: [isolated, initial, medial, final]
+     ============================================================ */
+  const LETTERS = [
+    { n:'alif',  ar:'ا', arName:'أَلِف', tr:'ā / ʾ', ipa:'aː',  hint:"Long 'a' like English “father” / German “Vater”. Also carries the glottal stop (hamza).", forms:['ا','ا','ـا','ـا'] },
+    { n:'bāʾ',   ar:'ب', arName:'بَاء',  tr:'b',     ipa:'b',   hint:"Like 'b' in “book” / German “Buch”.", forms:['ب','بـ','ـبـ','ـب'] },
+    { n:'tāʾ',   ar:'ت', arName:'تَاء',  tr:'t',     ipa:'t',   hint:"Like 't' in “tea” / German “Tee”.", forms:['ت','تـ','ـتـ','ـت'] },
+    { n:'thāʾ',  ar:'ث', arName:'ثَاء',  tr:'th',    ipa:'θ',   hint:"Unvoiced 'th' as in English “think”. No German equivalent.", forms:['ث','ثـ','ـثـ','ـث'] },
+    { n:'jīm',   ar:'ج', arName:'جِيم',  tr:'j',     ipa:'dʒ',  hint:"Like 'j' in “jam” / English “g” in “gentle”.", forms:['ج','جـ','ـجـ','ـج'] },
+    { n:'ḥāʾ',   ar:'ح', arName:'حَاء',  tr:'ḥ',     ipa:'ħ',   hint:"A sharp, breathy H from deep in the throat. No EN/DE sound — like forcefully fogging a mirror.", forms:['ح','حـ','ـحـ','ـح'] },
+    { n:'khāʾ',  ar:'خ', arName:'خَاء',  tr:'kh',    ipa:'x',   hint:"Like 'ch' in German “Bach” or Scottish “loch”.", forms:['خ','خـ','ـخـ','ـخ'] },
+    { n:'dāl',   ar:'د', arName:'دَال',  tr:'d',     ipa:'d',   hint:"Like 'd' in “door” / German “Tür”.", forms:['د','د','ـد','ـد'] },
+    { n:'dhāl',  ar:'ذ', arName:'ذَال',  tr:'dh',    ipa:'ð',   hint:"Voiced 'th' as in English “this” / “mother”.", forms:['ذ','ذ','ـذ','ـذ'] },
+    { n:'rāʾ',   ar:'ر', arName:'رَاء',  tr:'r',     ipa:'r',   hint:"A rolled/tapped 'r' like Spanish “pero” or a rolled German “r”.", forms:['ر','ر','ـر','ـر'] },
+    { n:'zāy',   ar:'ز', arName:'زَاي',  tr:'z',     ipa:'z',   hint:"Like 'z' in “zoo” / German “s” in “Sonne”.", forms:['ز','ز','ـز','ـز'] },
+    { n:'sīn',   ar:'س', arName:'سِين',  tr:'s',     ipa:'s',   hint:"Like 's' in “sun” / German “ß” in “Straße”.", forms:['س','سـ','ـسـ','ـس'] },
+    { n:'shīn',  ar:'ش', arName:'شِين',  tr:'sh',    ipa:'ʃ',   hint:"Like 'sh' in “ship” / German “sch” in “Schule”.", forms:['ش','شـ','ـشـ','ـش'] },
+    { n:'ṣād',   ar:'ص', arName:'صَاد',  tr:'ṣ',     ipa:'sˤ',  hint:"Emphatic 's' — say 's' with the tongue heavy and the throat tightened (pharyngealized). Vowels around it darken.", forms:['ص','صـ','ـصـ','ـص'] },
+    { n:'ḍād',   ar:'ض', arName:'ضَاد',  tr:'ḍ',     ipa:'dˤ',  hint:"Emphatic 'd' — heavy, pharyngealized 'd'. The signature sound of Arabic (“the language of the ḍād”).", forms:['ض','ضـ','ـضـ','ـض'] },
+    { n:'ṭāʾ',   ar:'ط', arName:'طَاء',  tr:'ṭ',     ipa:'tˤ',  hint:"Emphatic 't' — heavy, pharyngealized 't'.", forms:['ط','طـ','ـطـ','ـط'] },
+    { n:'ẓāʾ',   ar:'ظ', arName:'ظَاء',  tr:'ẓ',     ipa:'ðˤ',  hint:"Emphatic voiced 'th' — a heavy, pharyngealized version of “this”.", forms:['ظ','ظـ','ـظـ','ـظ'] },
+    { n:'ʿayn',  ar:'ع', arName:'عَين',  tr:'ʿ',     ipa:'ʕ',   hint:"Voiced pharyngeal — a tight squeeze deep in the throat. No EN/DE sound; like a gentle controlled gag with voice.", forms:['ع','عـ','ـعـ','ـع'] },
+    { n:'ghayn', ar:'غ', arName:'غَين',  tr:'gh',    ipa:'ɣ',   hint:"Like a gargled / French “r” (Parisian “r” in “Paris”). It's the voiced pair of خ.", forms:['غ','غـ','ـغـ','ـغ'] },
+    { n:'fāʾ',   ar:'ف', arName:'فَاء',  tr:'f',     ipa:'f',   hint:"Like 'f' in “fun” / German “Vater”.", forms:['ف','فـ','ـفـ','ـف'] },
+    { n:'qāf',   ar:'ق', arName:'قَاف',  tr:'q',     ipa:'q',   hint:"A 'k' made far back at the uvula — deeper and heavier than English 'k'.", forms:['ق','قـ','ـقـ','ـق'] },
+    { n:'kāf',   ar:'ك', arName:'كَاف',  tr:'k',     ipa:'k',   hint:"Like 'k' in “key” / German “Kind”.", forms:['ك','كـ','ـكـ','ـك'] },
+    { n:'lām',   ar:'ل', arName:'لَام',  tr:'l',     ipa:'l',   hint:"Like 'l' in “love” / German “Liebe”.", forms:['ل','لـ','ـلـ','ـل'] },
+    { n:'mīm',   ar:'م', arName:'مِيم',  tr:'m',     ipa:'m',   hint:"Like 'm' in “moon” / German “Mond”.", forms:['م','مـ','ـمـ','ـم'] },
+    { n:'nūn',   ar:'ن', arName:'نُون',  tr:'n',     ipa:'n',   hint:"Like 'n' in “noon” / German “Nacht”.", forms:['ن','نـ','ـنـ','ـن'] },
+    { n:'hāʾ',   ar:'ه', arName:'هَاء',  tr:'h',     ipa:'h',   hint:"Like 'h' in “house” / German “Haus”.", forms:['ه','هـ','ـهـ','ـه'] },
+    { n:'wāw',   ar:'و', arName:'وَاو',  tr:'w / ū', ipa:'w · uː', hint:"Consonant 'w' as in “water”; as a vowel, long 'oo' in “moon” / German “gut”.", forms:['و','و','ـو','ـو'] },
+    { n:'yāʾ',   ar:'ي', arName:'يَاء',  tr:'y / ī', ipa:'j · iː', hint:"Consonant 'y' as in “yes” / German “ja”; as a vowel, long 'ee' in “see”.", forms:['ي','يـ','ـيـ','ـي'] },
+  ];
+
+  /* IPA guide content (the “quick lecture”) */
+  const GUIDE = [
+    { group:'Long vowels', rows:[
+      { sym:'aː', txt:'<b>Long “a”.</b> <span class="ex">“father”</span> (EN), <span class="ex">“Vater”</span> (DE). The <code>ː</code> just means “hold it longer”.' },
+      { sym:'uː', txt:'<b>Long “oo”.</b> <span class="ex">“moon”</span> (EN), <span class="ex">“gut”</span> (DE).' },
+      { sym:'iː', txt:'<b>Long “ee”.</b> <span class="ex">“see”</span> (EN), <span class="ex">“Liebe”</span> (DE).' },
+    ]},
+    { group:'The “th” pair', rows:[
+      { sym:'θ', txt:'<b>Unvoiced “th”.</b> <span class="ex">“think”, “bath”</span> (EN). Tongue between the teeth, blow air, <i>no</i> voice. Not in German.' },
+      { sym:'ð', txt:'<b>Voiced “th”.</b> <span class="ex">“this”, “mother”</span> (EN). Same tongue position as θ but switch your voice on.' },
+    ]},
+    { group:'Hushing & “j” sounds', rows:[
+      { sym:'ʃ', txt:'<b>“sh”.</b> <span class="ex">“ship”</span> (EN), <span class="ex">“Schule”</span> (DE).' },
+      { sym:'dʒ', txt:'<b>“j”.</b> <span class="ex">“jam”, “gentle”</span> (EN), <span class="ex">“Dschungel”</span> (DE).' },
+    ]},
+    { group:'Back-of-throat sounds', rows:[
+      { sym:'x', txt:'<b>Voiceless “ch”.</b> <span class="ex">“Bach”, “ach”</span> (DE), <span class="ex">“loch”</span> (Scottish). Raise the back of the tongue and let air hiss.' },
+      { sym:'ɣ', txt:'<b>Voiced “ch”.</b> The gargled French/Parisian <span class="ex">“r”</span> in “Paris”. It is x + voice.' },
+      { sym:'q', txt:'<b>Uvular “k”.</b> A “k” made as far back as possible, at the uvula. Compare front “k” in “cat” → push it deeper.' },
+    ]},
+    { group:'Pharyngeals (the hardest — no EN/DE)', rows:[
+      { sym:'ħ', txt:'<b>Voiceless pharyngeal.</b> A strong, raspy “h”. Tighten the throat as if cleaning glasses with your breath — then add force. No voice.' },
+      { sym:'ʕ', txt:'<b>Voiced pharyngeal (ʿayn).</b> Same throat squeeze as ħ, but <i>with</i> voice — a controlled gentle gag. The classic “impossible” Arabic sound.' },
+    ]},
+    { group:'Emphatic (pharyngealized) consonants', rows:[
+      { sym:'sˤ', txt:'<b>Heavy “s”.</b> Say “s”, but pull the tongue root back and lower your pitch so nearby vowels sound dark (“saw”, not “see”).' },
+      { sym:'tˤ', txt:'<b>Heavy “t”.</b> The dark, throat-backed version of “t”.' },
+      { sym:'dˤ', txt:'<b>Heavy “d”.</b> The dark, throat-backed version of “d”.' },
+      { sym:'ðˤ', txt:'<b>Heavy “th”.</b> The dark, throat-backed version of voiced “th”.' },
+    ]},
+    { group:'The glottal stop', rows:[
+      { sym:'ʔ', txt:'<b>Glottal stop (hamza).</b> The catch in the middle of <span class="ex">“uh-oh”</span> (EN), or the break before each vowel in German <span class="ex">“ver|eisen”</span>.' },
+    ]},
+  ];
+
+  /* ============================================================
+     Storage / SRS (Leitner with localStorage)
+     ============================================================ */
+  const SKEY = 'arabic-srs-v1';
+  const DIRKEY = 'arabic-dir';
+  // Box → next interval. Box 0 = due now (relearning / new).
+  const STEPS_MS = [0, 10*60e3, 1*864e5, 3*864e5, 7*864e5, 16*864e5];
+
+  let store = load();
+  function load() {
+    try { return JSON.parse(localStorage.getItem(SKEY)) || {}; }
+    catch { return {}; }
+  }
+  function save() { localStorage.setItem(SKEY, JSON.stringify(store)); }
+  function rec(i) {
+    if (!store[i]) store[i] = { box: 0, due: 0, reps: 0, lapses: 0, correct: 0, wrong: 0 };
+    return store[i];
+  }
+  function grade(i, good) {
+    const c = rec(i);
+    if (good) { c.box = Math.min(5, c.box + 1); c.correct++; }
+    else { if (c.box > 0) c.lapses++; c.box = 0; c.wrong++; }
+    c.reps++;
+    c.due = Date.now() + STEPS_MS[c.box];
+    save();
+  }
+
+  /* ============================================================
+     Tabs
+     ============================================================ */
+  const views = {
+    study:  document.getElementById('view-study'),
+    letters:document.getElementById('view-letters'),
+    guide:  document.getElementById('view-guide'),
+  };
+  document.querySelectorAll('.tabs button').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('.tabs button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      Object.entries(views).forEach(([k,v]) => v.hidden = (k !== b.dataset.tab));
+      if (b.dataset.tab === 'letters') renderGrid();
+      if (b.dataset.tab === 'study') startSession();
+    };
+  });
+
+  /* ============================================================
+     Study session
+     ============================================================ */
+  let dir = localStorage.getItem(DIRKEY) || 'g2s';
+  let session = [];      // queue of letter indices
+  let current = -1;
+  let revealed = false;
+
+  document.querySelectorAll('.dir-toggle .seg').forEach(s => {
+    if (s.dataset.dir === dir) s.classList.add('active'); else s.classList.remove('active');
+    s.onclick = () => {
+      dir = s.dataset.dir;
+      localStorage.setItem(DIRKEY, dir);
+      document.querySelectorAll('.dir-toggle .seg').forEach(x => x.classList.toggle('active', x.dataset.dir === dir));
+      if (current >= 0) renderCard();
+    };
+  });
+
+  function dueList() {
+    const now = Date.now();
+    return LETTERS.map((_, i) => i).filter(i => (store[i]?.due || 0) <= now);
+  }
+  function updateStats() {
+    const now = Date.now();
+    let due = 0, neu = 0, relearn = 0;
+    LETTERS.forEach((_, i) => {
+      const c = store[i];
+      const isDue = (c?.due || 0) <= now;
+      if (isDue) due++;
+      if (!c || c.reps === 0) neu++;
+      else if (isDue && c.box === 0) relearn++;
+    });
+    document.getElementById('s-due').textContent = due;
+    document.getElementById('s-new').textContent = neu;
+    document.getElementById('s-relearn').textContent = relearn;
+  }
+
+  function startSession(cram=false) {
+    updateStats();
+    let pool = cram ? LETTERS.map((_,i)=>i) : dueList();
+    // new/lapsed first, then by soonest due; light shuffle within groups
+    pool.sort((a,b) => (store[a]?.due||0) - (store[b]?.due||0));
+    session = pool;
+    current = -1;
+    nextCard();
+  }
+
+  function nextCard() {
+    document.getElementById('done').hidden = true;
+    document.getElementById('card').style.display = '';
+    document.getElementById('actions').style.display = '';
+    if (session.length === 0) { showDone(); return; }
+    current = session.shift();
+    revealed = false;
+    renderCard();
+    updateStats();
+  }
+
+  function showDone() {
+    current = -1;
+    document.getElementById('card').style.display = 'none';
+    document.getElementById('actions').style.display = 'none';
+    const done = document.getElementById('done');
+    done.hidden = false;
+    // next due time
+    const upcoming = LETTERS.map((_,i)=>store[i]?.due||0).filter(d => d > Date.now()).sort((a,b)=>a-b)[0];
+    const sub = document.getElementById('done-sub');
+    if (upcoming) {
+      const mins = Math.round((upcoming - Date.now())/60000);
+      const txt = mins < 60 ? `${mins} min` : mins < 1440 ? `${Math.round(mins/60)} h` : `${Math.round(mins/1440)} d`;
+      sub.textContent = `Next review in about ${txt}.`;
+    } else {
+      sub.textContent = 'Every letter is scheduled. Come back later!';
+    }
+  }
+  document.getElementById('cram-btn').onclick = () => startSession(true);
+
+  function speak(text) {
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ar';
+    u.rate = 0.75;
+    try { speechSynthesis.cancel(); speechSynthesis.speak(u); } catch {}
+  }
+
+  function renderCard() {
+    const L = LETTERS[current];
+    const card = document.getElementById('card');
+    const actions = document.getElementById('actions');
+
+    const answerBlock = `
+      <div class="answer">
+        ${dir === 's2g' ? `<div class="big-glyph ar">${L.ar}</div>` : ``}
+        <div class="name-latin">${L.n}</div>
+        <div class="name-ar ar">${L.arName}</div>
+        <div class="divider"></div>
+        <div class="row-meta">
+          <span>translit <b style="color:var(--text)">${L.tr}</b></span>
+          <span>IPA <span class="ipa-val">/${L.ipa}/</span></span>
+        </div>
+        <div class="hint">${L.hint}</div>
+        <button class="speak-btn" id="speak">🔊 Hear it</button>
+      </div>`;
+
+    if (dir === 'g2s') {
+      card.innerHTML = `
+        <div class="prompt-label">What letter is this — and how does it sound?</div>
+        <div class="big-glyph ar">${L.ar}</div>
+        ${revealed ? answerBlock : ''}`;
+    } else {
+      card.innerHTML = `
+        <div class="prompt-label">Which letter makes this sound?</div>
+        <div class="big-ipa">/${L.ipa}/</div>
+        <div class="hint">${L.hint}</div>
+        ${revealed ? answerBlock : ''}`;
+    }
+
+    if (revealed) {
+      document.getElementById('speak').onclick = () => speak(L.arName);
+      actions.innerHTML = `
+        <button id="again-btn">Again</button>
+        <button id="good-btn">Good</button>`;
+      document.getElementById('again-btn').onclick = () => answer(false);
+      document.getElementById('good-btn').onclick = () => answer(true);
+    } else {
+      actions.innerHTML = `<button id="show-btn">Show answer</button>`;
+      document.getElementById('show-btn').onclick = () => { revealed = true; renderCard(); };
+    }
+  }
+
+  function answer(good) {
+    const i = current;
+    grade(i, good);
+    // If "Again", requeue this card later in the session so it comes back.
+    if (!good) session.push(i);
+    nextCard();
+  }
+
+  // Let tapping the card reveal the answer too
+  document.getElementById('card').addEventListener('click', e => {
+    if (!revealed && current >= 0 && !e.target.closest('button')) { revealed = true; renderCard(); }
+  });
+
+  /* ============================================================
+     Letters grid + detail
+     ============================================================ */
+  function renderGrid() {
+    const grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    LETTERS.forEach((L, i) => {
+      const c = store[i];
+      const box = c && c.reps > 0 ? c.box : -1;
+      const cls = box === -1 ? '' : 'b' + box;
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.innerHTML = `
+        <span class="box-dot ${cls}"></span>
+        <div class="g ar">${L.ar}</div>
+        <div class="nm">${L.n}</div>`;
+      cell.onclick = () => showDetail(i);
+      grid.appendChild(cell);
+    });
+  }
+
+  const detail = document.getElementById('detail');
+  function showDetail(i) {
+    const L = LETTERS[i];
+    const c = store[i];
+    const labels = ['Isolated','Initial','Medial','Final'];
+    const prog = c && c.reps > 0
+      ? `Seen ${c.reps}× · ${c.correct} correct · ${c.wrong} missed · box ${c.box}/5`
+      : 'Not studied yet';
+    document.getElementById('dbox').innerHTML = `
+      <div class="dglyph ar">${L.ar}</div>
+      <div class="dname">${L.n}</div>
+      <div class="dname-ar ar">${L.arName}</div>
+      <div class="dmeta">
+        <span>translit <b style="color:var(--text)">${L.tr}</b></span>
+        <span>IPA <span class="ipa-val">/${L.ipa}/</span></span>
+      </div>
+      <button class="speak-btn" id="dspeak">🔊 Hear it</button>
+      <div class="dhint">${L.hint}</div>
+      <div class="forms-table">
+        ${L.forms.map((f,k)=>`<div class="fcol"><div class="fg ar">${f}</div><div class="fl">${labels[k]}</div></div>`).join('')}
+      </div>
+      <div class="dprog">${prog}</div>
+      <button class="dbox-close" id="dclose">Close</button>`;
+    detail.hidden = false;
+    document.getElementById('dspeak').onclick = () => speak(L.arName);
+    document.getElementById('dclose').onclick = () => detail.hidden = true;
+  }
+  detail.addEventListener('click', e => { if (e.target === detail) detail.hidden = true; });
+
+  /* ============================================================
+     Guide
+     ============================================================ */
+  function renderGuide() {
+    const g = document.getElementById('guide');
+    g.innerHTML = `
+      <p class="intro">IPA (the International Phonetic Alphabet) writes one symbol per sound, so a word's pronunciation is never ambiguous. Below are the symbols used in this app — the tricky ones for English and German speakers are grouped at the bottom.</p>
+      <div class="note">Notation: <code>/…/</code> wraps a pronunciation · <code>ː</code> = hold the sound longer · superscript <code>ˤ</code> = “emphatic” (pharyngealized) · <code>ʔ</code> = glottal stop.</div>
+      ${GUIDE.map(sec => `
+        <h3>${sec.group}</h3>
+        <div class="grow">
+          ${sec.rows.map(r => `
+            <div class="ipa-row">
+              <div class="sym">${r.sym}</div>
+              <div class="txt">${r.txt}</div>
+            </div>`).join('')}
+        </div>`).join('')}`;
+  }
+
+  /* ============================================================
+     Init
+     ============================================================ */
+  renderGuide();
+  startSession();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js');
+  }
+  </script>
+</body>
+</html>
