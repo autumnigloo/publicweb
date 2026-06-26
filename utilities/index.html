@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f0f13">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <title>Utilities</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a22;
+      --border: #2a2a38;
+      --text: #e6e6ee;
+      --muted: #666;
+      --gold: #d4a94e;
+      --blue: #4f6ef7;
+      --radius: 16px;
+    }
+
+    html { height: 100dvh; overflow: hidden; background: var(--bg); }
+    body {
+      height: 100dvh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      padding: max(16px, env(safe-area-inset-top)) 20px max(16px, env(safe-area-inset-bottom));
+      gap: 0;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      padding-bottom: 10px;
+    }
+    header h1 {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    header .sep { color: var(--border); }
+    header .tool { color: var(--text); font-weight: 600; }
+
+    /* ── Main card ── */
+    .card {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-around;
+      padding: 20px;
+      gap: 0;
+    }
+
+    /* Player count */
+    .count-section { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
+    .count-label { font-size: 0.8rem; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
+    .count-row { display: flex; align-items: center; gap: 0; width: 100%; max-width: 320px; }
+    .adj-btn {
+      flex: 1;
+      height: 72px;
+      background: #12121a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 2.2rem;
+      font-weight: 300;
+      cursor: pointer;
+      transition: background 0.1s, transform 0.1s;
+      display: flex; align-items: center; justify-content: center;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .adj-btn:first-child { border-radius: 14px 0 0 14px; }
+    .adj-btn:last-child  { border-radius: 0 14px 14px 0; }
+    .adj-btn:active { background: #222232; transform: scale(0.95); }
+    .adj-btn:disabled { color: #333; cursor: default; transform: none; }
+    .count-val {
+      flex: 1.2;
+      height: 72px;
+      background: #0f0f13;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2.6rem;
+      font-weight: 700;
+      color: var(--gold);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Go button */
+    .go-btn {
+      width: 100%;
+      max-width: 320px;
+      height: 96px;
+      background: var(--blue);
+      border: none;
+      border-radius: 20px;
+      color: #fff;
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      cursor: pointer;
+      transition: background 0.1s, transform 0.12s;
+      font-family: inherit;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .go-btn:active { transform: scale(0.96); background: #3a5ae0; }
+    .go-btn:hover  { background: #5f7ef8; }
+
+    /* Result */
+    .result-section { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .result-num {
+      font-size: clamp(5rem, 22vw, 9rem);
+      font-weight: 800;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      transition: transform 0.15s, opacity 0.15s;
+      min-height: 1em;
+      color: var(--gold);
+    }
+    .result-num.flash {
+      transform: scale(1.12);
+    }
+    .result-num.empty { color: var(--border); }
+    .result-label {
+      font-size: 1.05rem;
+      color: var(--muted);
+      min-height: 1.4em;
+      text-align: center;
+    }
+    .result-label.you { color: var(--gold); font-weight: 600; }
+
+    /* Explainer */
+    .explainer {
+      font-size: 0.82rem;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.55;
+      padding: 0 10px;
+    }
+    .explainer b { color: #999; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span class="tool">First Player</span></h1>
+  </header>
+
+  <div class="card">
+    <div class="count-section">
+      <div class="count-label">Number of players</div>
+      <div class="count-row">
+        <button class="adj-btn" id="minus">−</button>
+        <div class="count-val" id="count-val">4</div>
+        <button class="adj-btn" id="plus">+</button>
+      </div>
+    </div>
+
+    <button class="go-btn" id="go">GO</button>
+
+    <div class="result-section">
+      <div class="result-num empty" id="result-num">?</div>
+      <div class="result-label" id="result-label">tap GO to pick</div>
+    </div>
+
+    <div class="explainer">
+      <b>0</b> = you &nbsp;·&nbsp; <b>1, 2, 3…</b> = clockwise from you
+    </div>
+  </div>
+
+  <script>
+    const MIN = 2, MAX = 10;
+    const KEY = 'utilities-first-player-count';
+
+    let count = Math.min(MAX, Math.max(MIN, parseInt(localStorage.getItem(KEY) || '4', 10)));
+
+    const countEl = document.getElementById('count-val');
+    const minusBtn = document.getElementById('minus');
+    const plusBtn  = document.getElementById('plus');
+    const goBtn    = document.getElementById('go');
+    const resultNum   = document.getElementById('result-num');
+    const resultLabel = document.getElementById('result-label');
+
+    function render() {
+      countEl.textContent = count;
+      minusBtn.disabled = count <= MIN;
+      plusBtn.disabled  = count >= MAX;
+    }
+
+    minusBtn.onclick = () => { if (count > MIN) { count--; save(); render(); } };
+    plusBtn.onclick  = () => { if (count < MAX) { count++; save(); render(); } };
+
+    function save() { localStorage.setItem(KEY, String(count)); }
+
+    goBtn.onclick = () => {
+      const n = Math.floor(Math.random() * count);
+
+      resultNum.classList.remove('flash', 'empty');
+      resultLabel.classList.remove('you');
+
+      // Brief flash animation
+      void resultNum.offsetWidth; // reflow
+      resultNum.textContent = n;
+      resultNum.classList.add('flash');
+      setTimeout(() => resultNum.classList.remove('flash'), 200);
+
+      if (n === 0) {
+        resultLabel.textContent = 'You start!';
+        resultLabel.classList.add('you');
+      } else {
+        resultLabel.textContent = `Player ${n} starts`;
+      }
+    };
+
+    render();
+
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+  </script>
+</body>
+</html>
