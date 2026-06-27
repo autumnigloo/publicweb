@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#0f0f13">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <title>Chat</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a22;
+      --surface2: #14141b;
+      --border: #2a2a38;
+      --text: #e6e6ee;
+      --muted: #7a7a8c;
+      --accent: #4f6ef7;
+      --user: #2a3a6e;
+      --radius: 14px;
+    }
+
+    html { height: 100dvh; overflow: hidden; }
+    body {
+      height: 100dvh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: max(8px, env(safe-area-inset-top)) 10px 8px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .ico-btn {
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 1.3rem;
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .ico-btn:active { background: var(--surface); }
+    .model-pill {
+      flex: 1;
+      min-width: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .model-pill .nm { overflow: hidden; text-overflow: ellipsis; }
+    .model-pill .caret { color: var(--muted); flex-shrink: 0; }
+
+    /* ── Messages ── */
+    #messages {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 14px 12px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .msg { display: flex; flex-direction: column; max-width: 88%; }
+    .msg.user { align-self: flex-end; align-items: flex-end; }
+    .msg.assistant { align-self: flex-start; align-items: flex-start; }
+    .bubble {
+      border-radius: var(--radius);
+      padding: 10px 13px;
+      font-size: 0.98rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+    }
+    .msg.user .bubble { background: var(--user); border-top-right-radius: 4px; }
+    .msg.assistant .bubble { background: var(--surface); border-top-left-radius: 4px; border: 1px solid var(--border); }
+    .meta {
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-top: 4px;
+      padding: 0 4px;
+    }
+    .meta .mdl { color: #8a93c8; }
+    .cursor::after { content: '▋'; color: var(--accent); animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
+
+    .empty-state {
+      margin: auto;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      padding: 20px;
+    }
+    .empty-state .big { font-size: 2.5rem; margin-bottom: 8px; }
+
+    /* ── Composer ── */
+    #composer {
+      flex-shrink: 0;
+      border-top: 1px solid var(--border);
+      background: var(--surface2);
+      padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 1rem;
+      line-height: 1.45;
+      padding: 11px 13px;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+      height: 48px;
+      transition: height 0.2s ease;
+    }
+    #input:focus { border-color: var(--accent); }
+    #input.expanded { height: 50dvh; }
+    .composer-row { display: flex; align-items: center; gap: 8px; }
+    .composer-row .spacer { flex: 1; font-size: 0.72rem; color: var(--muted); }
+    #send {
+      background: var(--accent);
+      border: none;
+      color: #fff;
+      border-radius: 12px;
+      padding: 10px 22px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      flex-shrink: 0;
+    }
+    #send:active { transform: scale(0.96); }
+    #send.stop { background: #c0473f; }
+
+    /* ── Overlays ── */
+    .overlay {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(0,0,0,0.6);
+      display: none;
+    }
+    .overlay:not([hidden]) { display: block; }
+
+    /* Drawer (chat list) */
+    #drawer { z-index: 110; }
+    .drawer-panel {
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      width: min(82%, 340px);
+      background: var(--surface2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: max(10px, env(safe-area-inset-top)) 0 max(10px, env(safe-area-inset-bottom));
+      animation: slidein 0.18s ease;
+    }
+    @keyframes slidein { from { transform: translateX(-100%); } }
+    .drawer-head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 12px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .drawer-head .title { font-weight: 600; flex: 1; }
+    .new-chat {
+      background: var(--accent); color: #fff; border: none;
+      border-radius: 10px; padding: 8px 14px; font-size: 0.85rem;
+      cursor: pointer; font-family: inherit; font-weight: 600;
+    }
+    .chat-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+    .chat-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 11px 12px; border-radius: 10px; cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .chat-item:active { background: var(--surface); }
+    .chat-item.active { background: var(--surface); border-color: var(--border); }
+    .chat-item .ci-title { flex: 1; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat-item .ci-del {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 1rem; padding: 2px 6px; flex-shrink: 0;
+    }
+    .chat-item .ci-del:active { color: #c0473f; }
+
+    /* Centered popups (model picker + settings) */
+    .pop-wrap { z-index: 120; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .pop {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; width: 100%; max-width: 420px;
+      max-height: 82dvh; display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .pop-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+    }
+    .pop-head h2 { font-size: 1rem; font-weight: 600; }
+    .pop-head .close { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; }
+    .pop-body { padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+
+    .model-opt {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px; border-radius: 10px; cursor: pointer;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+    .model-opt:active { background: #20202c; }
+    .model-opt.sel { border-color: var(--accent); }
+    .model-opt .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+    .model-opt.sel .dot { background: var(--accent); }
+    .model-opt .mo-id { flex: 1; font-size: 0.9rem; word-break: break-all; }
+
+    .field label { font-size: 0.78rem; color: var(--muted); display: block; margin-bottom: 6px; }
+    .field input {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; color: var(--text); font-size: 0.9rem;
+      padding: 11px 13px; outline: none; font-family: monospace;
+    }
+    .field input:focus { border-color: var(--accent); }
+
+    .model-manage { display: flex; flex-direction: column; gap: 7px; }
+    .mm-row { display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
+    .mm-row .mm-id { flex: 1; font-size: 0.85rem; font-family: monospace; word-break: break-all; }
+    .mm-row .mm-del { background: none; border: none; color: #c0473f; font-size: 1.1rem; cursor: pointer; flex-shrink: 0; padding: 0 4px; }
+    .mm-add { display: flex; gap: 8px; }
+    .mm-add input {
+      flex: 1; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; color: var(--text); font-size: 0.85rem;
+      padding: 10px 12px; outline: none; font-family: monospace;
+    }
+    .mm-add input:focus { border-color: var(--accent); }
+    .mm-add button {
+      background: var(--accent); border: none; color: #fff; border-radius: 10px;
+      padding: 0 16px; font-size: 0.9rem; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .hint { font-size: 0.75rem; color: var(--muted); line-height: 1.5; }
+    .hint a { color: #8a93c8; }
+
+    .toast {
+      position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+      background: #c0473f; color: #fff; padding: 9px 18px; border-radius: 999px;
+      font-size: 0.85rem; z-index: 200; opacity: 0; transition: opacity 0.2s;
+      pointer-events: none; max-width: 90%; text-align: center;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <header>
+    <button class="ico-btn" id="menu-btn" title="Chats">☰</button>
+    <button class="model-pill" id="model-btn">
+      <span class="nm" id="model-name">Pick model</span>
+      <span class="caret">▾</span>
+    </button>
+    <button class="ico-btn" id="settings-btn" title="Settings">⚙</button>
+  </header>
+
+  <div id="messages"></div>
+
+  <form id="composer" autocomplete="off">
+    <textarea id="input" placeholder="Message…" rows="1"></textarea>
+    <div class="composer-row">
+      <span class="spacer" id="composer-hint"></span>
+      <button type="submit" id="send">Send</button>
+    </div>
+  </form>
+
+  <!-- Drawer -->
+  <div class="overlay" id="drawer" hidden>
+    <div class="drawer-panel" id="drawer-panel">
+      <div class="drawer-head">
+        <span class="title">Chats</span>
+        <button class="new-chat" id="new-chat-btn">+ New</button>
+      </div>
+      <div class="chat-list" id="chat-list"></div>
+    </div>
+  </div>
+
+  <!-- Model picker -->
+  <div class="overlay pop-wrap" id="model-pop" hidden>
+    <div class="pop">
+      <div class="pop-head">
+        <h2>Model</h2>
+        <button class="close" data-close="model-pop">✕</button>
+      </div>
+      <div class="pop-body" id="model-list"></div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="overlay pop-wrap" id="settings" hidden>
+    <div class="pop">
+      <div class="pop-head">
+        <h2>Settings</h2>
+        <button class="close" data-close="settings">✕</button>
+      </div>
+      <div class="pop-body">
+        <div class="field">
+          <label for="key-input">OpenRouter API key</label>
+          <input id="key-input" type="text" placeholder="sk-or-…" spellcheck="false" autocomplete="off" autocapitalize="none" autocorrect="off">
+          <p class="hint" style="margin-top:6px">Stored only on this device. Get one at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>.</p>
+        </div>
+        <div class="field">
+          <label>Models in the picker</label>
+          <div class="model-manage" id="model-manage"></div>
+          <div class="mm-add" style="margin-top:8px">
+            <input id="add-model-input" placeholder="vendor/model-id" spellcheck="false" autocomplete="off" autocapitalize="none">
+            <button id="add-model-btn" type="button">Add</button>
+          </div>
+          <p class="hint" style="margin-top:6px">Use OpenRouter IDs, e.g. <code>google/gemini-3.1-flash-lite</code>. Browse them at <a href="https://openrouter.ai/models" target="_blank" rel="noopener">openrouter.ai/models</a>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+  const LS = { key:'chat-or-key', models:'chat-models', chats:'chat-chats', cur:'chat-cur', model:'chat-model' };
+  const API = 'https://openrouter.ai/api/v1/chat/completions';
+  const DEFAULT_MODELS = ['google/gemini-3.1-flash-lite', 'anthropic/claude-sonnet-4.6', 'deepseek/deepseek-chat'];
+
+  const $ = id => document.getElementById(id);
+
+  // ── State ──
+  let key = localStorage.getItem(LS.key) || '';
+  let models = load(LS.models, DEFAULT_MODELS.slice());
+  let chats = load(LS.chats, []);
+  let curId = localStorage.getItem(LS.cur) || null;
+  let curModel = localStorage.getItem(LS.model) || models[0] || '';
+  let controller = null;   // AbortController while streaming
+
+  function load(k, fallback) {
+    try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? fallback : v; }
+    catch { return fallback; }
+  }
+  function saveChats() { localStorage.setItem(LS.chats, JSON.stringify(chats)); }
+  function saveModels() { localStorage.setItem(LS.models, JSON.stringify(models)); }
+
+  function newId() { return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+  function shortModel(m) { return m ? m.split('/').pop() : ''; }
+  function esc(s) { return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+  function fmtTime(ts) {
+    try { return new Date(ts).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
+    catch { return ''; }
+  }
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+
+  // ── Chats ──
+  function ensureChat() {
+    if (!chats.length) { const c = { id:newId(), title:'New chat', messages:[] }; chats.unshift(c); curId = c.id; }
+    if (!curId || !chats.find(c => c.id === curId)) curId = chats[0].id;
+    localStorage.setItem(LS.cur, curId);
+  }
+  function curChat() { return chats.find(c => c.id === curId); }
+
+  function newChat() {
+    // Reuse an existing empty chat instead of stacking blanks
+    const blank = chats.find(c => c.messages.length === 0);
+    const c = blank || { id:newId(), title:'New chat', messages:[] };
+    if (!blank) chats.unshift(c);
+    curId = c.id; localStorage.setItem(LS.cur, curId);
+    saveChats(); renderMessages(); renderDrawer(); closeAll();
+    $('input').focus();
+  }
+  function switchChat(id) { curId = id; localStorage.setItem(LS.cur, id); renderMessages(); renderDrawer(); closeAll(); }
+  function deleteChat(id) {
+    chats = chats.filter(c => c.id !== id);
+    if (curId === id) curId = chats[0]?.id || null;
+    ensureChat(); saveChats(); renderMessages(); renderDrawer();
+  }
+
+  // ── Rendering ──
+  function renderModelPill() { $('model-name').textContent = curModel ? shortModel(curModel) : 'Pick model'; }
+
+  function renderMessages() {
+    const box = $('messages');
+    const chat = curChat();
+    box.innerHTML = '';
+    if (!chat || chat.messages.length === 0) {
+      box.innerHTML = `<div class="empty-state"><div class="big">💬</div>
+        Start a conversation.<br>Each reply is tagged with its model and time.<br>
+        Switch models anytime from the pill above.</div>`;
+      return;
+    }
+    for (const m of chat.messages) {
+      const wrap = document.createElement('div');
+      wrap.className = 'msg ' + m.role;
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = m.content;
+      if (m.streaming) { bubble.id = 'live-bubble'; bubble.classList.add('cursor'); }
+      wrap.appendChild(bubble);
+      if (m.role === 'assistant' && (m.model || m.ts)) {
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.innerHTML = `<span class="mdl">${esc(shortModel(m.model || ''))}</span>` + (m.ts ? ` · ${fmtTime(m.ts)}` : '');
+        wrap.appendChild(meta);
+      }
+      box.appendChild(wrap);
+    }
+    scrollBottom();
+  }
+
+  function scrollBottom() { const b = $('messages'); b.scrollTop = b.scrollHeight; }
+  function nearBottom() { const b = $('messages'); return b.scrollHeight - b.scrollTop - b.clientHeight < 120; }
+
+  function renderDrawer() {
+    const list = $('chat-list');
+    list.innerHTML = '';
+    chats.forEach(c => {
+      const row = document.createElement('div');
+      row.className = 'chat-item' + (c.id === curId ? ' active' : '');
+      const title = c.title || (c.messages.find(m=>m.role==='user')?.content.slice(0,40)) || 'New chat';
+      row.innerHTML = `<span class="ci-title">${esc(title)}</span><button class="ci-del" title="Delete">🗑</button>`;
+      row.querySelector('.ci-title').onclick = () => switchChat(c.id);
+      row.querySelector('.ci-del').onclick = (e) => {
+        e.stopPropagation();
+        if (confirm('Delete this chat?')) deleteChat(c.id);
+      };
+      list.appendChild(row);
+    });
+  }
+
+  function renderModelList() {
+    const list = $('model-list');
+    list.innerHTML = '';
+    if (!models.length) {
+      list.innerHTML = `<p class="hint">No models yet. Add some in Settings ⚙.</p>`;
+      return;
+    }
+    models.forEach(m => {
+      const opt = document.createElement('div');
+      opt.className = 'model-opt' + (m === curModel ? ' sel' : '');
+      opt.innerHTML = `<span class="dot"></span><span class="mo-id">${esc(m)}</span>`;
+      opt.onclick = () => {
+        curModel = m; localStorage.setItem(LS.model, m);
+        renderModelPill(); closeAll();
+      };
+      list.appendChild(opt);
+    });
+  }
+
+  function renderModelManage() {
+    const box = $('model-manage');
+    box.innerHTML = '';
+    models.forEach(m => {
+      const row = document.createElement('div');
+      row.className = 'mm-row';
+      row.innerHTML = `<span class="mm-id">${esc(m)}</span><button class="mm-del" title="Remove">✕</button>`;
+      row.querySelector('.mm-del').onclick = () => {
+        models = models.filter(x => x !== m);
+        if (curModel === m) { curModel = models[0] || ''; localStorage.setItem(LS.model, curModel); renderModelPill(); }
+        saveModels(); renderModelManage();
+      };
+      box.appendChild(row);
+    });
+  }
+
+  // ── Overlays ──
+  function openOverlay(id) { $(id).hidden = false; }
+  function closeAll() { ['drawer','model-pop','settings'].forEach(id => $(id).hidden = true); }
+  document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => $(b.dataset.close).hidden = true);
+  ['drawer','model-pop','settings'].forEach(id => {
+    $(id).addEventListener('click', e => { if (e.target === $(id) || e.target.id === 'drawer') $(id).hidden = true; });
+  });
+  // Drawer overlay closes when tapping outside the panel
+  $('drawer').addEventListener('click', e => { if (!e.target.closest('.drawer-panel')) $('drawer').hidden = true; });
+
+  $('menu-btn').onclick = () => { renderDrawer(); openOverlay('drawer'); };
+  $('new-chat-btn').onclick = newChat;
+  $('model-btn').onclick = () => {
+    if (!models.length) { openSettings(); return toast('Add a model first'); }
+    renderModelList(); openOverlay('model-pop');
+  };
+  $('settings-btn').onclick = openSettings;
+
+  function openSettings() {
+    $('key-input').value = key;
+    renderModelManage();
+    openOverlay('settings');
+  }
+  $('key-input').addEventListener('input', e => { key = e.target.value.trim(); localStorage.setItem(LS.key, key); });
+  $('add-model-btn').onclick = addModel;
+  $('add-model-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addModel(); } });
+  function addModel() {
+    const inp = $('add-model-input');
+    const v = inp.value.trim();
+    if (!v) return;
+    if (models.includes(v)) { toast('Already in the list'); return; }
+    models.push(v);
+    if (!curModel) { curModel = v; localStorage.setItem(LS.model, v); renderModelPill(); }
+    saveModels(); renderModelManage(); inp.value = '';
+  }
+
+  // ── Composer / input expand ──
+  const input = $('input');
+  input.addEventListener('focus', () => input.classList.add('expanded'));
+  input.addEventListener('blur', () => { if (!input.value.trim()) input.classList.remove('expanded'); });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $('composer').requestSubmit(); }
+  });
+  $('composer').addEventListener('submit', e => { e.preventDefault(); onSend(); });
+
+  function setStreaming(on) {
+    const btn = $('send');
+    btn.textContent = on ? 'Stop' : 'Send';
+    btn.classList.toggle('stop', on);
+    btn.dataset.mode = on ? 'stop' : 'send';
+  }
+  $('send').addEventListener('click', e => {
+    if ($('send').dataset.mode === 'stop') { e.preventDefault(); if (controller) controller.abort(); }
+  });
+
+  // ── Send + stream ──
+  async function onSend() {
+    if ($('send').dataset.mode === 'stop') return;
+    const text = input.value.trim();
+    if (!text) return;
+    if (!key) { openSettings(); return toast('Add your OpenRouter key'); }
+    if (!curModel) { renderModelList(); openOverlay('model-pop'); return toast('Pick a model'); }
+
+    const chat = curChat();
+    chat.messages.push({ role:'user', content:text, ts:Date.now() });
+    if (!chat.title || chat.title === 'New chat') chat.title = text.slice(0, 40);
+
+    input.value = '';
+    input.classList.remove('expanded');
+    input.blur();
+
+    const apiMsgs = chat.messages.map(m => ({ role:m.role, content:m.content }));
+    const aMsg = { role:'assistant', content:'', model:curModel, ts:Date.now(), streaming:true };
+    chat.messages.push(aMsg);
+    saveChats(); renderDrawer(); renderMessages();
+
+    controller = new AbortController();
+    setStreaming(true);
+    try {
+      await stream(apiMsgs, curModel, controller.signal, delta => {
+        aMsg.content += delta;
+        const live = $('live-bubble');
+        if (live) live.textContent = aMsg.content;
+        if (nearBottom()) scrollBottom();
+      });
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        aMsg.content += (aMsg.content ? '\n\n' : '') + '⚠️ ' + err.message;
+      } else if (!aMsg.content) {
+        aMsg.content = '⏹ Stopped.';
+      }
+    } finally {
+      aMsg.streaming = false;
+      aMsg.ts = Date.now();
+      controller = null;
+      setStreaming(false);
+      saveChats();
+      renderMessages();
+    }
+  }
+
+  async function stream(messages, model, signal, onDelta) {
+    const res = await fetch(API, {
+      method: 'POST',
+      signal,
+      headers: {
+        'Authorization': 'Bearer ' + key,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': location.origin,
+        'X-Title': 'Chat'
+      },
+      body: JSON.stringify({ model, messages, stream: true })
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(res.status + ': ' + t.slice(0, 200));
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith('data:')) continue;
+        const data = t.slice(5).trim();
+        if (data === '[DONE]') return;
+        try {
+          const json = JSON.parse(data);
+          const delta = json.choices?.[0]?.delta?.content;
+          if (delta) onDelta(delta);
+        } catch { /* ignore keep-alive / partial */ }
+      }
+    }
+  }
+
+  // ── Init ──
+  ensureChat();
+  renderModelPill();
+  renderMessages();
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+  </script>
+</body>
+</html>
