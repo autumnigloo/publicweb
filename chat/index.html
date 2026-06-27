@@ -113,6 +113,34 @@
     .cursor::after { content: '▋'; color: var(--accent); animation: blink 1s steps(2) infinite; }
     @keyframes blink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
 
+    /* Markdown-rendered assistant bubbles */
+    .bubble.md { white-space: normal; }
+    .bubble.md > *:first-child { margin-top: 0; }
+    .bubble.md > *:last-child { margin-bottom: 0; }
+    .bubble.md p { margin: 0.5em 0; }
+    .bubble.md ul, .bubble.md ol { margin: 0.5em 0; padding-left: 1.3em; }
+    .bubble.md li { margin: 0.2em 0; }
+    .bubble.md li > ul, .bubble.md li > ol { margin: 0.2em 0; }
+    .bubble.md h1, .bubble.md h2, .bubble.md h3,
+    .bubble.md h4, .bubble.md h5, .bubble.md h6 { margin: 0.6em 0 0.3em; line-height: 1.3; }
+    .bubble.md h1 { font-size: 1.3em; }
+    .bubble.md h2 { font-size: 1.2em; }
+    .bubble.md h3 { font-size: 1.1em; }
+    .bubble.md h4, .bubble.md h5, .bubble.md h6 { font-size: 1em; }
+    .bubble.md code {
+      background: #0f0f13; border: 1px solid var(--border); border-radius: 5px;
+      padding: 1px 5px; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 0.86em;
+    }
+    .bubble.md pre {
+      background: #0f0f13; border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 12px; overflow-x: auto; margin: 0.5em 0;
+    }
+    .bubble.md pre code { background: none; border: none; padding: 0; font-size: 0.84em; display: block; white-space: pre; }
+    .bubble.md blockquote { border-left: 3px solid var(--border); margin: 0.5em 0; padding-left: 0.8em; color: var(--muted); }
+    .bubble.md a { color: #8a93c8; }
+    .bubble.md hr { border: none; border-top: 1px solid var(--border); margin: 0.7em 0; }
+    .bubble.md strong { font-weight: 700; }
+
     .empty-state {
       margin: auto;
       text-align: center;
@@ -150,22 +178,20 @@
     }
     #input:focus { border-color: var(--accent); }
     #input.expanded { height: 50dvh; }
-    .composer-row { display: flex; align-items: center; gap: 8px; }
-    .composer-row .spacer { flex: 1; font-size: 0.72rem; color: var(--muted); }
-    #send {
-      background: var(--accent);
+    #stop {
+      align-self: center;
+      background: #c0473f;
       border: none;
       color: #fff;
-      border-radius: 12px;
-      padding: 10px 22px;
-      font-size: 1rem;
+      border-radius: 999px;
+      padding: 8px 20px;
+      font-size: 0.9rem;
       font-weight: 600;
       cursor: pointer;
       font-family: inherit;
-      flex-shrink: 0;
     }
-    #send:active { transform: scale(0.96); }
-    #send.stop { background: #c0473f; }
+    #stop[hidden] { display: none; }
+    #stop:active { transform: scale(0.96); }
 
     /* ── Overlays ── */
     .overlay {
@@ -291,11 +317,8 @@
   <div id="messages"></div>
 
   <form id="composer" autocomplete="off">
-    <textarea id="input" placeholder="Message…" rows="1"></textarea>
-    <div class="composer-row">
-      <span class="spacer" id="composer-hint"></span>
-      <button type="submit" id="send">Send</button>
-    </div>
+    <textarea id="input" placeholder="Message…  (Enter to send · Shift+Enter for newline)" rows="1"></textarea>
+    <button type="button" id="stop" hidden>■ Stop</button>
   </form>
 
   <!-- Drawer -->
@@ -382,6 +405,69 @@
     clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2600);
   }
 
+  // ── Minimal, self-contained Markdown renderer (HTML-escaped first, so safe) ──
+  function md(src) {
+    if (!src) return '';
+    src = src.replace(/\r\n?/g, '\n').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+    // Fenced code blocks → placeholders (also handles an unterminated fence while streaming)
+    const blocks = [];
+    src = src.replace(/(^|\n)```[^\n]*\n([\s\S]*?)(?:\n```|$)/g, (m, pre, code) => {
+      blocks.push('<pre><code>' + code.replace(/\n$/, '') + '</code></pre>');
+      return pre + ' B' + (blocks.length - 1) + ' ';
+    });
+
+    const inline = t => {
+      const codes = [];
+      t = t.replace(/`([^`]+)`/g, (m, c) => { codes.push('<code>' + c + '</code>'); return ' C' + (codes.length - 1) + ' '; });
+      t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, txt, url) =>
+        /^(https?:|mailto:)/i.test(url) ? '<a href="' + url + '" target="_blank" rel="noopener">' + txt + '</a>' : txt);
+      t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/__([^_]+)__/g, '<strong>$1</strong>');
+      t = t.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+      t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+      t = t.replace(/(^|[^_\w])_([^_\n]+)_/g, '$1<em>$2</em>');
+      return t.replace(/ C(\d+) /g, (m, n) => codes[+n]);
+    };
+
+    const lines = src.split('\n');
+    let html = '', i = 0;
+    const isBlockStart = l =>
+      /^ B\d+ $/.test(l) || /^#{1,6}\s+/.test(l) || /^&gt;\s?/.test(l) ||
+      /^\s*[-*+]\s+/.test(l) || /^\s*\d+\.\s+/.test(l) || /^\s*$/.test(l);
+
+    while (i < lines.length) {
+      const line = lines[i];
+      let bm;
+      if (bm = line.match(/^ B(\d+) $/)) { html += blocks[+bm[1]]; i++; continue; }
+      if (/^\s*$/.test(line)) { i++; continue; }
+      let h;
+      if (h = line.match(/^(#{1,6})\s+(.*)$/)) { const n = h[1].length; html += `<h${n}>${inline(h[2])}</h${n}>`; i++; continue; }
+      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { html += '<hr>'; i++; continue; }
+      if (/^&gt;\s?/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^&gt;\s?/.test(lines[i])) { buf.push(lines[i].replace(/^&gt;\s?/, '')); i++; }
+        html += '<blockquote>' + inline(buf.join('\n')).replace(/\n/g, '<br>') + '</blockquote>';
+        continue;
+      }
+      if (/^\s*[-*+]\s+/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) { buf.push(lines[i].replace(/^\s*[-*+]\s+/, '')); i++; }
+        html += '<ul>' + buf.map(x => '<li>' + inline(x) + '</li>').join('') + '</ul>';
+        continue;
+      }
+      if (/^\s*\d+\.\s+/.test(line)) {
+        const buf = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { buf.push(lines[i].replace(/^\s*\d+\.\s+/, '')); i++; }
+        html += '<ol>' + buf.map(x => '<li>' + inline(x) + '</li>').join('') + '</ol>';
+        continue;
+      }
+      const buf = [];
+      while (i < lines.length && !isBlockStart(lines[i])) { buf.push(lines[i]); i++; }
+      html += '<p>' + inline(buf.join('\n')).replace(/\n/g, '<br>') + '</p>';
+    }
+    return html;
+  }
+
   // ── Chats ──
   function ensureChat() {
     if (!chats.length) { const c = { id:newId(), title:'New chat', messages:[] }; chats.unshift(c); curId = c.id; }
@@ -423,8 +509,13 @@
       const wrap = document.createElement('div');
       wrap.className = 'msg ' + m.role;
       const bubble = document.createElement('div');
-      bubble.className = 'bubble';
-      bubble.textContent = m.content;
+      if (m.role === 'assistant') {
+        bubble.className = 'bubble md';
+        bubble.innerHTML = md(m.content);
+      } else {
+        bubble.className = 'bubble';
+        bubble.textContent = m.content;
+      }
       if (m.streaming) { bubble.id = 'live-bubble'; bubble.classList.add('cursor'); }
       wrap.appendChild(bubble);
       if (m.role === 'assistant' && (m.model || m.ts)) {
@@ -533,24 +624,18 @@
   const input = $('input');
   input.addEventListener('focus', () => input.classList.add('expanded'));
   input.addEventListener('blur', () => { if (!input.value.trim()) input.classList.remove('expanded'); });
+  // Enter sends; Shift+Enter inserts a newline. (e.isComposing guards IME input.)
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $('composer').requestSubmit(); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); onSend(); }
   });
-  $('composer').addEventListener('submit', e => { e.preventDefault(); onSend(); });
+  $('composer').addEventListener('submit', e => e.preventDefault());
 
-  function setStreaming(on) {
-    const btn = $('send');
-    btn.textContent = on ? 'Stop' : 'Send';
-    btn.classList.toggle('stop', on);
-    btn.dataset.mode = on ? 'stop' : 'send';
-  }
-  $('send').addEventListener('click', e => {
-    if ($('send').dataset.mode === 'stop') { e.preventDefault(); if (controller) controller.abort(); }
-  });
+  function setStreaming(on) { $('stop').hidden = !on; }
+  $('stop').onclick = () => { if (controller) controller.abort(); };
 
   // ── Send + stream ──
   async function onSend() {
-    if ($('send').dataset.mode === 'stop') return;
+    if (controller) return;  // a response is already streaming
     const text = input.value.trim();
     if (!text) return;
     if (!key) { openSettings(); return toast('Add your OpenRouter key'); }
@@ -571,12 +656,17 @@
 
     controller = new AbortController();
     setStreaming(true);
+    let pending = false;
+    const paint = () => {
+      pending = false;
+      const live = $('live-bubble');
+      if (live) live.innerHTML = md(aMsg.content);
+      if (nearBottom()) scrollBottom();
+    };
     try {
       await stream(apiMsgs, curModel, controller.signal, delta => {
         aMsg.content += delta;
-        const live = $('live-bubble');
-        if (live) live.textContent = aMsg.content;
-        if (nearBottom()) scrollBottom();
+        if (!pending) { pending = true; requestAnimationFrame(paint); }
       });
     } catch (err) {
       if (err.name !== 'AbortError') {
