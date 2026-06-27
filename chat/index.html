@@ -216,7 +216,8 @@
     .chat-item .ci-del:active { color: #c0473f; }
 
     /* Centered popups (model picker + settings) */
-    .pop-wrap { z-index: 120; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .pop-wrap { z-index: 120; align-items: center; justify-content: center; padding: 20px; }
+    .pop-wrap:not([hidden]) { display: flex; }
     .pop {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: 16px; width: 100%; max-width: 420px;
