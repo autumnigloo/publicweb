@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#07070c">
+<title>Cityscape</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #07070c; }
+  canvas { display: block; }
+  #title {
+    position: fixed; inset: auto 0 8vh 0; text-align: center;
+    color: #cfd6ff; font-family: 'Segoe UI', system-ui, sans-serif;
+    letter-spacing: 0.35em; font-size: clamp(0.9rem, 2.5vw, 1.3rem);
+    text-transform: uppercase; opacity: 0.9; pointer-events: none;
+    transition: opacity 2.5s ease;
+    text-shadow: 0 0 18px #4f6ef7aa;
+  }
+  #title small { display: block; letter-spacing: 0.18em; font-size: 0.62em; color: #8890b8; margin-top: 0.6em; text-transform: none; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three":          "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/":  "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="title">Night Transit<small>birds · monorail · fractal monuments</small></div>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07070c);
+scene.fog = new THREE.FogExp2(0x07070c, 0.0016);
+
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 1200);
+
+scene.add(new THREE.HemisphereLight(0x2a3a66, 0x0a0a12, 0.8));
+const moon = new THREE.DirectionalLight(0x8899ff, 0.5);
+moon.position.set(120, 300, -80);
+scene.add(moon);
+
+/* ============ window texture (shared by every building) ============ */
+function makeWindowTexture() {
+  const S = 128, cell = 32;                        // 4 windows per 4-unit tile
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const cx = cv.getContext('2d');
+  cx.fillStyle = '#000';
+  cx.fillRect(0, 0, S, S);
+  for (let y = 0; y < S / cell; y++) {
+    for (let x = 0; x < S / cell; x++) {
+      if (x === 0 && y === 0) continue;            // reserved dark texel for roofs
+      if (Math.random() > 0.3) continue;           // most windows unlit
+      const warm = Math.random() > 0.22;
+      const a = 0.55 + Math.random() * 0.45;
+      cx.fillStyle = warm
+        ? `rgba(255, ${185 + (Math.random() * 50) | 0}, 110, ${a})`
+        : `rgba(140, 210, 255, ${a})`;
+      cx.fillRect(x * cell + 7, y * cell + 9, cell - 14, cell - 18);
+    }
+  }
+  const tx = new THREE.CanvasTexture(cv);
+  tx.wrapS = tx.wrapT = THREE.RepeatWrapping;
+  tx.magFilter = THREE.NearestFilter;
+  tx.colorSpace = THREE.SRGBColorSpace;
+  return tx;
+}
+const windowTex = makeWindowTexture();
+
+/* ============ city as one merged geometry ============ */
+// One texture tile = 4 world units; rescale each face's UVs so windows keep
+// their size on any box, and pin roofs to the reserved dark texel at (0,0).
+function windowUVs(geo, w, h, d) {
+  const uv = geo.attributes.uv, nrm = geo.attributes.normal;
+  for (let i = 0; i < uv.count; i++) {
+    if (Math.abs(nrm.getY(i)) > 0.5) { uv.setXY(i, 0.004, 0.004); continue; }
+    const su = (Math.abs(nrm.getX(i)) > 0.5 ? d : w) / 4;
+    uv.setXY(i, uv.getX(i) * su, uv.getY(i) * (h / 4));
+  }
+}
+
+const cityParts = [];
+function addBox(x, z, w, h, d, yBase = 0, tint = 1) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  windowUVs(g, w, h, d);
+  g.translate(x, yBase + h / 2, z);
+  const c = new THREE.Color().setHSL(0.62 + Math.random() * 0.05, 0.25, 0.10 + 0.05 * Math.random() * tint);
+  const colors = new Float32Array(g.attributes.position.count * 3);
+  for (let i = 0; i < colors.length; i += 3) { colors[i] = c.r; colors[i + 1] = c.g; colors[i + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  cityParts.push(g);
+}
+
+// Recursive object #1: self-similar towers — each level is a smaller copy
+// of the whole stacked on top, with mini copies on two corners.
+function recursiveTower(x, z, size, h, level, yBase = 0) {
+  addBox(x, z, size, h, size, yBase);
+  if (level <= 0) return;
+  recursiveTower(x, z, size * 0.58, h * 0.72, level - 1, yBase + h);
+  if (level > 1) {
+    const o = size * 0.38;
+    recursiveTower(x + o, z + o, size * 0.26, h * 0.4, level - 2, yBase + h);
+    recursiveTower(x - o, z - o, size * 0.26, h * 0.4, level - 2, yBase + h);
+  }
+}
+
+const PITCH = 30, GRID = 10;
+const plazas = [[0, 0], [5, -4], [-6, 5]];             // cells left open for monuments
+const towers = [[3, 3], [-4, -6], [7, 1]];             // recursive tower cells
+for (let gx = -GRID; gx <= GRID; gx++) {
+  for (let gz = -GRID; gz <= GRID; gz++) {
+    const x = gx * PITCH, z = gz * PITCH;
+    const r = Math.hypot(x, z);
+    if (r > 315) continue;
+    if (plazas.some(p => p[0] === gx && p[1] === gz)) continue;
+    if (towers.some(p => p[0] === gx && p[1] === gz)) { recursiveTower(x, z, 15, 34, 4); continue; }
+    if (Math.random() < 0.12) continue;                // empty lot
+    const falloff = Math.max(0.15, 1 - r / 360);
+    const n = Math.random() < 0.4 ? 1 : 2 + (Math.random() * 2 | 0);
+    for (let k = 0; k < n; k++) {
+      const w = 7 + Math.random() * (n === 1 ? 12 : 7);
+      const d = 7 + Math.random() * (n === 1 ? 12 : 7);
+      const h = (6 + Math.random() * 26 + (Math.random() < 0.08 ? 40 : 0)) * falloff * 2.2 + 4;
+      const ox = n === 1 ? 0 : (Math.random() - 0.5) * (PITCH - w - 6);
+      const oz = n === 1 ? 0 : (Math.random() - 0.5) * (PITCH - d - 6);
+      addBox(x + ox, z + oz, w, h, d);
+    }
+  }
+}
+
+const cityGeo = BufferGeometryUtils.mergeGeometries(cityParts);
+const cityMat = new THREE.MeshLambertMaterial({
+  vertexColors: true,
+  emissive: 0xffffff,
+  emissiveMap: windowTex,
+  emissiveIntensity: 1.15,
+});
+scene.add(new THREE.Mesh(cityGeo, cityMat));
+
+/* ============ ground with street grid ============ */
+function makeGroundTexture() {
+  const S = 1024, span = 660, pitchPx = S * PITCH / span;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const cx = cv.getContext('2d');
+  cx.fillStyle = '#0a0a11';
+  cx.fillRect(0, 0, S, S);
+  const road = S * 8 / span;
+  for (let i = 0; i <= span / PITCH; i++) {
+    const p = i * pitchPx - road / 2;
+    cx.fillStyle = '#14141d';
+    cx.fillRect(p, 0, road, S);
+    cx.fillRect(0, p, S, road);
+    cx.fillStyle = '#584418';
+    cx.fillRect(p + road / 2 - 1, 0, 2, S);
+    cx.fillRect(0, p + road / 2 - 1, S, 2);
+  }
+  const tx = new THREE.CanvasTexture(cv);
+  tx.colorSpace = THREE.SRGBColorSpace;
+  return tx;
+}
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(660, 660),
+  new THREE.MeshBasicMaterial({ map: makeGroundTexture() })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.x = -PITCH / 2;
+ground.position.z = -PITCH / 2;
+scene.add(ground);
+
+/* ============ monorail: loop, pillars, stations, stopping train ============ */
+const railCurve = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(200, 22, 0),
+  new THREE.Vector3(150, 26, 155),
+  new THREE.Vector3(0, 22, 215),
+  new THREE.Vector3(-165, 30, 140),
+  new THREE.Vector3(-215, 24, -30),
+  new THREE.Vector3(-120, 22, -175),
+  new THREE.Vector3(40, 28, -205),
+  new THREE.Vector3(175, 24, -125),
+], true, 'catmullrom', 0.6);
+
+scene.add(new THREE.Mesh(
+  new THREE.TubeGeometry(railCurve, 260, 0.7, 6, true),
+  new THREE.MeshLambertMaterial({ color: 0x3a3f55, emissive: 0x11131f })
+));
+
+const pillarGeo = new THREE.BoxGeometry(1.6, 1, 1.6);
+const pillarMat = new THREE.MeshLambertMaterial({ color: 0x22242f });
+const nPillars = 56;
+const pillars = new THREE.InstancedMesh(pillarGeo, pillarMat, nPillars);
+const M = new THREE.Matrix4();
+for (let i = 0; i < nPillars; i++) {
+  const p = railCurve.getPointAt(i / nPillars);
+  M.makeScale(1, p.y, 1).setPosition(p.x, p.y / 2, p.z);
+  pillars.setMatrixAt(i, M);
+}
+scene.add(pillars);
+
+const STOP_T = [0.02, 0.52];                            // two stations on the loop
+const stationSignMat = new THREE.MeshBasicMaterial({ color: 0x66f0d8 });
+// Stations are built in the group's local frame: +z runs along the track
+// (set by lookAt below), +x points to the side where the platform sits.
+for (const t of STOP_T) {
+  const p = railCurve.getPointAt(t);
+  const tan = railCurve.getTangentAt(t);
+  const st = new THREE.Group();
+  const SIDE = 4.6;
+  const platform = new THREE.Mesh(
+    new THREE.BoxGeometry(7, 1.2, 34),
+    new THREE.MeshLambertMaterial({ color: 0x2c2f40, emissive: 0x181a26 })
+  );
+  platform.position.set(SIDE, -2.2, 0);
+  st.add(platform);
+  const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(8, 0.6, 34),
+    new THREE.MeshLambertMaterial({ color: 0x1c1e2a })
+  );
+  roof.position.set(SIDE, 4.4, 0);
+  st.add(roof);
+  for (const dz of [-14, 14]) {
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(0.5, 6.6, 0.5), pillarMat);
+    pole.position.set(SIDE, 1.1, dz);
+    st.add(pole);
+  }
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.4, 10), stationSignMat);
+  sign.position.set(SIDE + 3.5, 5.6, 0);
+  st.add(sign);
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 2), pillarMat);
+  leg.scale.y = p.y - 2.8;
+  leg.position.set(SIDE, -(p.y + 2.8) / 2, 0);          // ground (local -p.y) up to platform
+  st.add(leg);
+  st.position.copy(p);
+  st.lookAt(p.clone().add(tan));
+  scene.add(st);
+}
+
+const railLen = railCurve.getLength();
+const carMat = new THREE.MeshLambertMaterial({ color: 0x39415e, emissive: 0x232a44 });
+const carWinMat = new THREE.MeshBasicMaterial({ color: 0xaef0ff });
+const cars = [];
+for (let i = 0; i < 4; i++) {
+  const car = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 3, 10), carMat);
+  body.position.y = 1.5 + 0.7;
+  car.add(body);
+  const win = new THREE.Mesh(new THREE.BoxGeometry(3.3, 1.1, 8.6), carWinMat);
+  win.position.y = 2.9;
+  car.add(win);
+  scene.add(car);
+  cars.push(car);
+}
+
+// Train drives by arc length: brakes into each station, dwells, departs.
+const train = { s: 5, v: 0, stopIdx: 0, dwell: 0 };
+const ACC = 5, VMAX = 24, DWELL = 3.5;
+const stopS = STOP_T.map(t => t * railLen);
+function updateTrain(dt) {
+  if (train.dwell > 0) { train.dwell -= dt; return; }
+  const target = stopS[train.stopIdx];
+  const dist = (target - train.s % railLen + railLen) % railLen;
+  const brakeV = Math.sqrt(2 * ACC * Math.max(0, dist - 0.2));
+  train.v = Math.min(train.v + ACC * dt, VMAX, Math.max(brakeV, 0.6));
+  train.s += train.v * dt;
+  if (dist < 0.35 && train.v <= 1) {
+    train.s = target;
+    train.v = 0;
+    train.dwell = DWELL;
+    train.stopIdx = (train.stopIdx + 1) % stopS.length;
+  }
+}
+const carP = new THREE.Vector3(), carT = new THREE.Vector3();
+function placeCars() {
+  for (let i = 0; i < cars.length; i++) {
+    const u = (((train.s - i * 11.5) % railLen + railLen) % railLen) / railLen;
+    carP.copy(railCurve.getPointAt(u));
+    carT.copy(railCurve.getTangentAt(u));
+    cars[i].position.copy(carP);
+    cars[i].lookAt(carP.clone().add(carT));
+  }
+}
+
+/* ============ birds ============ */
+const birds = [];
+// Wing lies flat (xz plane), root at the origin, extending +x so it pivots
+// at the body when rotated around z. Left wing is the same mesh mirrored.
+const wingGeo = new THREE.PlaneGeometry(2.6, 1.1);
+wingGeo.rotateX(-Math.PI / 2);
+wingGeo.translate(1.3, 0, 0);
+const birdMat = new THREE.MeshBasicMaterial({ color: 0x11121c, side: THREE.DoubleSide });
+const bodyGeo = new THREE.BoxGeometry(0.35, 0.35, 1.7);
+for (let i = 0; i < 36; i++) {
+  const b = new THREE.Group();
+  const wl = new THREE.Mesh(wingGeo, birdMat);
+  const wr = new THREE.Mesh(wingGeo, birdMat);
+  wl.scale.x = -1;
+  b.add(wl, wr, new THREE.Mesh(bodyGeo, birdMat));
+  scene.add(b);
+  birds.push({
+    g: b, wl, wr,
+    cx: (Math.random() - 0.5) * 320,
+    cz: (Math.random() - 0.5) * 320,
+    y: 55 + Math.random() * 55,
+    r: 25 + Math.random() * 55,
+    w: (0.08 + Math.random() * 0.12) * (Math.random() < 0.5 ? 1 : -1),
+    ph: Math.random() * Math.PI * 2,
+    fw: 5 + Math.random() * 4,
+  });
+}
+const bp = new THREE.Vector3(), bn = new THREE.Vector3();
+function updateBirds(t) {
+  for (const b of birds) {
+    const a = b.w * t * 10 + b.ph;
+    bp.set(b.cx + Math.cos(a) * b.r, b.y + Math.sin(t * 0.7 + b.ph) * 5, b.cz + Math.sin(a) * b.r * 0.8);
+    bn.set(b.cx + Math.cos(a + 0.05) * b.r, bp.y, b.cz + Math.sin(a + 0.05) * b.r * 0.8);
+    b.g.position.copy(bp);
+    b.g.lookAt(bn);
+    const flap = Math.sin(t * b.fw + b.ph) * 0.7;
+    b.wr.rotation.z = flap;
+    b.wl.rotation.z = -flap;   // mirrored geometry: opposite sign flaps in sync
+  }
+}
+
+/* ============ recursive monuments ============ */
+// #2: Menger sponge — remove centers, recurse into the 20 remaining cells.
+function menger(level, x, y, z, size, out) {
+  if (level === 0) { out.push([x, y, z, size]); return; }
+  const s = size / 3;
+  for (let dx = -1; dx <= 1; dx++)
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dz = -1; dz <= 1; dz++) {
+        if ((dx === 0) + (dy === 0) + (dz === 0) >= 2) continue;
+        menger(level - 1, x + dx * s, y + dy * s, z + dz * s, s, out);
+      }
+}
+const mCells = [];
+menger(2, 0, 0, 0, 34, mCells);
+const sponge = new THREE.InstancedMesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshStandardMaterial({ color: 0xc89040, emissive: 0x5a3a10, emissiveIntensity: 0.3, roughness: 0.5 }),
+  mCells.length
+);
+mCells.forEach((c, i) => {
+  M.makeScale(c[3] * 0.9, c[3] * 0.9, c[3] * 0.9).setPosition(c[0], c[1], c[2]);   // gaps show the fractal holes
+  sponge.setMatrixAt(i, M);
+});
+const spongeGroup = new THREE.Group();
+spongeGroup.add(sponge);
+spongeGroup.position.set(0, 52, 0);
+scene.add(spongeGroup);
+
+// #3: Sierpinski tetrahedron — 4 half-size copies at the corners.
+function sierpinski(level, c, size, out) {
+  if (level === 0) { out.push([c, size]); return; }
+  const h = size / 2, k = h / Math.sqrt(3);   // half-size along each unit corner direction
+  for (const d of [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) {
+    sierpinski(level - 1, new THREE.Vector3(c.x + d[0] * k, c.y + d[1] * k, c.z + d[2] * k), h, out);
+  }
+}
+const sCells = [];
+sierpinski(3, new THREE.Vector3(0, 0, 0), 24, sCells);
+const pyramid = new THREE.InstancedMesh(
+  new THREE.TetrahedronGeometry(1),
+  new THREE.MeshStandardMaterial({ color: 0x2c8fa8, emissive: 0x1a6a86, emissiveIntensity: 0.8, roughness: 0.4 }),
+  sCells.length
+);
+sCells.forEach((c, i) => {
+  M.makeScale(c[1], c[1], c[1]).setPosition(c[0]);
+  pyramid.setMatrixAt(i, M);
+});
+const pyrGroup = new THREE.Group();
+pyrGroup.add(pyramid);
+pyrGroup.position.set(5 * PITCH, 20, -4 * PITCH);
+scene.add(pyrGroup);
+
+// third plaza gets a small floating menger too
+const mCells2 = [];
+menger(2, 0, 0, 0, 14, mCells2);
+const sponge2 = new THREE.InstancedMesh(sponge.geometry, sponge.material, mCells2.length);
+mCells2.forEach((c, i) => {
+  M.makeScale(c[3] * 0.9, c[3] * 0.9, c[3] * 0.9).setPosition(c[0], c[1], c[2]);
+  sponge2.setMatrixAt(i, M);
+});
+const sponge2Group = new THREE.Group();
+sponge2Group.add(sponge2);
+sponge2Group.position.set(-6 * PITCH, 28, 5 * PITCH);
+scene.add(sponge2Group);
+
+/* ============ stars ============ */
+{
+  const n = 700, pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const th = Math.random() * Math.PI * 2, ph = Math.acos(Math.random() * 0.85);
+    const r = 900;
+    pos[i * 3] = r * Math.sin(ph) * Math.cos(th);
+    pos[i * 3 + 1] = r * Math.cos(ph) + 30;
+    pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0x9fb4ff, size: 1.6, sizeAttenuation: false, fog: false })));
+}
+
+/* ============ camera flight ============ */
+const flight = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(255, 70, 17),
+  new THREE.Vector3(145, 46, 160),
+  new THREE.Vector3(-9, 100, 225),
+  new THREE.Vector3(-170, 52, 140),
+  new THREE.Vector3(-250, 120, -9),
+  new THREE.Vector3(-136, 48, -174),
+  new THREE.Vector3(9, 80, -234),
+  new THREE.Vector3(174, 135, -136),
+], true, 'catmullrom', 0.55);
+const FLIGHT_SECS = 95;
+const camTarget = new THREE.Vector3();
+const CENTER = new THREE.Vector3(0, 14, 0);
+function flyCamera(t) {
+  const u = (t / FLIGHT_SECS) % 1;
+  camera.position.copy(flight.getPointAt(u));
+  // Aim ahead along the path, pulled toward downtown so the city stays in frame.
+  camTarget.copy(flight.getPointAt((u + 0.02) % 1)).lerp(CENTER, 0.45);
+  camera.lookAt(camTarget);
+}
+
+/* ============ post + loop ============ */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.75, 0.55, 0.3);
+composer.addPass(bloom);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+setTimeout(() => document.getElementById('title').style.opacity = '0', 6000);
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  flyCamera(t);
+  updateTrain(dt);
+  placeCars();
+  updateBirds(t);
+
+  spongeGroup.rotation.y = t * 0.15;
+  spongeGroup.position.y = 52 + Math.sin(t * 0.4) * 3;
+  sponge2Group.rotation.y = -t * 0.22;
+  sponge2Group.position.y = 28 + Math.sin(t * 0.5 + 2) * 2;
+  pyrGroup.rotation.y = t * 0.1;
+
+  composer.render();
+}
+animate();
+</script>
+</body>
+</html>
