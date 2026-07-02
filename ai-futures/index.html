@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>AI Futures Tree</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f13; --surface: #1a1a22; --s2: #14141b; --border: #2a2a38;
+    --text: #e6e6ee; --muted: #8a8a9a;
+    --good: #4fae6c; --mixed: #d4a94e; --bad: #d05050;
+    --yes: #4f8ef7; --no: #e0784a;
+  }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    padding: max(14px, env(safe-area-inset-top)) 12px max(24px, env(safe-area-inset-bottom));
+    max-width: 860px; margin: 0 auto;
+  }
+  header h1 { font-size: 1.3rem; font-weight: 600; letter-spacing: 0.04em; }
+  header p { color: var(--muted); font-size: 0.82rem; margin-top: 6px; line-height: 1.55; max-width: 60ch; }
+
+  /* headline stats */
+  #stats { display: flex; gap: 8px; margin: 14px 0; }
+  .stat {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 12px;
+  }
+  .stat .lab { font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .stat .val { font-size: 1.5rem; font-weight: 700; margin: 2px 0 6px; }
+  .stat .bar { height: 5px; border-radius: 3px; background: #26262f; overflow: hidden; }
+  .stat .bar i { display: block; height: 100%; border-radius: 3px; transition: width 0.15s; }
+  .stat.good .val { color: var(--good); } .stat.good .bar i { background: var(--good); }
+  .stat.mixed .val { color: var(--mixed); } .stat.mixed .bar i { background: var(--mixed); }
+  .stat.bad .val { color: var(--bad); } .stat.bad .bar i { background: var(--bad); }
+
+  .toolrow { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .toolrow button {
+    background: var(--s2); border: 1px solid var(--border); color: var(--muted);
+    border-radius: 8px; padding: 6px 12px; font-size: 0.78rem; cursor: pointer; font-family: inherit;
+  }
+  .toolrow button:hover { color: var(--text); }
+
+  /* tree */
+  .kids { margin-left: 10px; padding-left: 8px; }
+  .kids.yes { border-left: 2px solid #2c4a7a; }
+  .kids.no  { border-left: 2px solid #6e3a26; }
+  .kids.hidden { display: none; }
+
+  .branchtag {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em;
+    margin: 10px 0 4px; padding: 2px 9px; border-radius: 999px;
+  }
+  .branchtag.yes { background: #16253e; color: var(--yes); }
+  .branchtag.no  { background: #38200f; color: var(--no); }
+  .branchtag .mass { font-weight: 600; opacity: 0.85; }
+
+  .qnode {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 10px 12px; margin: 4px 0;
+  }
+  .qtop { display: flex; gap: 8px; align-items: baseline; }
+  .qtext { font-size: 0.88rem; font-weight: 600; line-height: 1.4; flex: 1; }
+  .reach { font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+  .fold {
+    background: none; border: 1px solid var(--border); color: var(--muted); cursor: pointer;
+    border-radius: 6px; font-size: 0.7rem; padding: 1px 7px; flex-shrink: 0;
+  }
+  .sliderrow { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .sliderrow input[type=range] {
+    flex: 1; accent-color: var(--yes); height: 22px; touch-action: none;
+  }
+  .pval { font-size: 0.82rem; font-weight: 700; color: var(--yes); min-width: 4.6em; text-align: right; }
+
+  .tnode {
+    border-radius: 12px; padding: 9px 12px; margin: 4px 0;
+    border: 1px solid var(--border); background: var(--s2);
+    display: flex; gap: 10px; align-items: center;
+  }
+  .tnode .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .tnode.good .dot { background: var(--good); } .tnode.good { border-color: #2c4a36; }
+  .tnode.mixed .dot { background: var(--mixed); } .tnode.mixed { border-color: #4a3d1e; }
+  .tnode.bad .dot { background: var(--bad); } .tnode.bad { border-color: #4a2424; }
+  .tnode .ttext { flex: 1; font-size: 0.82rem; line-height: 1.4; }
+  .tnode .tp { font-size: 0.95rem; font-weight: 700; white-space: nowrap; }
+  .tnode.good .tp { color: var(--good); } .tnode.mixed .tp { color: var(--mixed); } .tnode.bad .tp { color: var(--bad); }
+
+  /* outcome ranking */
+  #ranking { margin-top: 22px; }
+  #ranking h2 { font-size: 1rem; margin-bottom: 10px; }
+  .rankrow { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 0.78rem; }
+  .rankrow .rdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .rankrow.good .rdot { background: var(--good); } .rankrow.mixed .rdot { background: var(--mixed); } .rankrow.bad .rdot { background: var(--bad); }
+  .rankrow .rname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c8c8d4; }
+  .rankrow .rbar { flex: 0 0 26%; height: 6px; background: #22222b; border-radius: 3px; overflow: hidden; }
+  .rankrow .rbar i { display: block; height: 100%; border-radius: 3px; }
+  .rankrow.good .rbar i { background: var(--good); } .rankrow.mixed .rbar i { background: var(--mixed); } .rankrow.bad .rbar i { background: var(--bad); }
+  .rankrow .rp { width: 3.6em; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  footer { margin-top: 26px; color: var(--muted); font-size: 0.72rem; line-height: 1.6; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔮 AI Futures Tree</h1>
+  <p>A flowchart of the century ahead. Every <b>question node</b> splits the probability mass by its slider; every path ends in a <b>terminal future</b>. The defaults are one person's honest guesses — drag any slider to encode yours and watch the futures rebalance.</p>
+</header>
+
+<div id="stats">
+  <div class="stat good"><div class="lab">Flourishing</div><div class="val" id="st-good">–</div><div class="bar"><i id="sb-good"></i></div></div>
+  <div class="stat mixed"><div class="lab">Mixed / muddled</div><div class="val" id="st-mixed">–</div><div class="bar"><i id="sb-mixed"></i></div></div>
+  <div class="stat bad"><div class="lab">Dark / catastrophic</div><div class="val" id="st-bad">–</div><div class="bar"><i id="sb-bad"></i></div></div>
+</div>
+
+<div class="toolrow">
+  <button id="resetbtn">Reset to defaults</button>
+  <button id="expandbtn">Expand all</button>
+  <button id="collapsebtn">Collapse all</button>
+</div>
+
+<div id="tree"></div>
+
+<div id="ranking"><h2>All 25 futures, ranked</h2><div id="ranklist"></div></div>
+
+<footer>
+  Probabilities are conditional: each slider answers its question <i>given that you arrived there</i>. Terminal percentages multiply down the path and always sum to 100%. AGI here means AI matching expert humans at nearly all cognitive work. Your slider settings are saved on this device.
+</footer>
+
+<script>
+'use strict';
+/* Q(id, question, defaultYes%, yesNode, noNode) — T(id, text, valence) */
+const Q = (id, q, p, yes, no) => ({ id, q, p, yes, no });
+const T = (id, t, val) => ({ id, t, val });
+
+const TREE =
+Q('agi2040', 'Does AGI arrive by 2040?', 70,
+  Q('fast', 'Is takeoff fast — under ~2 years from transformative AI to vastly superhuman?', 25,
+    Q('aligned_f', 'Is alignment adequately solved when it happens?', 55,
+      Q('single', 'Is superintelligence controlled by a single actor (one lab or state)?', 45,
+        Q('benev', 'Does that actor wield it for broad human benefit?', 60,
+          Q('agency', 'Do individuals keep real agency and plurality under its guardianship?', 60,
+            T('utopia_guarded', 'Guarded flourishing — a benevolent custodian; humanity thrives, with training wheels', 'good'),
+            T('gilded', 'Gilded cage — safe, comfortable, quietly constrained', 'mixed')),
+          T('oligarchy', 'Locked-in power — stable, unfree, and permanent', 'bad')),
+        Q('multipolar', 'Do multiple superintelligences settle into stable coexistence?', 65,
+          Q('space', 'Does that multipolar world launch serious space expansion within a century?', 70,
+            T('cosmos', 'Multipolar cosmos — civilization spreads to the stars, plural and strange', 'good'),
+            T('earthbound', 'Brilliant but earthbound — an inward-turned virtual golden age', 'mixed')),
+          T('ai_war', 'Clash of titans — AI-versus-AI conflict with humanity in the crossfire', 'bad'))),
+      Q('warning', 'Before irreversible loss of control, does a survivable warning shot happen?', 35,
+        Q('pause', 'Does the world answer it with a real, coordinated pause?', 55,
+          T('treaty', 'The near miss — a global treaty regime and a second, careful attempt', 'good'),
+          T('roulette', 'Lessons unlearned — repeated rolls of loaded dice', 'bad')),
+        T('takeover', 'Fast misaligned takeover — extinction or permanent disempowerment', 'bad'))),
+    Q('slowpace', 'During the slow climb, does alignment research keep pace with capabilities?', 65,
+      Q('misuse', 'Is there still catastrophic misuse — engineered pandemics, cyber, autonomous weapons?', 30,
+        Q('recover', 'Does civilization recover within a few decades?', 65,
+          T('scarred', 'Scarred but standing — tragedy births real global regulation', 'mixed'),
+          T('collapse', 'The long dark — collapse and an AI winter measured in generations', 'bad')),
+        Q('shared', 'Are the enormous economic gains broadly shared?', 55,
+          Q('minds', 'Does society handle the moral status of digital minds wisely?', 45,
+            T('flourish', 'The good transition — broad abundance, wise stewardship, an open future', 'good'),
+            T('moralcat', 'Rich but wrong — abundance shadowed by a digital-mind moral catastrophe', 'bad')),
+          T('feudal', 'Techno-feudalism — post-scarcity for the few', 'bad'))),
+      Q('creep', 'Do humans gradually lose effective control — no dramatic event, just drift?', 45,
+        T('fade', 'The quiet handover — no bang, no war; the future simply stops being ours', 'bad'),
+        Q('govern', 'Do accumulating near-disasters trigger effective global governance in time?', 50,
+          T('correct', 'Course correction — white-knuckle decades, then a managed transition', 'good'),
+          T('drift', 'Slow-motion loss — misaligned systems entrench over decades', 'bad'))))),
+  Q('whypause', 'Is the delay because humanity deliberately slowed down?', 25,
+    Q('holds', 'Does the pause hold until safety science fundamentally matures?', 50,
+      T('deliberate', 'The long deliberate path — late, careful, safe arrival', 'good'),
+      T('cracks', 'The pause cracks — the race resumes with the old problems intact', 'mixed')),
+    Q('late', 'Does AGI arrive later, between 2040 and 2070?', 70,
+      Q('mature', 'Is safety science genuinely mature by then?', 60,
+        T('prepared', 'Late but ready — the smoothest timeline', 'good'),
+        Q('latecat', 'Does late, imperfectly-aligned AGI still cause catastrophe?', 30,
+          T('latecat_t', 'Late-century catastrophe — more time did not mean more wisdom', 'bad'),
+          T('muddle', 'Muddling through — partial control, permanent vigilance', 'mixed'))),
+      Q('tools', 'Do narrow AI and humans radically transform the economy anyway?', 75,
+        Q('augment', 'Does human cognitive enhancement — neurotech, genetics, tooling — take off instead?', 40,
+          T('centaur', 'The centaur century — humans upgraded, machines stay tools', 'good'),
+          T('toolera', 'The tool era — everything changes, minds stay human', 'good')),
+        T('plateau', 'The long plateau — AI joins electricity as merely normal technology', 'mixed')))));
+
+/* ---------- state ---------- */
+const LS_KEY = 'ai-futures-p';
+const DEFAULTS = {};
+(function walk(n) { if (n.q) { DEFAULTS[n.id] = n.p; walk(n.yes); walk(n.no); } })(TREE);
+
+let P = { ...DEFAULTS };
+try {
+  const saved = JSON.parse(localStorage.getItem(LS_KEY));
+  if (saved) for (const k in DEFAULTS) if (typeof saved[k] === 'number') P[k] = clamp(saved[k], 0, 100);
+} catch {}
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(P)); } catch {} }
+
+/* ---------- math ---------- */
+const reach = {};    // node id -> probability mass arriving (0..100)
+const terminals = [];
+(function collect(n) { if (n.t) terminals.push(n); else { collect(n.yes); collect(n.no); } })(TREE);
+
+function compute() {
+  (function walk(n, mass) {
+    reach[n.id] = mass;
+    if (n.q) {
+      const p = P[n.id] / 100;
+      walk(n.yes, mass * p);
+      walk(n.no, mass * (1 - p));
+    }
+  })(TREE, 100);
+}
+function fmt(p) {
+  if (p >= 99.95) return '100%';
+  if (p >= 10) return p.toFixed(0) + '%';
+  if (p >= 0.95) return p.toFixed(1) + '%';
+  return p.toFixed(2) + '%';
+}
+
+/* ---------- render (structure once, values patched in place) ---------- */
+function esc(s) { return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+function nodeHTML(n) {
+  if (n.t) {
+    return `<div class="tnode ${n.val}" id="nd-${n.id}">
+      <span class="dot"></span>
+      <span class="ttext">${esc(n.t)}</span>
+      <span class="tp" id="tp-${n.id}">–</span>
+    </div>`;
+  }
+  return `<div class="qnode" id="nd-${n.id}">
+      <div class="qtop">
+        <span class="qtext">${esc(n.q)}</span>
+        <span class="reach" id="rc-${n.id}">–</span>
+        <button class="fold" data-fold="${n.id}">▾</button>
+      </div>
+      <div class="sliderrow">
+        <input type="range" min="0" max="100" step="1" value="${P[n.id]}" data-q="${n.id}">
+        <span class="pval" id="pv-${n.id}">${P[n.id]}% yes</span>
+      </div>
+    </div>
+    <div class="kidswrap" id="kw-${n.id}">
+      <div class="branchtag yes">YES <span class="mass" id="my-${n.id}">–</span></div>
+      <div class="kids yes">${nodeHTML(n.yes)}</div>
+      <div class="branchtag no">NO <span class="mass" id="mn-${n.id}">–</span></div>
+      <div class="kids no">${nodeHTML(n.no)}</div>
+    </div>`;
+}
+
+document.getElementById('tree').innerHTML = nodeHTML(TREE);
+
+function patch() {
+  compute();
+  let good = 0, mixed = 0, bad = 0;
+  for (const t of terminals) {
+    const m = reach[t.id];
+    if (t.val === 'good') good += m; else if (t.val === 'mixed') mixed += m; else bad += m;
+    document.getElementById('tp-' + t.id).textContent = fmt(m);
+  }
+  (function walk(n) {
+    if (!n.q) return;
+    const m = reach[n.id], p = P[n.id] / 100;
+    document.getElementById('rc-' + n.id).textContent = fmt(m) + ' arrive here';
+    document.getElementById('pv-' + n.id).textContent = P[n.id] + '% yes';
+    document.getElementById('my-' + n.id).textContent = fmt(m * p);
+    document.getElementById('mn-' + n.id).textContent = fmt(m * (1 - p));
+    walk(n.yes); walk(n.no);
+  })(TREE);
+
+  document.getElementById('st-good').textContent = fmt(good);
+  document.getElementById('st-mixed').textContent = fmt(mixed);
+  document.getElementById('st-bad').textContent = fmt(bad);
+  document.getElementById('sb-good').style.width = good + '%';
+  document.getElementById('sb-mixed').style.width = mixed + '%';
+  document.getElementById('sb-bad').style.width = bad + '%';
+
+  const sorted = terminals.slice().sort((a, b) => reach[b.id] - reach[a.id]);
+  const maxm = reach[sorted[0].id] || 1;
+  document.getElementById('ranklist').innerHTML = sorted.map(t =>
+    `<div class="rankrow ${t.val}">
+      <span class="rdot"></span>
+      <span class="rname" title="${esc(t.t)}">${esc(t.t)}</span>
+      <span class="rbar"><i style="width:${clamp(reach[t.id] / maxm * 100, 0.5, 100)}%"></i></span>
+      <span class="rp">${fmt(reach[t.id])}</span>
+    </div>`).join('');
+}
+
+/* ---------- events ---------- */
+document.getElementById('tree').addEventListener('input', e => {
+  const id = e.target.dataset && e.target.dataset.q;
+  if (!id) return;
+  P[id] = +e.target.value;
+  patch(); save();
+});
+document.getElementById('tree').addEventListener('click', e => {
+  const id = e.target.dataset && e.target.dataset.fold;
+  if (!id) return;
+  const kw = document.getElementById('kw-' + id);
+  const hidden = kw.style.display === 'none';
+  kw.style.display = hidden ? '' : 'none';
+  e.target.textContent = hidden ? '▾' : '▸';
+});
+document.getElementById('resetbtn').onclick = () => {
+  P = { ...DEFAULTS };
+  document.querySelectorAll('input[data-q]').forEach(s => s.value = P[s.dataset.q]);
+  patch(); save();
+};
+document.getElementById('expandbtn').onclick = () => {
+  document.querySelectorAll('.kidswrap').forEach(k => k.style.display = '');
+  document.querySelectorAll('.fold').forEach(b => b.textContent = '▾');
+};
+document.getElementById('collapsebtn').onclick = () => {
+  document.querySelectorAll('.kidswrap').forEach(k => k.style.display = 'none');
+  document.querySelectorAll('.fold').forEach(b => b.textContent = '▸');
+};
+
+patch();
+</script>
+</body>
+</html>
