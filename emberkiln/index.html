@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Emberkiln</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f13; --surface: #1a1a22; --s2: #14141b; --border: #2a2a38;
+    --text: #e6e6ee; --muted: #8a8a9a; --hot: #e0653c; --cold: #58a8e8;
+    --gold: #d4a94e; --green: #4fae6c; --red: #d05050;
+    --iron: #9aa2b8; --ember: #e0784a; --ice: #6ec2e8; --wood: #a8845c; --obs: #b06ee8; --ash: #77706a; --neutral: #c8c8c8;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100dvh; display: flex; flex-direction: column;
+    padding: max(8px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+    max-width: 760px; margin: 0 auto; width: 100%;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  h1 { font-size: 1.5rem; letter-spacing: 0.25em; color: var(--hot); font-weight: 600; }
+  .screen { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+
+  /* top bar */
+  #topbar {
+    display: flex; align-items: center; gap: 10px; font-size: 0.82rem;
+    background: var(--s2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 7px 12px; flex-wrap: wrap;
+  }
+  #topbar .hp { color: var(--green); font-weight: 600; }
+  #topbar .gold { color: var(--gold); font-weight: 600; }
+  #topbar .floor { color: var(--muted); }
+  #topbar .spacer { flex: 1; }
+  #topbar button { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 7px; padding: 3px 9px; font-size: 0.75rem; }
+  .trinket-row { display: flex; gap: 4px; flex-wrap: wrap; font-size: 1rem; }
+  .trinket-row span { cursor: help; }
+
+  /* heat bar */
+  .heatwrap { display: flex; align-items: center; gap: 8px; }
+  .heatbar {
+    flex: 1; height: 20px; border-radius: 10px; position: relative; overflow: hidden;
+    background: linear-gradient(90deg, #1a3a55 0%, #26506e 21%, #333 36%, #6e3a26 64%, #a03a1a 78%, #e04a10 100%);
+    border: 1px solid var(--border);
+  }
+  .heatbar .needle {
+    position: absolute; top: 0; bottom: 0; width: 4px; background: #fff;
+    border-radius: 2px; transition: left 0.25s; box-shadow: 0 0 6px #fff;
+  }
+  .heatbar .redline { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5030aa; }
+  .heatval { font-weight: 700; font-size: 1.05rem; min-width: 2.2em; text-align: center; }
+  .heatval.over { color: var(--hot); }
+  .heatval.frozen { color: var(--cold); }
+
+  /* enemies */
+  #enemies { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .enemy {
+    background: var(--surface); border: 2px solid var(--border); border-radius: 12px;
+    padding: 10px 12px; min-width: 130px; max-width: 180px; flex: 1; cursor: pointer;
+    display: flex; flex-direction: column; gap: 5px; position: relative;
+  }
+  .enemy.target { border-color: var(--hot); }
+  .enemy.dead { opacity: 0.25; pointer-events: none; }
+  .enemy .ename { font-size: 0.85rem; font-weight: 600; }
+  .enemy .hpbar { height: 7px; background: #202028; border-radius: 4px; overflow: hidden; }
+  .enemy .hpbar i { display: block; height: 100%; background: var(--red); border-radius: 4px; }
+  .enemy .ehp { font-size: 0.7rem; color: var(--muted); }
+  .enemy .intent { font-size: 0.76rem; color: #d8b46a; min-height: 2.2em; }
+  .enemy .status { font-size: 0.68rem; color: var(--cold); }
+
+  /* player row */
+  #playerrow { display: flex; align-items: center; gap: 12px; font-size: 0.85rem; flex-wrap: wrap; }
+  #playerrow .pstat { background: var(--s2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; }
+  #log { font-size: 0.72rem; color: var(--muted); min-height: 2.8em; line-height: 1.4; }
+
+  /* hand */
+  #hand {
+    display: flex; gap: 8px; overflow-x: auto; padding: 6px 2px 10px;
+    -webkit-overflow-scrolling: touch; min-height: 176px;
+  }
+  .card {
+    flex: 0 0 128px; background: var(--surface); border: 2px solid var(--border);
+    border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 4px;
+    font-size: 0.72rem; position: relative; user-select: none; -webkit-user-select: none;
+  }
+  .card .cname { font-weight: 700; font-size: 0.76rem; }
+  .card .mat { font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; }
+  .card .ctext { flex: 1; color: #c8c8d4; line-height: 1.35; }
+  .card .dh { font-weight: 700; font-size: 0.8rem; }
+  .card .dh.plus { color: var(--hot); } .card .dh.minus { color: var(--cold); }
+  .card .tier { color: var(--gold); }
+  .card.disabled { opacity: 0.45; }
+  .card .pinbtn {
+    position: absolute; top: 4px; right: 4px; background: none; border: 1px solid var(--border);
+    border-radius: 6px; color: var(--muted); font-size: 0.72rem; padding: 1px 6px;
+  }
+  .card.pinned { border-color: var(--gold); }
+  .card.pinned .pinbtn { color: var(--gold); border-color: var(--gold); }
+  .card[data-mat="iron"] { border-top: 3px solid var(--iron); }
+  .card[data-mat="ember"] { border-top: 3px solid var(--ember); }
+  .card[data-mat="ice"] { border-top: 3px solid var(--ice); }
+  .card[data-mat="wood"] { border-top: 3px solid var(--wood); }
+  .card[data-mat="obsidian"] { border-top: 3px solid var(--obs); }
+  .card[data-mat="ash"] { border-top: 3px solid var(--ash); }
+  .card[data-mat="neutral"] { border-top: 3px solid var(--neutral); }
+
+  /* bottom bar */
+  #bottombar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #bottombar .piles { font-size: 0.72rem; color: var(--muted); }
+  #endturn {
+    margin-left: auto; background: var(--hot); border: none; color: #fff;
+    font-weight: 700; font-size: 0.95rem; border-radius: 10px; padding: 11px 22px;
+  }
+  .flaskbtn { background: var(--s2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 7px 10px; font-size: 0.78rem; }
+
+  /* map */
+  .doors { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+  .door {
+    background: var(--surface); border: 2px solid var(--border); border-radius: 12px;
+    padding: 14px; display: flex; align-items: center; gap: 12px; cursor: pointer; text-align: left;
+    color: var(--text); font-size: 0.9rem; width: 100%;
+  }
+  .door:active { transform: scale(0.985); }
+  .door .dicon { font-size: 1.6rem; }
+  .door .dlabel { flex: 1; }
+  .door .dlabel b { display: block; }
+  .door .dlabel span { font-size: 0.74rem; color: var(--muted); }
+  .door .temp { font-size: 0.72rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+  .temp.cold { background: #16344a; color: var(--cold); }
+  .temp.warm { background: #45351a; color: var(--gold); }
+  .temp.hot  { background: #4a2012; color: var(--hot); }
+
+  /* generic panels */
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .panel h2 { font-size: 1rem; margin-bottom: 8px; }
+  .choices { display: flex; gap: 8px; flex-wrap: wrap; }
+  .choices .card { flex: 1 1 128px; max-width: 160px; cursor: pointer; }
+  .bigbtn {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    border-radius: 10px; padding: 12px 16px; font-size: 0.9rem; width: 100%; text-align: left; margin-top: 8px;
+  }
+  .bigbtn:disabled { opacity: 0.4; }
+  .bigbtn b { color: var(--gold); }
+  .accent { background: var(--hot); border: none; color: #fff; font-weight: 700; text-align: center; }
+  .subtle { color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
+
+  /* overlay */
+  #overlay {
+    position: fixed; inset: 0; background: #000b; z-index: 50; display: none;
+    align-items: flex-start; justify-content: center; padding: 4vh 14px; overflow-y: auto;
+  }
+  #overlay:not([hidden]) { display: flex; }
+  #overlay .obox { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; max-width: 520px; width: 100%; }
+  #overlay .obox h2 { margin-bottom: 10px; font-size: 1.05rem; }
+  #overlay .obox .subtle { margin-bottom: 8px; }
+  #overlay .cardlist { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  #overlay .cardlist .card { flex: 1 1 120px; max-width: 150px; }
+  .closebtn { margin-top: 12px; width: 100%; background: var(--s2); border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 10px; }
+
+  .title-screen { text-align: center; margin: auto 0; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+  .title-screen p { color: var(--muted); font-size: 0.85rem; max-width: 40ch; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="overlay" hidden></div>
+
+<script>
+'use strict';
+/* =========================================================
+   EMBERKILN — a heat-management roguelike deckbuilder.
+   You are a kiln golem. No energy: every card shifts Heat.
+   Hot = harder hits but risk of overheating; cold = crisp
+   ice bonuses but risk of going Brittle at 0.
+   Kept cards react to the heat they are held in:
+   iron tempers, wood combusts to ash, ice melts.
+   ========================================================= */
+
+const $ = sel => document.querySelector(sel);
+const ri = n => Math.floor(Math.random() * n);
+const pick = a => a[ri(a.length)];
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = ri(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+let UID = 1;
+
+/* ---------------- cards ---------------- */
+// dH applies BEFORE the effect, so a card's own heat shift powers it.
+// mult by temper tier: x1 / x1.5 / x2 (rounded).
+const CARDS = {
+  // IRON — tempers (+1 tier) when kept in hand at high heat
+  hammer:   { name: 'Hammer Strike', mat: 'iron', rar: 0, dH: 0,  dmg: 6,  txt: 'Deal 6.' },
+  wall:     { name: 'Iron Wall', mat: 'iron', rar: 0, dH: 0,  blk: 5,  txt: 'Block 5.' },
+  tempo:    { name: 'Steel Tempo', mat: 'iron', rar: 0, dH: 0,  dmg: 4, draw: 1, txt: 'Deal 4. Draw 1.' },
+  ringing:  { name: 'Ringing Blow', mat: 'iron', rar: 1, dH: 1,  dmg: 5, times: 2, txt: 'Deal 5 twice.' },
+  molten:   { name: 'Molten Edge', mat: 'iron', rar: 1, dH: 2,  dmg: 9,  txt: 'Deal 9.' },
+  bulwark:  { name: 'Bulwark', mat: 'iron', rar: 1, dH: 0,  blk: 10, txt: 'Block 10.' },
+  anvil:    { name: 'Anvil Toss', mat: 'iron', rar: 2, dH: 1,  dmg: 13, stunIfHot: 8, txt: 'Deal 13. If Heat ≥ 8: stun.' },
+  // EMBER — heats you up, scales with fire
+  spark:    { name: 'Spark', mat: 'ember', rar: 0, dH: 2, dmg: 4, draw: 1, txt: 'Deal 4. Draw 1.' },
+  fan:      { name: 'Flame Fan', mat: 'ember', rar: 0, dH: 2, dmg: 3, aoe: true, txt: 'Deal 3 to ALL.' },
+  stoke:    { name: 'Stoke', mat: 'ember', rar: 0, dH: 3, atkUp: 4, txt: 'Next attack +4.' },
+  emberveil:{ name: 'Ember Veil', mat: 'ember', rar: 1, dH: 1, blk: 7, txt: 'Block 7.' },
+  ashstorm: { name: 'Ash Storm', mat: 'ember', rar: 1, dH: 1, dmg: 4, perAsh: 3, txt: 'Deal 4, +3 per Cinders in your piles (consumes them).' },
+  backdraft:{ name: 'Backdraft', mat: 'ember', rar: 2, dH: 4, draw: 3, txt: 'Draw 3.' },
+  inferno:  { name: 'Inferno', mat: 'ember', rar: 2, dH: 3, infernoX: 2, txt: 'Deal 2× your Heat.' },
+  // ICE — cools you down, Crisp bonus at Heat ≤ 3
+  shard:    { name: 'Frost Shard', mat: 'ice', rar: 0, dH: -2, dmg: 5, crispDmg: 4, txt: 'Deal 5. Crisp: +4.' },
+  chill:    { name: 'Chill Guard', mat: 'ice', rar: 0, dH: -1, blk: 5, crispBlk: 4, txt: 'Block 5. Crisp: +4.' },
+  glacier:  { name: 'Glacier', mat: 'ice', rar: 1, dH: -3, blk: 11, txt: 'Block 11.' },
+  freeze:   { name: 'Deep Freeze', mat: 'ice', rar: 1, dH: -2, weak: 2, txt: 'Enemy: −3 attack for 2 turns.' },
+  rimefang: { name: 'Rimefang', mat: 'ice', rar: 2, dH: -3, dmg: 8, crispDmg: 8, txt: 'Deal 8. Crisp: +8.' },
+  snap:     { name: 'Snap Freeze', mat: 'ice', rar: 2, dH: -2, stun: 1, exh: true, txt: 'Stun an enemy. Exhaust.' },
+  // WOOD — combusts into Cinders if kept at Heat ≥ 8
+  kindling: { name: 'Kindling', mat: 'wood', rar: 0, dH: 1, draw: 2, txt: 'Draw 2.' },
+  torch:    { name: 'Torch', mat: 'wood', rar: 0, dH: 2, dmg: 6, txt: 'Deal 6.' },
+  sap:      { name: 'Sap Shield', mat: 'wood', rar: 0, dH: 0, blk: 4, draw: 1, txt: 'Block 4. Draw 1.' },
+  logslam:  { name: 'Log Slam', mat: 'wood', rar: 1, dH: 0, dmg: 8, txt: 'Deal 8.' },
+  wildgrow: { name: 'Wildgrowth', mat: 'wood', rar: 2, dH: 0, heal: 4, draw: 1, exh: true, txt: 'Heal 4. Draw 1. Exhaust.' },
+  // OBSIDIAN — powerful, demands heat
+  magmafist:{ name: 'Magma Fist', mat: 'obsidian', rar: 2, dH: 1, req: 6, dmg: 18, txt: 'Requires Heat ≥ 6. Deal 18.' },
+  aegis:    { name: 'Obsidian Aegis', mat: 'obsidian', rar: 2, dH: 0, req: 6, blk: 16, txt: 'Requires Heat ≥ 6. Block 16.' },
+  eruption: { name: 'Eruption', mat: 'obsidian', rar: 2, dH: 2, req: 7, dmg: 7, aoe: true, sear: 3, txt: 'Requires Heat ≥ 7. Deal 7 to ALL + Sear 3.' },
+  // NEUTRAL
+  focus:    { name: 'Focus', mat: 'neutral', rar: 0, dH: 0, blk: 2, draw: 1, txt: 'Block 2. Draw 1.' },
+  lance:    { name: 'Thermal Lance', mat: 'neutral', rar: 1, dH: 0, lance: true, txt: 'Deal 4 + 2× your distance from Heat 5.' },
+  equil:    { name: 'Equilibrium', mat: 'neutral', rar: 2, setH: 5, dH: 0, draw: 2, txt: 'Set Heat to 5. Draw 2.' },
+  // ASH token
+  cinders:  { name: 'Cinders', mat: 'ash', rar: -1, dH: 1, exh: true, txt: 'Exhaust.' },
+};
+for (const [id, c] of Object.entries(CARDS)) c.id = id;
+const CARD_POOL = Object.values(CARDS).filter(c => c.rar >= 0);
+
+function mkCard(id, tier = 0) { return { uid: UID++, id, tier, pin: false }; }
+function tierMult(t) { return 1 + 0.5 * t; }
+function cardTxt(ci) {
+  const d = CARDS[ci.id], m = tierMult(ci.tier);
+  let t = d.txt;
+  if (ci.tier > 0) {
+    if (d.dmg) t = t.replace(String(d.dmg), String(Math.round(d.dmg * m)));
+    if (d.blk) t = t.replace(String(d.blk), String(Math.round(d.blk * m)));
+  }
+  return t;
+}
+
+/* ---------------- trinkets ---------------- */
+const TRINKETS = {
+  bellows:   { e: '🪈', name: 'Bellows', txt: 'Start each combat at +3 Heat.' },
+  kettle:    { e: '🫖', name: 'Copper Kettle', txt: 'Overheat threshold 12 instead of 10.' },
+  winter:    { e: '🧊', name: 'Winter Heart', txt: 'Never Brittle at 0 Heat; Crisp works at Heat ≤ 4.' },
+  tongs:     { e: '🗜️', name: 'Blacksmith Tongs', txt: 'Keep 3 cards at end of turn instead of 2.' },
+  anviltr:   { e: '🛠️', name: 'Whetstone Anvil', txt: 'Iron tempers at Heat ≥ 4 instead of 6.' },
+  salam:     { e: '🦎', name: 'Salamander Charm', txt: 'Overheat damage halved.' },
+  magmacore: { e: '🌋', name: 'Magma Core', txt: 'Attack bonus is Heat÷2 instead of Heat÷3.' },
+  urn:       { e: '⚱️', name: 'Ashen Urn', txt: 'Combusting cards deal 6 (not 3) and give 2 Block.' },
+  dial:      { e: '🎛️', name: "Tinker's Dial", txt: 'At end of turn, Heat drifts 1 toward 5.' },
+  bank:      { e: '💰', name: 'Ember Bank', txt: '+15 gold after every fight.' },
+  plate:     { e: '🛡️', name: 'Kiln Plate', txt: 'Start each combat with 6 Block.' },
+};
+for (const [id, t] of Object.entries(TRINKETS)) t.id = id;
+const has = id => S.trinkets.includes(id);
+
+/* ---------------- flasks ---------------- */
+const FLASKS = {
+  coolant:  { e: '🧪', name: 'Coolant', txt: 'Set Heat to 3.' },
+  naphtha:  { e: '🔥', name: 'Naphtha', txt: '+5 Heat.' },
+  quick:    { e: '💨', name: 'Quicksilver', txt: 'Draw 3.' },
+  ironhide: { e: '🪨', name: 'Ironhide', txt: 'Gain 12 Block.' },
+  mead:     { e: '🍯', name: 'Embermead', txt: 'Heal 8.' },
+};
+for (const [id, f] of Object.entries(FLASKS)) f.id = id;
+
+/* ---------------- enemies ---------------- */
+// ai(self, turn) returns an intent {kind, n, times, label}
+const ENEMIES = {
+  imp:   { name: 'Cinder Imp', hp: 22, ai(e, t) {
+           return t % 3 === 2 ? { kind: 'stoke', n: 3, label: 'Fan Flames: your Heat +3' }
+                              : { kind: 'atk', n: 7, stoke: 1, label: 'Claw 7 (+1 your Heat)' }; } },
+  leech: { name: 'Frost Leech', hp: 26, ai(e, t) {
+           return t % 2 === 1 ? { kind: 'siphon', n: 3, label: 'Siphon: −3 your Heat, heals 3' }
+                              : { kind: 'atk', n: 6, label: 'Bite 6' }; } },
+  rat:   { name: 'Bellows Rat', hp: 13, ai(e, t) {
+           return (t + e.slot) % 2 === 0 ? { kind: 'atk', n: 4, label: 'Gnaw 4' }
+                                         : { kind: 'stoke', n: 2, label: 'Blow: your Heat +2' }; } },
+  wisp:  { name: 'Mirror Wisp', hp: 20, ai() {
+           return { kind: 'mirror', label: 'Reflect: deals 3 + your Heat' }; } },
+  crab:  { name: 'Slag Crab', hp: 34, armor: 3, ai(e, t) {
+           return t % 3 === 2 ? { kind: 'block', n: 8, label: 'Harden: blocks 8' }
+                              : { kind: 'atk', n: 9, label: 'Pinch 9' }; },
+           note: 'Armor 3 melts while your Heat ≥ 7' },
+  tgolem:{ name: 'Tinder Golem', hp: 30, ai(e) {
+           return { kind: 'atk', n: 5 + (e.rage || 0), label: `Smash ${5 + (e.rage || 0)}` }; },
+           note: '+2 attack whenever you play an Ember card' },
+  // elites
+  warden:{ name: 'Kiln Warden', hp: 55, elite: true, ai(e, t) {
+           const c = t % 3;
+           if (c === 0) return { kind: 'atk', n: 12, label: 'Slam 12' };
+           if (c === 1) return { kind: 'stoke', n: 5, label: 'Overload: your Heat +5' };
+           return { kind: 'quench', label: 'Quench: your Heat → 0' }; } },
+  maw:   { name: 'Glacier Maw', hp: 60, elite: true, ai(e, t) {
+           return t % 2 === 0 ? { kind: 'atkchill', n: 10, c: 2, label: 'Frost Fang 10, −2 your Heat' }
+                              : { kind: 'shatter', n: 18, weak: 6, label: 'Shatter Bite: 18 if you are at 0 Heat, else 6' }; } },
+  ashwing:{ name: 'Ashwing', hp: 48, elite: true, ai(e, t) {
+           return t % 2 === 0 ? { kind: 'ash', n: 2, label: 'Molt: shuffles 2 Cinders into your draw pile' }
+                              : { kind: 'atk', n: 8, times: 2, label: 'Wing Slash 8×2' }; } },
+  // bosses
+  queen: { name: 'The Slag Queen', hp: 140, boss: true, armor: 4, ai(e, t) {
+           if (e.hp < 70 && t % 2 === 1) return { kind: 'atk', n: 8, times: 2, label: 'Molten Fury 8×2' };
+           const c = t % 3;
+           if (c === 0) return { kind: 'atk', n: 16, label: 'Royal Slam 16' };
+           if (c === 1) return { kind: 'summon', id: 'slaglet', label: 'Summon Slaglet' };
+           return { kind: 'atkstoke', n: 10, s: 3, label: 'Magma Rain 10, your Heat +3' }; },
+           note: 'Armor 4 melts while your Heat ≥ 7' },
+  slaglet:{ name: 'Slaglet', hp: 15, ai() { return { kind: 'atk', n: 4, label: 'Splash 4' }; } },
+  wyrm:  { name: 'Permafrost Wyrm', hp: 130, boss: true, ai(e, t) {
+           const c = t % 3;
+           if (c === 0) return { kind: 'atk', n: 14, label: 'Tail Sweep 14' };
+           if (c === 1) return { kind: 'atkchill', n: 7, c: 3, label: 'Blizzard 7, −3 your Heat' };
+           return { kind: 'shatter', n: 25, weak: 5, label: 'Absolute Zero: 25 if you are at 0 Heat, else 5' }; },
+           note: 'Its cold aura drains 2 Heat every turn' },
+};
+for (const [id, e] of Object.entries(ENEMIES)) e.id = id;
+
+const ENCOUNTERS = {
+  early: [['imp'], ['leech'], ['rat', 'rat'], ['wisp']],
+  mid:   [['crab'], ['tgolem'], ['imp', 'leech'], ['rat', 'rat', 'rat'], ['wisp', 'rat']],
+  late:  [['crab', 'leech'], ['tgolem', 'imp'], ['wisp', 'wisp'], ['crab', 'rat']],
+  elite: [['warden'], ['maw'], ['ashwing']],
+};
+
+/* ---------------- state ---------------- */
+let S = null;
+const SAVE_KEY = 'emberkiln-run';
+
+function newRun() {
+  UID = 1;
+  S = {
+    hp: 70, maxhp: 70, gold: 40, floor: 1,
+    deck: [], trinkets: [], flasks: ['coolant'],
+    attune: 0, usedEvents: [], removeCost: 55,
+    screen: 'map', doors: null, combat: null, reward: null,
+  };
+  const start = ['hammer', 'hammer', 'hammer', 'hammer', 'wall', 'wall', 'wall', 'spark', 'shard', 'kindling'];
+  S.deck = start.map(id => mkCard(id));
+  genDoors();
+  save(); render();
+}
+function save() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ S, UID })); } catch {}
+}
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (d && d.S && d.S.hp > 0) { S = d.S; UID = d.UID || 9999; return true; }
+  } catch {}
+  return false;
+}
+function abandon() { localStorage.removeItem(SAVE_KEY); S = null; render(); }
+
+/* ---------------- map ---------------- */
+const TEMPS = { cold: { amb: 0, mult: 1 }, warm: { amb: 3, mult: 1.2 }, hot: { amb: 5, mult: 1.45 } };
+const TYPEINFO = {
+  fight:    { icon: '⚔️', name: 'Fight', sub: 'A monster blocks the passage' },
+  elite:    { icon: '💀', name: 'Elite', sub: 'A dangerous foe guards a trinket' },
+  rest:     { icon: '🔥', name: 'Hearth', sub: 'Heal, or hone a card (+1 tier)' },
+  merchant: { icon: '🪙', name: 'Merchant', sub: 'Cards, trinkets, flasks' },
+  mystery:  { icon: '❓', name: 'Mystery', sub: 'Something stirs in the dark' },
+  boss:     { icon: '👑', name: 'Boss', sub: '' },
+};
+function ambientFor(temp) { return clamp(TEMPS[temp].amb + S.attune, 0, 8); }
+
+function genDoors() {
+  const f = S.floor;
+  if (f === 12) {
+    S.doors = [
+      { type: 'boss', temp: pick(['warm', 'hot']), boss: 'queen' },
+      { type: 'boss', temp: pick(['cold', 'warm']), boss: 'wyrm' },
+    ];
+    return;
+  }
+  const types = [];
+  types.push('fight');
+  const p2 = [];
+  if (f >= 3) p2.push('elite', 'elite');
+  p2.push('mystery', 'mystery', 'fight', 'merchant', 'rest');
+  if (f === 3 || f === 7) p2.push('rest', 'rest');
+  if (f === 6 || f === 10) p2.push('merchant', 'merchant');
+  types.push(pick(p2));
+  let t3 = pick(p2);
+  while (t3 === types[1] && Math.random() < 0.6) t3 = pick(p2);
+  types.push(t3);
+  const temps = shuffle(['cold', 'warm', 'hot']);
+  S.doors = types.map((type, i) => ({ type, temp: temps[i] }));
+}
+
+function enterDoor(i) {
+  const d = S.doors[i];
+  S.curTemp = d.temp;
+  if (d.type === 'fight') startCombat(false);
+  else if (d.type === 'elite') startCombat(true);
+  else if (d.type === 'boss') startCombat(false, d.boss);
+  else if (d.type === 'rest') { S.screen = 'rest'; }
+  else if (d.type === 'merchant') { genShop(); S.screen = 'shop'; }
+  else if (d.type === 'mystery') { genEvent(); S.screen = 'event'; }
+  save(); render();
+}
+function nextFloor() {
+  S.floor++;
+  if (S.floor > 12) { S.screen = 'victory'; }
+  else { genDoors(); S.screen = 'map'; }
+  save(); render();
+}
+
+/* ---------------- combat setup ---------------- */
+function mkEnemy(id, slot) {
+  const d = ENEMIES[id];
+  const hpBoost = d.boss || d.elite ? 0 : Math.floor((S.floor - 1) * 1.2);
+  return { id, slot, hp: d.hp + hpBoost, maxhp: d.hp + hpBoost, block: 0, rage: 0, stun: 0, sear: 0, weak: 0, turn: 0, intent: null };
+}
+function startCombat(elite, bossId) {
+  const f = S.floor;
+  let group;
+  if (bossId) group = [bossId];
+  else if (elite) group = pick(ENCOUNTERS.elite);
+  else group = pick(f <= 3 ? ENCOUNTERS.early : f <= 7 ? ENCOUNTERS.mid : ENCOUNTERS.late);
+  const enemies = group.map((id, i) => mkEnemy(id, i));
+  const H0 = ambientFor(S.curTemp) + (has('bellows') ? 3 : 0);
+  S.combat = {
+    enemies, H: clamp(H0, 0, 14), block: has('plate') ? 6 : 0, brittle: false,
+    draw: shuffle(S.deck.map(c => ({ ...c, pin: false }))), hand: [], disc: [], exh: [],
+    turn: 1, target: 0, atkUp: 0, elite, bossId, log: [],
+  };
+  enemies.forEach(e => e.intent = ENEMIES[e.id].ai(e, 0));
+  drawCards(5);
+  S.screen = 'combat';
+  logMsg(`You step into the ${S.curTemp} chamber. Ambient heat: ${S.combat.H}.`);
+}
+
+function logMsg(m) { const L = S.combat.log; L.push(m); if (L.length > 3) L.shift(); }
+
+function drawCards(n) {
+  const c = S.combat;
+  for (let i = 0; i < n; i++) {
+    if (c.hand.length >= 9) return;
+    if (!c.draw.length) {
+      if (!c.disc.length) return;
+      c.draw = shuffle(c.disc); c.disc = [];
+    }
+    c.hand.push(c.draw.pop());
+  }
+}
+
+/* ---------------- playing cards ---------------- */
+function atkBonus() { return Math.floor(S.combat.H / (has('magmacore') ? 2 : 3)); }
+function crispMax() { return has('winter') ? 4 : 3; }
+function maxPins() { return has('tongs') ? 3 : 2; }
+function overheatAt() { return has('kettle') ? 12 : 10; }
+
+function canPlay(ci) {
+  const d = CARDS[ci.id];
+  if (d.req && S.combat.H < d.req) return false;
+  return true;
+}
+
+function dealToEnemy(e, raw) {
+  const d = ENEMIES[e.id];
+  let dmg = raw;
+  if (d.armor && S.combat.H < 7) dmg = Math.max(0, dmg - d.armor);
+  if (e.block > 0) { const b = Math.min(e.block, dmg); e.block -= b; dmg -= b; }
+  e.hp -= dmg;
+  return dmg;
+}
+
+function playCard(idx) {
+  const c = S.combat, ci = c.hand[idx];
+  if (!ci || !canPlay(ci)) return;
+  const d = CARDS[ci.id], m = tierMult(ci.tier);
+  c.hand.splice(idx, 1);
+
+  // heat first — a card's own shift powers it
+  if (d.setH != null) c.H = d.setH; else c.H = clamp(c.H + d.dH, 0, 14);
+
+  const crisp = c.H <= crispMax();
+  let tgt = c.enemies[c.target];
+  if (!tgt || tgt.hp <= 0) tgt = c.enemies.find(e => e.hp > 0);
+
+  const parts = [];
+  let base = 0;
+  if (d.dmg || d.infernoX || d.lance) {
+    base = Math.round((d.dmg || 0) * m);
+    if (d.infernoX) base = d.infernoX * c.H;
+    if (d.lance) base = 4 + 2 * Math.abs(c.H - 5);
+    if (crisp && d.crispDmg) base += d.crispDmg;
+    base += atkBonus();
+    if (c.atkUp) { base += c.atkUp; c.atkUp = 0; }
+    if (d.perAsh) {
+      let n = 0;
+      for (const pile of ['draw', 'disc', 'hand']) {
+        for (let i = c[pile].length - 1; i >= 0; i--) {
+          if (c[pile][i].id === 'cinders') { c.exh.push(c[pile].splice(i, 1)[0]); n++; }
+        }
+      }
+      base += d.perAsh * n;
+      if (n) parts.push(`consumed ${n} Cinders`);
+    }
+    const times = d.times || 1;
+    const targets = d.aoe ? c.enemies.filter(e => e.hp > 0) : (tgt ? [tgt] : []);
+    for (const e of targets) {
+      for (let k = 0; k < times; k++) {
+        const done = dealToEnemy(e, base);
+        parts.push(`${done} dmg to ${ENEMIES[e.id].name}`);
+      }
+      if (d.sear) e.sear += d.sear;
+      if (d.weak) e.weak += d.weak;
+      if (d.stun) e.stun += d.stun;
+      if (d.stunIfHot && c.H >= d.stunIfHot) { e.stun += 1; parts.push('stunned!'); }
+    }
+  } else if (tgt) {
+    if (d.weak) { tgt.weak += d.weak; parts.push(`weakened ${ENEMIES[tgt.id].name}`); }
+    if (d.stun) { tgt.stun += d.stun; parts.push(`stunned ${ENEMIES[tgt.id].name}`); }
+  }
+  if (d.blk) {
+    let b = Math.round(d.blk * m);
+    if (crisp && d.crispBlk) b += d.crispBlk;
+    c.block += b; parts.push(`+${b} block`);
+  }
+  if (d.atkUp) { c.atkUp += d.atkUp; parts.push(`next attack +${d.atkUp}`); }
+  if (d.heal) { S.hp = Math.min(S.maxhp, S.hp + d.heal); parts.push(`healed ${d.heal}`); }
+  if (d.draw) drawCards(d.draw);
+
+  // Tinder Golem rages at ember cards
+  if (d.mat === 'ember') {
+    for (const e of c.enemies) if (e.id === 'tgolem' && e.hp > 0) { e.rage += 2; e.intent = ENEMIES.tgolem.ai(e, e.turn); }
+  }
+
+  (d.exh ? c.exh : c.disc).push(ci);
+  logMsg(`${d.name}: ${parts.join(', ') || 'played'}.`);
+  checkWin(); save(); render();
+}
+
+function togglePin(idx) {
+  const c = S.combat, ci = c.hand[idx];
+  if (!ci) return;
+  if (!ci.pin && c.hand.filter(x => x.pin).length >= maxPins()) { logMsg(`You can keep only ${maxPins()} cards.`); render(); return; }
+  ci.pin = !ci.pin; render();
+}
+
+function useFlask(i) {
+  if (S.screen !== 'combat') return;
+  const f = FLASKS[S.flasks[i]], c = S.combat;
+  S.flasks.splice(i, 1);
+  if (f.id === 'coolant') c.H = 3;
+  if (f.id === 'naphtha') c.H = clamp(c.H + 5, 0, 14);
+  if (f.id === 'quick') drawCards(3);
+  if (f.id === 'ironhide') c.block += 12;
+  if (f.id === 'mead') S.hp = Math.min(S.maxhp, S.hp + 8);
+  logMsg(`${f.name}: ${f.txt}`);
+  save(); render();
+}
+
+/* ---------------- end of turn ---------------- */
+function endTurn() {
+  const c = S.combat;
+  // overheat
+  if (c.H > overheatAt()) {
+    let dmg = 3 * (c.H - overheatAt());
+    if (has('salam')) dmg = Math.ceil(dmg / 2);
+    S.hp -= dmg;
+    logMsg(`OVERHEAT! You sizzle for ${dmg}.`);
+  }
+  // brittle
+  c.brittle = c.H === 0 && !has('winter');
+  if (c.brittle) logMsg('Heat 0 — you are BRITTLE (+50% damage next turn).');
+
+  // kept-card reactions
+  const kept = [], mats = { temper: 0, burn: 0, melt: 0 };
+  for (const ci of c.hand) {
+    if (!ci.pin) { ci.pin = false; c.disc.push(ci); continue; }
+    const d = CARDS[ci.id];
+    if (d.mat === 'wood' && c.H >= 8) {
+      // combustion: wood becomes Cinders, singes an enemy
+      const alive = c.enemies.filter(e => e.hp > 0);
+      const burn = has('urn') ? 6 : 3;
+      if (alive.length) dealToEnemy(pick(alive), burn);
+      if (has('urn')) c.block += 2;
+      c.disc.push(mkCard('cinders'));
+      mats.burn++;
+      continue;
+    }
+    if (d.mat === 'ice' && c.H >= 6) { c.exh.push(ci); mats.melt++; continue; }
+    if (d.mat === 'iron' && c.H >= (has('anviltr') ? 4 : 6) && ci.tier < 2) {
+      ci.tier++;
+      const perm = S.deck.find(x => x.uid === ci.uid);
+      if (perm) perm.tier = ci.tier;                      // tempering is permanent
+      mats.temper++;
+    }
+    kept.push(ci);
+  }
+  c.hand = kept;
+  if (mats.temper) logMsg(`The heat tempers ${mats.temper} iron card${mats.temper > 1 ? 's' : ''}! (permanent)`);
+  if (mats.burn) logMsg(`${mats.burn} wood card${mats.burn > 1 ? 's' : ''} combusted into Cinders!`);
+  if (mats.melt) logMsg(`${mats.melt} ice card${mats.melt > 1 ? 's' : ''} melted away...`);
+
+  if (has('dial')) c.H = c.H > 5 ? c.H - 1 : c.H < 5 ? c.H + 1 : c.H;
+  if (S.hp <= 0) { gameOver(); return; }
+
+  enemyPhase();
+}
+
+function enemyPhase() {
+  const c = S.combat;
+  for (const e of c.enemies) {
+    if (e.hp <= 0) continue;
+    e.turn++;
+    e.block = 0;
+    if (e.sear > 0) {
+      e.hp -= e.sear; e.sear--;
+      logMsg(`${ENEMIES[e.id].name} sears for ${e.sear + 1}.`);
+      if (e.hp <= 0) continue;
+    }
+    if (e.stun > 0) { e.stun--; logMsg(`${ENEMIES[e.id].name} is stunned.`); e.intent = ENEMIES[e.id].ai(e, e.turn); continue; }
+    // wyrm aura
+    if (e.id === 'wyrm') c.H = clamp(c.H - 2, 0, 14);
+    execIntent(e, e.intent);
+    if (S.hp <= 0) { gameOver(); return; }
+    e.intent = ENEMIES[e.id].ai(e, e.turn);
+  }
+  if (checkWin()) return;
+  // new player turn
+  c.brittle = false;
+  c.block = 0;
+  c.turn++;
+  drawCards(5);
+  logMsg(`— Turn ${c.turn} —`);
+  save(); render();
+}
+
+function hitPlayer(n, e) {
+  const c = S.combat;
+  let dmg = Math.max(0, n - (e.weak > 0 ? 3 : 0));
+  if (c.brittle) dmg = Math.ceil(dmg * 1.5);
+  const b = Math.min(c.block, dmg);
+  c.block -= b; dmg -= b;
+  S.hp -= dmg;
+  return dmg;
+}
+function execIntent(e, it) {
+  const c = S.combat, nm = ENEMIES[e.id].name;
+  if (e.weak > 0) e.weak--;
+  switch (it.kind) {
+    case 'atk': {
+      let total = 0;
+      for (let k = 0; k < (it.times || 1); k++) total += hitPlayer(it.n, e);
+      if (it.stoke) c.H = clamp(c.H + it.stoke, 0, 14);
+      logMsg(`${nm} hits for ${total}.`); break;
+    }
+    case 'atkchill': { const d = hitPlayer(it.n, e); c.H = clamp(c.H - it.c, 0, 14); logMsg(`${nm} hits for ${d} and chills you.`); break; }
+    case 'atkstoke': { const d = hitPlayer(it.n, e); c.H = clamp(c.H + it.s, 0, 14); logMsg(`${nm} hits for ${d} and stokes you.`); break; }
+    case 'mirror': { const d = hitPlayer(3 + c.H, e); logMsg(`${nm} reflects your heat for ${d}.`); break; }
+    case 'stoke': c.H = clamp(c.H + it.n, 0, 14); logMsg(`${nm} stokes your furnace +${it.n}.`); break;
+    case 'siphon': { const drain = Math.min(c.H, it.n); c.H -= drain; e.hp = Math.min(e.maxhp, e.hp + drain); logMsg(`${nm} siphons ${drain} heat.`); break; }
+    case 'quench': c.H = 0; logMsg(`${nm} quenches you to 0 heat!`); break;
+    case 'block': e.block += it.n; logMsg(`${nm} hardens.`); break;
+    case 'shatter': { const big = c.H === 0; const d = hitPlayer(big ? it.n : it.weak, e); logMsg(`${nm} ${big ? 'SHATTERS you' : 'bites'} for ${d}.`); break; }
+    case 'summon': {
+      if (c.enemies.filter(x => x.hp > 0).length < 3) {
+        const s = mkEnemy(it.id, c.enemies.length);
+        s.intent = ENEMIES[it.id].ai(s, 0);
+        c.enemies.push(s);
+        logMsg(`${nm} summons a ${ENEMIES[it.id].name}!`);
+      } else { const d = hitPlayer(10, e); logMsg(`${nm} slams for ${d}.`); }
+      break;
+    }
+    case 'ash': { for (let k = 0; k < it.n; k++) c.draw.splice(ri(c.draw.length + 1), 0, mkCard('cinders')); logMsg(`${nm} molts cinders into your deck.`); break; }
+  }
+}
+
+function checkWin() {
+  const c = S.combat;
+  if (!c.enemies.every(e => e.hp <= 0)) return false;
+  // rewards
+  const tm = TEMPS[S.curTemp].mult;
+  let gold = Math.round((16 + S.floor + ri(7)) * tm * (c.elite ? 2.2 : 1) * (c.bossId ? 3 : 1));
+  if (has('bank')) gold += 15;
+  S.gold += gold;
+  S.reward = {
+    gold,
+    cards: rollCards(3, S.curTemp === 'hot' ? 1 : 0, c.elite),
+    trinket: c.elite ? rollTrinket() : null,
+    flask: Math.random() < 0.25 ? pick(Object.keys(FLASKS)) : null,
+    boss: !!c.bossId,
+  };
+  S.combat = null;
+  S.screen = 'reward';
+  save(); render();
+  return true;
+}
+function gameOver() {
+  S.screen = 'dead';
+  localStorage.removeItem(SAVE_KEY);
+  render();
+}
+
+function rollCards(n, hotBoost, elite) {
+  const out = [], used = new Set();
+  const wR = 0.1 + hotBoost * 0.08 + (elite ? 0.08 : 0), wU = 0.3 + hotBoost * 0.05;
+  while (out.length < n) {
+    const r = Math.random();
+    const rar = r < wR ? 2 : r < wR + wU ? 1 : 0;
+    const opts = CARD_POOL.filter(cd => cd.rar === rar && !used.has(cd.id));
+    if (!opts.length) continue;
+    const cd = pick(opts);
+    used.add(cd.id);
+    out.push(cd.id);
+  }
+  return out;
+}
+function rollTrinket() {
+  const owned = new Set(S.trinkets);
+  const opts = Object.keys(TRINKETS).filter(t => !owned.has(t));
+  return opts.length ? pick(opts) : null;
+}
+
+/* ---------------- shop / rest / events ---------------- */
+function genShop() {
+  S.shop = {
+    cards: rollCards(3, S.curTemp === 'hot' ? 1 : 0, false),
+    trinkets: [rollTrinket(), rollTrinket()].filter((t, i, a) => t && a.indexOf(t) === i),
+    flasks: [pick(Object.keys(FLASKS)), pick(Object.keys(FLASKS))],
+    removed: false,
+  };
+}
+const cardPrice = id => [45, 65, 95][CARDS[id].rar] || 45;
+
+const EVENTS = [
+  { id: 'shrine', name: 'The Thermostat Shrine',
+    txt: 'An ancient dial juts from the wall, humming. You could attune your core to run hotter or colder — permanently.',
+    opts: [
+      { label: 'Attune HOT (+2 ambient heat in all future rooms)', fn() { S.attune += 2; } },
+      { label: 'Attune COLD (−2 ambient heat in all future rooms)', fn() { S.attune -= 2; } },
+      { label: 'Leave it alone', fn() {} },
+    ] },
+  { id: 'seam', name: 'Coal Seam',
+    txt: 'A glittering seam of coal. Mining it would be profitable... and messy.',
+    opts: [
+      { label: 'Mine it: +45 gold, add 2 Cinders to your deck', fn() { S.gold += 45; S.deck.push(mkCard('cinders'), mkCard('cinders')); } },
+      { label: 'Walk past', fn() {} },
+    ] },
+  { id: 'frozen', name: 'Frozen Adventurer',
+    txt: 'A previous challenger, iced solid mid-stride. Something glints in their pack.',
+    opts: [
+      { label: 'Thaw them against your chassis: gain a trinket, lose 6 max HP', fn() { const t = rollTrinket(); if (t) S.trinkets.push(t); S.maxhp -= 6; S.hp = Math.min(S.hp, S.maxhp); } },
+      { label: 'Pry the pack loose: +25 gold', fn() { S.gold += 25; } },
+    ] },
+  { id: 'tinker', name: 'Wandering Tinker',
+    txt: 'A rattling little machine offers its services, tools whirring hopefully.',
+    opts: [
+      { label: 'Repairs: heal 12 HP', fn() { S.hp = Math.min(S.maxhp, S.hp + 12); } },
+      { label: 'Recycling: remove a card from your deck', fn() { S.screen = 'removecard'; } },
+    ] },
+  { id: 'forge', name: 'Abandoned Forge',
+    txt: 'The coals are still warm. The anvil practically begs to be used.',
+    opts: [
+      { label: 'Work the forge: +1 tier to 2 random cards', fn() {
+          const up = S.deck.filter(c => c.tier < 2 && CARDS[c.id].rar >= 0);
+          shuffle(up).slice(0, 2).forEach(c => c.tier++);
+        } },
+      { label: 'Search the racks: gain a random Obsidian card', fn() {
+          S.deck.push(mkCard(pick(['magmafist', 'aegis', 'eruption'])));
+        } },
+    ] },
+];
+function genEvent() {
+  const fresh = EVENTS.filter(e => !S.usedEvents.includes(e.id));
+  S.event = (fresh.length ? pick(fresh) : pick(EVENTS)).id;
+  S.usedEvents.push(S.event);
+}
+
+/* =========================================================
+   RENDERING
+   ========================================================= */
+const app = $('#app');
+const MATCOLOR = { iron: 'var(--iron)', ember: 'var(--ember)', ice: 'var(--ice)', wood: 'var(--wood)', obsidian: 'var(--obs)', ash: 'var(--ash)', neutral: 'var(--neutral)' };
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function cardHTML(ci, opts = {}) {
+  const d = CARDS[ci.id];
+  const dh = d.setH != null ? `H=${d.setH}` : d.dH > 0 ? `+${d.dH}H` : d.dH < 0 ? `${d.dH}H` : '·';
+  const dhCls = d.setH != null ? '' : d.dH > 0 ? 'plus' : d.dH < 0 ? 'minus' : '';
+  const stars = ci.tier > 0 ? ' <span class="tier">' + '★'.repeat(ci.tier) + '</span>' : '';
+  const dis = opts.inHand && !canPlay(ci) ? ' disabled' : '';
+  const pin = opts.inHand ? `<button class="pinbtn" onclick="event.stopPropagation();G.pin(${opts.idx})">${ci.pin ? '📌 keep' : 'keep'}</button>` : '';
+  const click = opts.onclick ? ` onclick="${opts.onclick}"` : '';
+  return `<div class="card${ci.pin ? ' pinned' : ''}${dis}" data-mat="${d.mat}"${click}>
+    ${pin}
+    <div class="cname">${esc(d.name)}${stars}</div>
+    <div class="mat" style="color:${MATCOLOR[d.mat]}">${d.mat}</div>
+    <div class="ctext">${esc(cardTxt(ci))}</div>
+    <div class="dh ${dhCls}">${dh}</div>
+  </div>`;
+}
+
+function topbarHTML(showHeat) {
+  const trk = S.trinkets.map(t => `<span title="${esc(TRINKETS[t].name)}: ${esc(TRINKETS[t].txt)}" onclick="G.info('${t}')">${TRINKETS[t].e}</span>`).join('');
+  return `<div id="topbar">
+    <span class="hp">❤ ${S.hp}/${S.maxhp}</span>
+    <span class="gold">◉ ${S.gold}</span>
+    <span class="floor">Floor ${S.floor}/12</span>
+    <span class="trinket-row">${trk}</span>
+    <span class="spacer"></span>
+    <button onclick="G.deckview()">Deck ${S.deck.length}</button>
+    <button onclick="G.help()">?</button>
+  </div>`;
+}
+
+function heatHTML() {
+  const c = S.combat, oh = overheatAt();
+  const pct = clamp(c.H / 14, 0, 1) * 100;
+  const cls = c.H > oh ? 'over' : c.H === 0 ? 'frozen' : '';
+  return `<div class="heatwrap">
+    <span style="font-size:1.1rem">${c.H === 0 ? '🧊' : c.H > oh ? '🔥' : '♨️'}</span>
+    <div class="heatbar">
+      <span class="redline" style="left:${(oh + 0.5) / 14 * 100}%"></span>
+      <span class="needle" style="left:calc(${pct}% - 2px)"></span>
+    </div>
+    <span class="heatval ${cls}">${c.H}</span>
+  </div>`;
+}
+
+function render() {
+  if (!S) { renderTitle(); return; }
+  switch (S.screen) {
+    case 'map': renderMap(); break;
+    case 'combat': renderCombat(); break;
+    case 'reward': renderReward(); break;
+    case 'rest': renderRest(); break;
+    case 'shop': renderShop(); break;
+    case 'event': renderEvent(); break;
+    case 'removecard': renderRemove(); break;
+    case 'victory': renderEnd(true); break;
+    case 'dead': renderEnd(false); break;
+  }
+}
+
+function renderTitle() {
+  const hasSave = !!localStorage.getItem(SAVE_KEY);
+  app.innerHTML = `<div class="screen"><div class="title-screen">
+    <h1>EMBERKILN</h1>
+    <p>You are a kiln golem descending the mountain's throat. No mana, no energy — only <b style="color:var(--hot)">Heat</b>. Every card stokes or cools your furnace. Run hot and hit like a landslide, or run cold and strike crisp... but overheat and you burn; freeze and you shatter.</p>
+    <p>Cards are materials. What you <b>hold</b> in the heat matters as much as what you play: iron tempers, wood combusts, ice melts.</p>
+    ${hasSave ? '<button class="bigbtn accent" onclick="G.resume()">Resume run</button>' : ''}
+    <button class="bigbtn accent" onclick="G.newRun()">New run</button>
+    <button class="bigbtn" style="text-align:center" onclick="G.help()">How to play</button>
+  </div></div>`;
+}
+
+function renderMap() {
+  const doors = S.doors.map((d, i) => {
+    const ti = TYPEINFO[d.type];
+    const amb = ambientFor(d.temp);
+    const bossName = d.boss ? ENEMIES[d.boss].name : '';
+    return `<button class="door" onclick="G.door(${i})">
+      <span class="dicon">${ti.icon}</span>
+      <span class="dlabel"><b>${d.boss ? bossName : ti.name}</b><span>${esc(d.boss ? (ENEMIES[d.boss].note || '') : ti.sub)}</span></span>
+      <span class="temp ${d.temp}">${d.temp.toUpperCase()} · ${amb}H</span>
+    </button>`;
+  }).join('');
+  app.innerHTML = `<div class="screen">${topbarHTML()}
+    <div class="panel"><h2>${S.floor === 12 ? 'The Kiln Gate' : 'Choose a passage'}</h2>
+    <p class="subtle">The temperature sets your starting Heat — hotter rooms pay better.</p>
+    <div class="doors">${doors}</div></div>
+    <button class="bigbtn" style="text-align:center" onclick="G.abandon()">Abandon run</button>
+  </div>`;
+}
+
+function renderCombat() {
+  const c = S.combat;
+  const en = c.enemies.map((e, i) => {
+    const d = ENEMIES[e.id];
+    const st = [];
+    if (e.stun) st.push('💫 stunned');
+    if (e.weak) st.push(`↓atk ${e.weak}t`);
+    if (e.sear) st.push(`🔥sear ${e.sear}`);
+    if (e.block) st.push(`🛡${e.block}`);
+    if (d.armor) st.push(S.combat.H >= 7 ? 'armor MELTED' : `armor ${d.armor}`);
+    if (e.rage) st.push(`😡+${e.rage}`);
+    return `<div class="enemy${i === c.target ? ' target' : ''}${e.hp <= 0 ? ' dead' : ''}" onclick="G.tgt(${i})">
+      <div class="ename">${esc(d.name)}</div>
+      <div class="hpbar"><i style="width:${clamp(e.hp / e.maxhp, 0, 1) * 100}%"></i></div>
+      <div class="ehp">${Math.max(0, e.hp)}/${e.maxhp}</div>
+      <div class="intent">▸ ${e.hp > 0 ? esc(e.intent.label) : '—'}</div>
+      <div class="status">${st.join(' · ')}</div>
+    </div>`;
+  }).join('');
+
+  const hand = c.hand.map((ci, i) => cardHTML(ci, { inHand: true, idx: i, onclick: `G.play(${i})` })).join('');
+  const flasks = S.flasks.map((f, i) => `<button class="flaskbtn" onclick="G.flask(${i})" title="${esc(FLASKS[f].txt)}">${FLASKS[f].e} ${esc(FLASKS[f].name)}</button>`).join('');
+
+  app.innerHTML = `<div class="screen">${topbarHTML()}
+    <div id="enemies">${en}</div>
+    ${heatHTML()}
+    <div id="playerrow">
+      <span class="pstat">🛡 Block ${c.block}</span>
+      ${c.atkUp ? `<span class="pstat">⚔ next +${c.atkUp}</span>` : ''}
+      ${c.brittle ? '<span class="pstat" style="color:var(--cold)">BRITTLE</span>' : ''}
+      <span class="pstat subtle">atk bonus +${atkBonus()}</span>
+    </div>
+    <div id="log">${c.log.map(esc).join('<br>')}</div>
+    <div id="hand">${hand || '<span class="subtle" style="margin:auto">No cards in hand</span>'}</div>
+    <div id="bottombar">
+      <span class="piles">Draw ${c.draw.length} · Discard ${c.disc.length}${c.exh.length ? ' · Exhaust ' + c.exh.length : ''}</span>
+      ${flasks}
+      <button id="endturn" onclick="G.endTurn()">End Turn</button>
+    </div>
+  </div>`;
+}
+
+function renderReward() {
+  const r = S.reward;
+  const cards = r.cards.map(id =>
+    cardHTML(mkCard(id), { onclick: `G.takeCard('${id}')` })).join('');
+  app.innerHTML = `<div class="screen">${topbarHTML()}
+    <div class="panel"><h2>Victory!</h2>
+    <p class="subtle">+${r.gold} gold${r.trinket ? ` · Trinket found: ${TRINKETS[r.trinket].e} <b>${esc(TRINKETS[r.trinket].name)}</b> — ${esc(TRINKETS[r.trinket].txt)}` : ''}${r.flask ? ` · Flask found: ${FLASKS[r.flask].e} ${esc(FLASKS[r.flask].name)}` : ''}</p>
+    <h2 style="margin-top:12px">Take a card</h2>
+    <div class="choices">${cards}</div>
+    <button class="bigbtn" style="text-align:center" onclick="G.skipCard()">Skip card</button>
+    </div>
+  </div>`;
+}
+
+function renderRest() {
+  app.innerHTML = `<div class="screen">${topbarHTML()}
+    <div class="panel"><h2>🔥 The Hearth</h2>
+    <p class="subtle">A safe alcove, warm and quiet. Choose one:</p>
+    <button class="bigbtn" onclick="G.restHeal()">Bask — heal <b>${Math.floor(S.maxhp * 0.3)}</b> HP</button>
+    <button class="bigbtn" onclick="G.restHone()">Hone — permanently upgrade a card (+1 tier)</button>
+    </div>
+  </div>`;
+}
+
+function renderHone() {
+  const list = S.deck.map((ci, i) =>
+    ci.tier < 2 ? cardHTML(ci, { onclick: `G.honePick(${i})` }) : '').join('');
+  showOverlay(`<h2>Hone which card?</h2><div class="cardlist">${list}</div><button class="closebtn" onclick="G.closeOv()">Cancel</button>`);
+}
+
+function renderShop() {
+  const sh = S.shop;
+  const cards = sh.cards.map((id, i) => id ? `<div style="text-align:center">${cardHTML(mkCard(id), { onclick: `G.buyCard(${i})` })}<div class="subtle">◉ ${cardPrice(id)}</div></div>` : '').join('');
+  const trks = sh.trinkets.map((t, i) => t ? `<button class="bigbtn" onclick="G.buyTrinket(${i})" ${S.gold < 100 ? 'disabled' : ''}>${TRINKETS[t].e} <b>${esc(TRINKETS[t].name)}</b> — ${esc(TRINKETS[t].txt)} <b>◉100</b></button>` : '').join('');
+  const fl = sh.flasks.map((f, i) => f ? `<button class="bigbtn" onclick="G.buyFlask(${i})" ${S.gold < 28 ? 'disabled' : ''}>${FLASKS[f].e} ${esc(FLASKS[f].name)} — ${esc(FLASKS[f].txt)} <b>◉28</b></button>` : '').join('');
+  app.innerHTML = `<div class="screen">${topbarHTML()}
+    <div class="panel"><h2>🪙 Merchant</h2>
+    <div class="choices">${cards}</div>
+    ${trks}${fl}
+    <button class="bigbtn" onclick="G.shopRemove()" ${sh.removed || S.gold < S.removeCost ? 'disabled' : ''}>🗑 Remove a card from your deck <b>◉${S.removeCost}</b></button>
+    <button class="bigbtn accent" onclick="G.leave()">Leave</button>
+    </div>
+  </div>`;
+}
+
+function renderEvent() {
+  const ev = EVENTS.find(e => e.id === S.event);
+  const opts = ev.opts.map((o, i) => `<button class="bigbtn" onclick="G.eventOpt(${i})">${esc(o.label)}</button>`).join('');
+  app.innerHTML = `<div class="screen">${topbarHTML()}
+    <div class="panel"><h2>❓ ${esc(ev.name)}</h2>
+    <p class="subtle">${esc(ev.txt)}</p>${opts}</div>
+  </div>`;
+}
+
+function renderRemove() {
+  const list = S.deck.map((ci, i) => cardHTML(ci, { onclick: `G.removePick(${i})` })).join('');
+  app.innerHTML = `<div class="screen">${topbarHTML()}
+    <div class="panel"><h2>Remove which card?</h2>
+    <div class="choices">${list}</div></div>
+  </div>`;
+}
+
+function renderEnd(won) {
+  app.innerHTML = `<div class="screen"><div class="title-screen">
+    <h1>${won ? 'ASCENDED' : 'EXTINGUISHED'}</h1>
+    <p>${won
+      ? 'The kiln gate cracks open. Beyond it: sky. Your furnace hums a low, satisfied note — the mountain has no more heat to teach you.'
+      : `Your furnace goes dark on floor ${S.floor}. The mountain keeps your embers.`}</p>
+    <button class="bigbtn accent" onclick="G.newRun()">New run</button>
+  </div></div>`;
+  localStorage.removeItem(SAVE_KEY);
+}
+
+/* ---------------- overlay ---------------- */
+const ov = $('#overlay');
+function showOverlay(html) { ov.innerHTML = `<div class="obox">${html}</div>`; ov.hidden = false; }
+ov.addEventListener('click', e => { if (e.target === ov) ov.hidden = true; });
+
+function helpHTML() {
+  return `<h2>How Emberkiln works</h2>
+  <p class="subtle"><b style="color:var(--hot)">Heat</b> is your only resource. Cards are free — each shifts Heat up or down (shown at its bottom; the shift happens <b>before</b> the effect).</p>
+  <p class="subtle">⚔ All attacks get <b>+Heat÷3</b> damage. Hotter = harder.</p>
+  <p class="subtle">🔥 End your turn above <b>10 Heat</b>: take 3 damage per excess point.<br>
+  🧊 End at exactly <b>0 Heat</b>: you are <b>Brittle</b> next turn (+50% damage taken).<br>
+  ❄ <b>Crisp</b>: ice cards get bonuses while Heat ≤ 3.</p>
+  <p class="subtle">📌 <b>Keep up to 2 cards</b> at end of turn (tap "keep"). Kept cards react to your Heat:<br>
+  · <b style="color:var(--iron)">Iron</b> at 6+ Heat → tempers (permanent +50% per tier, max 2)<br>
+  · <b style="color:var(--wood)">Wood</b> at 8+ Heat → combusts into Cinders (singes an enemy)<br>
+  · <b style="color:var(--ice)">Ice</b> at 6+ Heat → melts away for the fight</p>
+  <p class="subtle">🚪 Door temperature sets your starting Heat and scales gold. Hot rooms pay ~45% more. Some enemies fight your thermostat — watch their intents.</p>
+  <p class="subtle">💜 <b style="color:var(--obs)">Obsidian</b> cards need minimum Heat to play. <b style="color:var(--ash)">Cinders</b> clog your deck but fuel Ash Storm.</p>
+  <button class="closebtn" onclick="G.closeOv()">Close</button>`;
+}
+
+/* ---------------- actions ---------------- */
+window.G = {
+  newRun, abandon,
+  resume() { render(); },
+  door: enterDoor,
+  play: playCard,
+  pin: togglePin,
+  flask: useFlask,
+  endTurn,
+  tgt(i) { if (S.combat.enemies[i].hp > 0) { S.combat.target = i; render(); } },
+  takeCard(id) { S.deck.push(mkCard(id)); if (S.reward.trinket) S.trinkets.push(S.reward.trinket); if (S.reward.flask && S.flasks.length < 3) S.flasks.push(S.reward.flask); S.reward = null; nextFloor(); },
+  skipCard() { if (S.reward.trinket) S.trinkets.push(S.reward.trinket); if (S.reward.flask && S.flasks.length < 3) S.flasks.push(S.reward.flask); S.reward = null; nextFloor(); },
+  restHeal() { S.hp = Math.min(S.maxhp, S.hp + Math.floor(S.maxhp * 0.3)); nextFloor(); },
+  restHone() { renderHone(); },
+  honePick(i) { S.deck[i].tier++; ov.hidden = true; nextFloor(); },
+  buyCard(i) { const id = S.shop.cards[i]; if (!id || S.gold < cardPrice(id)) return; S.gold -= cardPrice(id); S.deck.push(mkCard(id)); S.shop.cards[i] = null; save(); render(); },
+  buyTrinket(i) { const t = S.shop.trinkets[i]; if (!t || S.gold < 100) return; S.gold -= 100; S.trinkets.push(t); S.shop.trinkets[i] = null; save(); render(); },
+  buyFlask(i) { const f = S.shop.flasks[i]; if (!f || S.gold < 28 || S.flasks.length >= 3) return; S.gold -= 28; S.flasks.push(f); S.shop.flasks[i] = null; save(); render(); },
+  shopRemove() { S.screen = 'removecard'; S.removeFrom = 'shop'; save(); render(); },
+  removePick(i) {
+    S.deck.splice(i, 1);
+    if (S.removeFrom === 'shop') { S.gold -= S.removeCost; S.removeCost += 20; S.shop.removed = true; S.removeFrom = null; S.screen = 'shop'; save(); render(); }
+    else nextFloor();
+  },
+  eventOpt(i) {
+    const ev = EVENTS.find(e => e.id === S.event);
+    const before = S.screen;
+    ev.opts[i].fn();
+    if (S.screen === before) nextFloor(); else { save(); render(); }
+  },
+  leave: nextFloor,
+  deckview() {
+    const groups = S.deck.map(ci => cardHTML(ci)).join('');
+    showOverlay(`<h2>Your deck (${S.deck.length})</h2><div class="cardlist">${groups}</div><button class="closebtn" onclick="G.closeOv()">Close</button>`);
+  },
+  help() { showOverlay(helpHTML()); },
+  info(t) { showOverlay(`<h2>${TRINKETS[t].e} ${esc(TRINKETS[t].name)}</h2><p class="subtle">${esc(TRINKETS[t].txt)}</p><button class="closebtn" onclick="G.closeOv()">Close</button>`); },
+  closeOv() { ov.hidden = true; },
+  state() { return S; },   // debug/test hook
+};
+
+/* ---------------- init ---------------- */
+if (load()) render(); else renderTitle();
+</script>
+</body>
+</html>
