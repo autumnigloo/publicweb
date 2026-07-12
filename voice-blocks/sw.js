@@ -1,4 +1,4 @@
-const CACHE = 'vb-v8';
+const CACHE = 'vb-v9';
 const FILES = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
