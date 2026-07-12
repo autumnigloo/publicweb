@@ -473,7 +473,7 @@ let mr = null, chunks = [], recording = false;
 let lpTimer = null, lpFired = false;
 
 async function cutAll() {
-  const all = blocks.map(b => b.text).filter(t => t.trim()).join('\n\n');
+  const all = blocks.map(b => b.text.trim()).filter(Boolean).join('\n\n');
   if (all) { try { await navigator.clipboard.writeText(all); } catch {} }
   blocks = [mkBlock()]; ci = 0;
   persist(); render();
