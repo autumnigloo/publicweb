@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
 <title>Voice Blocks</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0f0f13">
@@ -89,6 +89,12 @@ body {
 #record-btn:disabled { background: #2a2a3a; color: #666; cursor: default; }
 #record-btn.recording { background: #c0392b; }
 #record-btn.recording:hover { background: #e74c3c; }
+
+/* While the on-screen keyboard is open, sacrifice the record button (and its
+   status line) so the textarea + nav bar stay fully visible in the shrunken
+   viewport. */
+body.kb-open #record-btn { display: none; }
+body.kb-open #status { display: none; }
 
 #status {
   font-size: 0.78rem; color: #666;
@@ -214,9 +220,6 @@ label { font-size: 0.75rem; color: #777; }
 
   <textarea id="editor" placeholder="Press Record to begin…" spellcheck="true"></textarea>
 
-  <button id="record-btn">Record</button>
-  <div id="status"></div>
-
   <div class="bottom-controls">
     <button class="icon" id="prev-btn" title="Previous block">←</button>
     <button class="icon" id="next-btn" title="Next block">→</button>
@@ -227,6 +230,9 @@ label { font-size: 0.75rem; color: #777; }
     <div class="bar-spacer"></div>
     <button class="icon" id="settings-btn" title="Settings">⚙</button>
   </div>
+
+  <div id="status"></div>
+  <button id="record-btn">Record</button>
 </div>
 
 <!-- Settings modal -->
@@ -547,6 +553,16 @@ recBtn.addEventListener('click', async () => {
   recBtn.classList.add('recording');
   setStatus('Recording…');
 });
+
+// ── on-screen keyboard: hide record button so editor + nav bar stay visible ──
+if (window.visualViewport) {
+  const vv = window.visualViewport;
+  let baseH = vv.height;
+  vv.addEventListener('resize', () => {
+    baseH = Math.max(baseH, vv.height);        // track full height (orientation-safe)
+    document.body.classList.toggle('kb-open', vv.height < baseH * 0.75);
+  });
+}
 
 // ── PWA ───────────────────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
