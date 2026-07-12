@@ -379,6 +379,10 @@ statusEl.addEventListener('click', () => { if (statusEl.className === 'cmd') set
 editor.addEventListener('input', () => { cb().text = editor.value; persist(); render(); });
 
 // ── navigation & block ops ────────────────────────────────────────────────────
+// Keep the on-screen keyboard open when tapping nav buttons: preventing
+// mousedown's default stops the textarea from losing focus (click still fires).
+document.querySelector('.bottom-controls').addEventListener('mousedown', e => e.preventDefault());
+
 prevBtn.onclick = () => { if (ci > 0) { ci--; persist(); render(); } };
 nextBtn.onclick = () => { if (ci < blocks.length - 1) { ci++; persist(); render(); } };
 
