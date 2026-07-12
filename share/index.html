@@ -192,8 +192,20 @@
 
     function extractUrls(str) {
       const matches = str.match(/https?:\/\/[^\s<>"{}|\\^`[\]]+/g) || [];
-      const stripped = matches.map(u => u.split('?')[0]);
+      // Keep the query string for YouTube links — it carries the video ID
+      // (watch?v=), playlist (list=), timestamp (t=), etc.
+      const stripped = matches.map(u => isYouTube(u) ? u : u.split('?')[0]);
       return [...new Set(stripped)];
+    }
+
+    function isYouTube(u) {
+      try {
+        const host = new URL(u).hostname.toLowerCase();
+        return ['youtube.com', 'youtu.be', 'youtube-nocookie.com']
+          .some(d => host === d || host.endsWith('.' + d));
+      } catch {
+        return false;
+      }
     }
 
     if (location.search) history.replaceState(null, '', location.pathname);

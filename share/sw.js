@@ -1,4 +1,4 @@
-const CACHE = 'textshare-v3';
+const CACHE = 'textshare-v4';
 const ASSETS = ['./','./index.html','./manifest.json','./icon.svg','./sw.js'];
 
 self.addEventListener('install', e => {
