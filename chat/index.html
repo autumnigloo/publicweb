@@ -507,6 +507,36 @@
     return html;
   }
 
+  // Markdown → plain text for sharing: share targets (e.g. TTS readers) show
+  // raw markdown symbols verbatim, so strip them via the md() HTML renderer.
+  function mdToPlain(src) {
+    const div = document.createElement('div');
+    div.innerHTML = md(src);
+    // Keep the target of [text](url) links, but not when the text IS the url
+    div.querySelectorAll('a[href]').forEach(a => {
+      const href = a.getAttribute('href');
+      if (a.textContent.trim() !== href) a.append(' (' + href + ')');
+    });
+    const blockText = el => {
+      el.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+      return el.textContent;
+    };
+    const out = [];
+    for (const el of div.children) {
+      const tag = el.tagName;
+      if (tag === 'UL' || tag === 'OL') {
+        out.push([...el.children].map((li, i) =>
+          (tag === 'OL' ? (i + 1) + '. ' : '• ') + blockText(li)).join('\n'));
+      } else if (tag === 'PRE') {
+        out.push(el.textContent.replace(/\n$/, ''));
+      } else if (tag !== 'HR') {
+        const t = blockText(el).trim();
+        if (t) out.push(t);
+      }
+    }
+    return out.join('\n\n');
+  }
+
   // ── Chats ──
   function ensureChat() {
     if (!chats.length) { const c = { id:newId(), title:'New chat', messages:[] }; chats.unshift(c); curId = c.id; }
@@ -573,7 +603,7 @@
         const shareBtn = document.createElement('button');
         shareBtn.className = 'msg-act';
         shareBtn.textContent = '↗ Share';
-        shareBtn.onclick = () => shareText(m.content);
+        shareBtn.onclick = () => shareText(m.role === 'assistant' ? mdToPlain(m.content) : m.content);
         acts.append(copyBtn, shareBtn);
         wrap.appendChild(acts);
       }

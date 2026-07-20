@@ -1,4 +1,4 @@
-const CACHE = 'chat-v5';
+const CACHE = 'chat-v6';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
