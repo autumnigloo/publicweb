@@ -169,7 +169,7 @@
     <button id="copyBtn" disabled>Copy &amp; Clear</button>
   </div>
 
-  <textarea id="textbox" placeholder="Shared URLs appear here. You can also type freely.&#10;&#10;Use 'Copy &amp; Clear' to copy everything and wipe the pad."></textarea>
+  <textarea id="textbox" placeholder="Shared URLs appear here. You can also type freely.&#10;&#10;Paste rich text (e.g. from Google Docs) to extract just its hyperlinks, one per line.&#10;&#10;Use 'Copy &amp; Clear' to copy everything and wipe the pad."></textarea>
 
   <div class="toast" id="toast">Copied!</div>
 
@@ -226,6 +226,50 @@
       save();
       updateUI();
     });
+
+    // Pasting rich text (e.g. copied from Google Docs) inserts only the
+    // hyperlinks it contains, one per line. Plain-text pastes are untouched.
+    textarea.addEventListener('paste', e => {
+      const html = e.clipboardData?.getData('text/html');
+      if (!html) return;
+      const links = extractLinksFromHtml(html);
+      if (!links.length) return;
+      e.preventDefault();
+      insertAtCursor(links.join('\n'));
+      save();
+      updateUI();
+    });
+
+    function extractLinksFromHtml(html) {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const hrefs = [...doc.querySelectorAll('a[href]')]
+        .map(a => unwrapGoogleRedirect(a.getAttribute('href')))
+        .filter(h => /^https?:\/\//i.test(h));
+      return [...new Set(hrefs)];
+    }
+
+    // Google sometimes wraps copied links as google.com/url?q=<real-url>
+    function unwrapGoogleRedirect(href) {
+      try {
+        const url = new URL(href);
+        if (url.hostname.endsWith('google.com') && url.pathname === '/url') {
+          const target = url.searchParams.get('q') || url.searchParams.get('url');
+          if (target && /^https?:\/\//i.test(target)) return target;
+        }
+      } catch {}
+      return href;
+    }
+
+    function insertAtCursor(text) {
+      const before = textarea.value.slice(0, textarea.selectionStart);
+      const after = textarea.value.slice(textarea.selectionEnd);
+      const prefix = before && !before.endsWith('\n') ? '\n' : '';
+      const suffix = after && !after.startsWith('\n') ? '\n' : '';
+      textarea.value = before + prefix + text + suffix + after;
+      const pos = (before + prefix + text).length;
+      textarea.setSelectionRange(pos, pos);
+      textarea.scrollTop = textarea.scrollHeight;
+    }
 
     copyBtn.addEventListener('click', async () => {
       if (!textarea.value) return;
