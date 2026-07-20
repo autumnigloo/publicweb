@@ -111,6 +111,18 @@
       padding: 0 4px;
     }
     .meta .mdl { color: #8a93c8; }
+    .act-row { display: flex; gap: 4px; margin-top: 3px; }
+    .msg-act {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-family: inherit;
+      cursor: pointer;
+      padding: 3px 8px;
+      border-radius: 7px;
+    }
+    .msg-act:active { background: var(--surface); color: var(--text); }
     .cursor::after { content: '▋'; color: var(--accent); animation: blink 1s steps(2) infinite; }
     @keyframes blink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
 
@@ -303,6 +315,7 @@
       pointer-events: none; max-width: 90%; text-align: center;
     }
     .toast.show { opacity: 1; }
+    .toast.ok { background: #22a05a; }
   </style>
 </head>
 <body>
@@ -401,9 +414,34 @@
     try { return new Date(ts).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
     catch { return ''; }
   }
-  function toast(msg) {
+  function toast(msg, ok) {
     const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    t.classList.toggle('ok', !!ok);
     clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    toast('Copied', true);
+  }
+
+  async function shareText(text) {
+    if (navigator.share) {
+      try { await navigator.share({ text }); }
+      catch { /* user dismissed the share sheet */ }
+    } else {
+      await copyText(text);  // desktop fallback
+    }
   }
 
   // ── Minimal, self-contained Markdown renderer (HTML-escaped first, so safe) ──
@@ -524,6 +562,20 @@
         meta.className = 'meta';
         meta.innerHTML = `<span class="mdl">${esc(shortModel(m.model || ''))}</span>` + (m.ts ? ` · ${fmtTime(m.ts)}` : '');
         wrap.appendChild(meta);
+      }
+      if (!m.streaming) {
+        const acts = document.createElement('div');
+        acts.className = 'act-row';
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'msg-act';
+        copyBtn.textContent = '📋 Copy';
+        copyBtn.onclick = () => copyText(m.content);
+        const shareBtn = document.createElement('button');
+        shareBtn.className = 'msg-act';
+        shareBtn.textContent = '↗ Share';
+        shareBtn.onclick = () => shareText(m.content);
+        acts.append(copyBtn, shareBtn);
+        wrap.appendChild(acts);
       }
       box.appendChild(wrap);
     }
