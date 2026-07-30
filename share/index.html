@@ -149,13 +149,18 @@
       opacity: 0;
       transition: opacity 0.2s, transform 0.2s;
       pointer-events: none;
-      white-space: nowrap;
+      max-width: calc(100% - 32px);
+      text-align: center;
+      line-height: 1.4;
     }
 
     .toast.show {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
+
+    /* Informational variant, e.g. "duplicate skipped" */
+    .toast.info { background: var(--accent); }
   </style>
 </head>
 <body>
@@ -174,6 +179,13 @@
   <div class="toast" id="toast">Copied!</div>
 
   <script>
+    // Two shares of the same page can differ only by share-tracking params
+    // (YouTube's ?si=, utm_*), so ignore those when comparing links. Meaningful
+    // params like ?v=, ?list= and ?t= are kept, so different timestamps of the
+    // same video still count as different links.
+    // Declared up here: the incoming-share handler below runs immediately.
+    const TRACKING = /^(si|feature|utm_[a-z_]+)$/i;
+
     const textarea = document.getElementById('textbox');
     const copyBtn = document.getElementById('copyBtn');
     const charCount = document.getElementById('charCount');
@@ -188,7 +200,7 @@
     const params = new URLSearchParams(location.search);
     const incoming = extractUrls(
       [params.get('url'), params.get('text'), params.get('title')].filter(Boolean).join(' ')
-    ).join('\n');
+    );
 
     function extractUrls(str) {
       const matches = str.match(/https?:\/\/[^\s<>"{}|\\^`[\]]+/g) || [];
@@ -210,16 +222,68 @@
 
     if (location.search) history.replaceState(null, '', location.pathname);
 
-    if (incoming) {
-      const current = textarea.value.trimEnd();
-      textarea.value = current ? current + '\n' + incoming : incoming;
-      save();
-      updateUI();
-      // Scroll to bottom so the new line is visible
-      textarea.scrollTop = textarea.scrollHeight;
-      // Flash to signal new content arrived
-      textarea.classList.add('flash');
-      setTimeout(() => textarea.classList.remove('flash'), 600);
+    if (incoming.length) {
+      const fresh = pickNew(incoming);
+      const skipped = incoming.length - fresh.length;
+      if (fresh.length) {
+        const current = textarea.value.trimEnd();
+        const added = fresh.join('\n');
+        textarea.value = current ? current + '\n' + added : added;
+        save();
+        updateUI();
+        // Scroll to bottom so the new line is visible
+        textarea.scrollTop = textarea.scrollHeight;
+        // Flash to signal new content arrived
+        textarea.classList.add('flash');
+        setTimeout(() => textarea.classList.remove('flash'), 600);
+      }
+      notifySkipped(fresh.length, skipped);
+    }
+
+    // Duplicate handling — a link already in the pad is never added twice,
+    // and the snackbar explains what was skipped.
+    function currentLinks() {
+      return textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+    }
+
+    function linkKey(u) {
+      try {
+        const url = new URL(u);
+        for (const k of [...url.searchParams.keys()]) {
+          if (TRACKING.test(k)) url.searchParams.delete(k);
+        }
+        if (url.pathname.length > 1 && url.pathname.endsWith('/')) {
+          url.pathname = url.pathname.slice(0, -1);
+        }
+        return url.protocol + '//' + url.hostname.toLowerCase() +
+               url.pathname + url.search + url.hash;
+      } catch {
+        return u.trim();
+      }
+    }
+
+    // Drops links already in the pad, and repeats within `links` itself.
+    function pickNew(links) {
+      const seen = new Set(currentLinks().map(linkKey));
+      const fresh = [];
+      for (const u of links) {
+        const k = linkKey(u);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        fresh.push(u);
+      }
+      return fresh;
+    }
+
+    function notifySkipped(added, skipped) {
+      if (!skipped) return;
+      const dupes = skipped === 1 ? 'duplicate' : 'duplicates';
+      showToast(
+        added ? `Added ${added} · skipped ${skipped} ${dupes}`
+          : skipped === 1 ? 'Already in the list — not added'
+          : `All ${skipped} links were already in the list`,
+        'info'
+      );
     }
 
     textarea.addEventListener('input', () => {
@@ -235,9 +299,13 @@
       const links = extractLinksFromHtml(html);
       if (!links.length) return;
       e.preventDefault();
-      insertAtCursor(links.join('\n'));
-      save();
-      updateUI();
+      const fresh = pickNew(links);
+      if (fresh.length) {
+        insertAtCursor(fresh.join('\n'));
+        save();
+        updateUI();
+      }
+      notifySkipped(fresh.length, links.length - fresh.length);
     });
 
     function extractLinksFromHtml(html) {
@@ -299,9 +367,12 @@
         : `${len.toLocaleString()} chars`;
     }
 
-    function showToast() {
+    function showToast(msg = 'Copied!', variant = 'success') {
+      toast.textContent = msg;
+      toast.classList.toggle('info', variant === 'info');
       toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 1800);
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => toast.classList.remove('show'), variant === 'info' ? 2800 : 1800);
     }
 
     if ('serviceWorker' in navigator) {
