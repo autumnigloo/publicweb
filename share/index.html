@@ -192,6 +192,10 @@
     // stripping ?args breaks its links.
     const KEEP_QUERY_HOSTS = ['youtube.com', 'youtu.be', 'youtube-nocookie.com'];
 
+    // Elements that start a new line when pasted rich text is flattened.
+    const BLOCK_TAGS = 'p, div, li, tr, td, th, h1, h2, h3, h4, h5, h6, ' +
+      'blockquote, pre, section, article, header, footer, figcaption, dt, dd';
+
     const textarea = document.getElementById('textbox');
     const copyBtn = document.getElementById('copyBtn');
     const charCount = document.getElementById('charCount');
@@ -330,10 +334,17 @@
     // the same ?args stripping the share path uses.
     function extractLinksFromHtml(html) {
       const doc = new DOMParser().parseFromString(html, 'text/html');
+      if (!doc.body) return [];
       doc.querySelectorAll('a[href]').forEach(a => {
         a.replaceWith(' ' + unwrapGoogleRedirect(a.getAttribute('href')) + ' ');
       });
-      return extractUrls(doc.body ? doc.body.textContent : '');
+      // textContent runs adjacent blocks together with no separator, so a
+      // bullet list of bare URLs would come out as one glued-up string. Break
+      // the block boundaries first — but only those: a URL split across
+      // several inline <span>s must still join back up.
+      doc.querySelectorAll('br, hr').forEach(el => el.replaceWith('\n'));
+      doc.querySelectorAll(BLOCK_TAGS).forEach(el => el.append('\n'));
+      return extractUrls(doc.body.textContent);
     }
 
     // Google sometimes wraps copied links as google.com/url?q=<real-url>
