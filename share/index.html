@@ -174,7 +174,7 @@
     <button id="copyBtn" disabled>Copy &amp; Clear</button>
   </div>
 
-  <textarea id="textbox" placeholder="Shared URLs appear here. You can also type freely.&#10;&#10;Paste rich text (e.g. from Google Docs) to extract just its hyperlinks, one per line.&#10;&#10;Use 'Copy &amp; Clear' to copy everything and wipe the pad."></textarea>
+  <textarea id="textbox" placeholder="Shared URLs appear here. You can also type freely.&#10;&#10;Paste rich text (e.g. from Google Docs) to extract just the links it contains, one per line.&#10;&#10;Use 'Copy &amp; Clear' to copy everything and wipe the pad."></textarea>
 
   <div class="toast" id="toast">Copied!</div>
 
@@ -185,6 +185,12 @@
     // same video still count as different links.
     // Declared up here: the incoming-share handler below runs immediately.
     const TRACKING = /^(si|feature|utm_[a-z_]+)$/i;
+
+    // Hosts where the query string is part of the address rather than tracking
+    // noise: youtube.com/watch?v=…, /playlist?list=…, youtu.be short links
+    // carrying ?t=. Everywhere else ?args are dropped. Add a host here if
+    // stripping ?args breaks its links.
+    const KEEP_QUERY_HOSTS = ['youtube.com', 'youtu.be', 'youtube-nocookie.com'];
 
     const textarea = document.getElementById('textbox');
     const copyBtn = document.getElementById('copyBtn');
@@ -204,20 +210,30 @@
 
     function extractUrls(str) {
       const matches = str.match(/https?:\/\/[^\s<>"{}|\\^`[\]]+/g) || [];
-      // Keep the query string for YouTube links — it carries the video ID
-      // (watch?v=), playlist (list=), timestamp (t=), etc.
-      const stripped = matches.map(u => isYouTube(u) ? u : u.split('?')[0]);
-      return [...new Set(stripped)];
+      return [...new Set(matches.map(trimTrailing).map(stripArgs))];
     }
 
-    function isYouTube(u) {
+    // URLs written inline in prose usually end up with the sentence's
+    // punctuation glued on: "see https://example.com/page." or "(https://x.y)".
+    function trimTrailing(u) {
+      u = u.replace(/[.,;:!?'"]+$/, '');
+      while (u.endsWith(')') && (u.match(/\(/g) || []).length < (u.match(/\)/g) || []).length) {
+        u = u.slice(0, -1);
+      }
+      return u;
+    }
+
+    function keepsQuery(u) {
       try {
         const host = new URL(u).hostname.toLowerCase();
-        return ['youtube.com', 'youtu.be', 'youtube-nocookie.com']
-          .some(d => host === d || host.endsWith('.' + d));
+        return KEEP_QUERY_HOSTS.some(d => host === d || host.endsWith('.' + d));
       } catch {
         return false;
       }
+    }
+
+    function stripArgs(u) {
+      return keepsQuery(u) ? u : u.split('?')[0];
     }
 
     if (location.search) history.replaceState(null, '', location.pathname);
@@ -308,12 +324,16 @@
       notifySkipped(fresh.length, links.length - fresh.length);
     });
 
+    // Picks up both real hyperlinks and URLs written out as plain text.
+    // Swapping each anchor for its target turns the whole thing into one text
+    // blob, so extractUrls() finds both kinds in document order and applies
+    // the same ?args stripping the share path uses.
     function extractLinksFromHtml(html) {
       const doc = new DOMParser().parseFromString(html, 'text/html');
-      const hrefs = [...doc.querySelectorAll('a[href]')]
-        .map(a => unwrapGoogleRedirect(a.getAttribute('href')))
-        .filter(h => /^https?:\/\//i.test(h));
-      return [...new Set(hrefs)];
+      doc.querySelectorAll('a[href]').forEach(a => {
+        a.replaceWith(' ' + unwrapGoogleRedirect(a.getAttribute('href')) + ' ');
+      });
+      return extractUrls(doc.body ? doc.body.textContent : '');
     }
 
     // Google sometimes wraps copied links as google.com/url?q=<real-url>
