@@ -546,14 +546,15 @@
     const c = blank || { id:newId(), title:'New chat', messages:[] };
     if (!blank) chats.unshift(c);
     curId = c.id; localStorage.setItem(LS.cur, curId);
+    pinned = true;
     saveChats(); renderMessages(); renderDrawer(); closeAll();
     $('input').focus();
   }
-  function switchChat(id) { curId = id; localStorage.setItem(LS.cur, id); renderMessages(); renderDrawer(); closeAll(); }
+  function switchChat(id) { curId = id; localStorage.setItem(LS.cur, id); pinned = true; renderMessages(); renderDrawer(); closeAll(); }
   function deleteChat(id) {
     chats = chats.filter(c => c.id !== id);
     if (curId === id) curId = chats[0]?.id || null;
-    ensureChat(); saveChats(); renderMessages(); renderDrawer();
+    ensureChat(); saveChats(); pinned = true; renderMessages(); renderDrawer();
   }
 
   // ── Rendering ──
@@ -561,6 +562,7 @@
 
   function renderMessages() {
     const box = $('messages');
+    const prevTop = box.scrollTop;   // emptying the list below resets this to 0
     const chat = curChat();
     box.innerHTML = '';
     if (!chat || chat.messages.length === 0) {
@@ -604,11 +606,25 @@
       }
       box.appendChild(wrap);
     }
-    scrollBottom();
+    if (pinned) scrollBottom(); else setScrollTop(prevTop);
   }
 
-  function scrollBottom() { const b = $('messages'); b.scrollTop = b.scrollHeight; }
+  // Follow a streaming reply only while the user is parked at the bottom.
+  // Scrolling up unpins the view, and nothing moves again until they scroll
+  // back down (or send / switch chats).
+  let pinned = true;
+  let selfScroll = false;   // ignore the scroll events our own scrolling fires
+
+  function setScrollTop(top) {
+    const b = $('messages');
+    selfScroll = true;
+    b.scrollTop = top;
+    requestAnimationFrame(() => { selfScroll = false; });
+  }
+  function scrollBottom() { pinned = true; setScrollTop($('messages').scrollHeight); }
   function nearBottom() { const b = $('messages'); return b.scrollHeight - b.scrollTop - b.clientHeight < 120; }
+
+  $('messages').addEventListener('scroll', () => { if (!selfScroll) pinned = nearBottom(); });
 
   function renderDrawer() {
     const list = $('chat-list');
@@ -731,6 +747,7 @@
     const apiMsgs = chat.messages.map(m => ({ role:m.role, content:m.content }));
     const aMsg = { role:'assistant', content:'', model:curModel, ts:Date.now(), streaming:true };
     chat.messages.push(aMsg);
+    pinned = true;   // sending always jumps to the newest message
     saveChats(); renderDrawer(); renderMessages();
 
     controller = new AbortController();
@@ -740,7 +757,7 @@
       pending = false;
       const live = $('live-bubble');
       if (live) live.innerHTML = md(aMsg.content);
-      if (nearBottom()) scrollBottom();
+      if (pinned) scrollBottom();
     };
     try {
       await stream(apiMsgs, curModel, controller.signal, delta => {
