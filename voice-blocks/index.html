@@ -10,15 +10,22 @@
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Height of the area actually visible above the on-screen keyboard, and how
+   far down the page that area starts. Both are kept in sync with
+   visualViewport by JS; the dvh fallback covers browsers without it. */
+:root { --app-h: 100dvh; --app-top: 0px; }
+
 body {
   font-family: 'Segoe UI', system-ui, sans-serif;
   background: #0f0f13;
   color: #e0e0e0;
-  min-height: 100dvh;
+  height: var(--app-h);
+  overflow: hidden;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   padding: 0.35rem;
+  transform: translateY(var(--app-top));
 }
 
 .card {
@@ -28,7 +35,7 @@ body {
   padding: 0.55rem;
   width: 100%;
   max-width: 640px;
-  min-height: calc(100dvh - 0.7rem);
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -64,6 +71,7 @@ body {
   resize: none;
   outline: none;
   font-family: inherit;
+  flex-basis: 0;
   min-height: 140px;
 }
 #editor:focus { border-color: #4a60c8; }
@@ -92,9 +100,11 @@ body {
 
 /* While the on-screen keyboard is open, sacrifice the record button (and its
    status line) so the textarea + nav bar stay fully visible in the shrunken
-   viewport. */
+   viewport. The textarea gives up its comfortable minimum too, so a short
+   landscape viewport still fits the nav bar instead of pushing it off. */
 body.kb-open .rec-row { display: none; }
 body.kb-open #status { display: none; }
+body.kb-open #editor { min-height: 3.5rem; }
 
 #status {
   font-size: 0.78rem; color: #666;
@@ -174,7 +184,7 @@ button.icon:disabled { color: #3a3a4a; background: #1e1e28; border-color: #25253
   width: 100%; max-width: 480px;
   display: flex; flex-direction: column; gap: 0.85rem;
   margin-top: 1rem;
-  height: calc(100dvh - 3rem);
+  height: calc(var(--app-h) - 3rem);
 }
 
 .mhead {
@@ -574,14 +584,33 @@ recBtn.addEventListener('click', async () => {
   setStatus('Recording…');
 });
 
-// ── on-screen keyboard: hide record button so editor + nav bar stay visible ──
+// ── on-screen keyboard: keep the shell inside the visible viewport ───────────
+// Don't trust 100dvh to shrink. Phone Chrome resizes the layout viewport when
+// the keyboard opens (so dvh shrinks), but large-screen Android often leaves
+// the layout viewport alone and only shrinks/pans the visual viewport — there
+// dvh stays at full screen height and the nav bar ends up behind the keyboard.
+// Driving --app-h/--app-top off visualViewport works in both modes, and the
+// record row is dropped once the keyboard eats a real chunk of the screen.
 if (window.visualViewport) {
-  const vv = window.visualViewport;
-  let baseH = vv.height;
-  vv.addEventListener('resize', () => {
-    baseH = Math.max(baseH, vv.height);        // track full height (orientation-safe)
-    document.body.classList.toggle('kb-open', vv.height < baseH * 0.75);
-  });
+  const vv   = window.visualViewport;
+  const root = document.documentElement;
+  let baseW = vv.width, baseH = vv.height;
+
+  const syncViewport = () => {
+    if (vv.scale > 1.01) return;               // pinch-zoomed: leave layout alone
+    // Width only changes on rotation / window resize, never on the keyboard —
+    // so use it to re-baseline instead of letting baseH ratchet up forever.
+    if (Math.abs(vv.width - baseW) > 1) { baseW = vv.width; baseH = vv.height; }
+    baseH = Math.max(baseH, vv.height);
+
+    root.style.setProperty('--app-h', vv.height + 'px');
+    root.style.setProperty('--app-top', vv.offsetTop + 'px');
+    document.body.classList.toggle('kb-open', baseH - vv.height > 120);
+  };
+
+  vv.addEventListener('resize', syncViewport);
+  vv.addEventListener('scroll', syncViewport);
+  syncViewport();
 }
 
 // ── PWA ───────────────────────────────────────────────────────────────────────
