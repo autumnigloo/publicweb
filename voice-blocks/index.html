@@ -55,6 +55,11 @@ body {
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 #clear-btn:hover { background: #252530; border-color: #444; color: #bbb; }
+#clear-btn .tally {
+  color: #4a4a5a;
+  margin-left: 0.45rem;
+  font-variant-numeric: tabular-nums;
+}
 #clear-btn:disabled { opacity: 0.35; cursor: default; }
 #clear-btn.del { background: #1a0f0f; border-color: #4a1f1f; color: #b05050; }
 #clear-btn.del:hover { background: #241515; border-color: #c0392b; color: #e06060; }
@@ -353,6 +358,16 @@ const undoBtn  = g('undo-btn'), redoBtn  = g('redo-btn');
 const addBtn   = g('add-btn'),  recBtn   = g('record-btn');
 const clearBtn = g('clear-btn'), statusEl = g('status');
 
+// Words are whitespace-separated runs; characters are Unicode code points, so
+// astral chars (emoji, CJK extensions) count once rather than as two UTF-16
+// units. Whitespace and newlines each count as one character.
+function countText(text) {
+  return {
+    w: (text.match(/\S+/g) || []).length,
+    c: [...text].length,
+  };
+}
+
 function render() {
   const b = cb(), empty = !b.text.trim();
   editor.value = b.text;
@@ -363,7 +378,14 @@ function render() {
   prevBtn.disabled = ci === 0;
   nextBtn.disabled = ci === blocks.length - 1;
   const canDel = empty && blocks.length > 1;
-  clearBtn.textContent = canDel ? 'Delete Block' : 'Cut';
+  clearBtn.replaceChildren(canDel ? 'Delete Block' : 'Cut');
+  if (!canDel) {
+    const n = countText(b.text);
+    const tally = document.createElement('span');
+    tally.className = 'tally';
+    tally.textContent = `(${n.w}w, ${n.c}c)`;
+    clearBtn.appendChild(tally);
+  }
   clearBtn.className   = canDel ? 'del' : '';
   clearBtn.disabled    = empty && blocks.length === 1;
 }
