@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="20" fill="#1a1a24"/>
+  <!-- jester's cap: three bells on drooping points -->
+  <path d="M50 34 C36 34 27 44 27 56 L73 56 C73 44 64 34 50 34Z" fill="#a78bfa"/>
+  <path d="M27 52 C18 50 13 42 15 33" fill="none" stroke="#ef4444" stroke-width="5" stroke-linecap="round"/>
+  <path d="M73 52 C82 50 87 42 85 33" fill="none" stroke="#eab308" stroke-width="5" stroke-linecap="round"/>
+  <path d="M50 34 L50 22" fill="none" stroke="#a78bfa" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="15" cy="30" r="5" fill="#ef4444"/>
+  <circle cx="85" cy="30" r="5" fill="#eab308"/>
+  <circle cx="50" cy="19" r="5" fill="#a78bfa"/>
+  <!-- skull beneath -->
+  <path d="M32 58 L68 58 L68 68 C68 76 61 82 50 82 C39 82 32 76 32 68Z" fill="#e2e2ee"/>
+  <circle cx="41" cy="68" r="5" fill="#1a1a24"/>
+  <circle cx="59" cy="68" r="5" fill="#1a1a24"/>
+  <path d="M50 74 L46 81 L54 81Z" fill="#1a1a24"/>
+</svg>

@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Death Jester</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f0f13">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f0f13;
+  --panel: #1a1a24;
+  --line: #2a2a3a;
+  --dim: #6a6a7e;
+  --accent: #a78bfa;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: #e0e0e0;
+  min-height: 100dvh;
+  padding: 0 0 2rem;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap { max-width: 640px; margin: 0 auto; padding: 0 0.6rem; }
+
+/* ── header ────────────────────────────────────────────────────────────── */
+header { padding: 0.9rem 0.2rem 0.7rem; }
+h1 {
+  font-size: 1.35rem; font-weight: 600; color: #fff;
+  letter-spacing: 0.02em; display: flex; align-items: center; gap: 0.5rem;
+}
+h1 .mask { color: var(--accent); font-size: 1.5rem; line-height: 1; }
+.sub { font-size: 0.78rem; color: var(--dim); margin-top: 0.2rem; }
+
+/* ── odds panel (sticky) ───────────────────────────────────────────────── */
+.odds {
+  position: sticky; top: 0; z-index: 5;
+  background: var(--bg);
+  padding: 0.5rem 0 0.6rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.7rem;
+}
+.odds-grid { display: flex; flex-direction: column; gap: 0.4rem; }
+
+/* Kept deliberately compact: the panel is sticky, so every pixel here is a
+   pixel of card tray the player can't see while tapping. */
+.rank {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 0.36rem 0.6rem 0.4rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 0.6rem;
+  align-items: baseline;
+}
+.rank .name { font-size: 0.88rem; font-weight: 600; color: #d8d8ea; }
+.rank .req  { font-size: 0.68rem; color: var(--dim); font-weight: 400; }
+.rank .pct  {
+  font-size: 1.05rem; font-weight: 600; color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.rank .bar {
+  grid-column: 1 / -1;
+  height: 4px; border-radius: 3px; background: #14141c;
+  overflow: hidden; margin-top: 0.3rem;
+}
+.rank .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.2s; }
+
+.rank.sure  { border-color: #2f6f4f; }
+.rank.sure  .pct { color: #4ade80; }
+.rank.sure  .bar i { background: #4ade80; }
+.rank.never { opacity: 0.5; }
+.rank.never .pct { color: #6a6a7e; }
+
+.odds-foot {
+  font-size: 0.68rem; color: #4a4a5c; text-align: center;
+  margin-top: 0.4rem; font-variant-numeric: tabular-nums;
+}
+
+/* ── zones ─────────────────────────────────────────────────────────────── */
+.zone { margin-bottom: 0.7rem; }
+.zone-head {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0 0.2rem 0.35rem;
+}
+.zone-head h2 { font-size: 0.82rem; font-weight: 600; color: #b8b8cc; letter-spacing: 0.04em; text-transform: uppercase; }
+.zone-head .count {
+  font-size: 0.72rem; color: var(--dim); font-variant-numeric: tabular-nums;
+  background: #16161e; border: 1px solid var(--line); border-radius: 999px; padding: 0.05rem 0.45rem;
+}
+.zone-head .hint { font-size: 0.7rem; color: #4a4a5c; margin-left: auto; }
+
+.tray {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+  gap: 0.4rem;
+  background: #13131b;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.45rem;
+  min-height: 4.6rem;
+  align-content: start;
+}
+.tray.empty { display: flex; align-items: center; justify-content: center; }
+.tray .placeholder { font-size: 0.75rem; color: #3a3a4a; text-align: center; padding: 0.8rem 0.5rem; }
+
+/* ── cards ─────────────────────────────────────────────────────────────── */
+.card {
+  position: relative;
+  border: 1.5px solid var(--c);
+  background: var(--tint);
+  border-radius: 9px;
+  padding: 0.42rem 0.2rem 0.35rem;
+  display: flex; flex-direction: column; align-items: center; gap: 0.05rem;
+  cursor: pointer;
+  font-family: inherit;
+  min-height: 4rem;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform 0.08s, opacity 0.15s;
+}
+.card:active { transform: scale(0.94); }
+.card .glyph { font-size: 1.15rem; line-height: 1.1; color: var(--c); }
+.card .fig   { font-size: 0.68rem; font-weight: 600; color: #dcdce8; line-height: 1.15; text-align: center; }
+.card .suit  { font-size: 0.6rem; color: var(--c); opacity: 0.85; letter-spacing: 0.03em; }
+
+.zone-discard .card { opacity: 0.42; }
+.zone-hand .card { box-shadow: 0 0 0 1px var(--c), 0 2px 10px -4px var(--c); }
+
+/* ── actions ───────────────────────────────────────────────────────────── */
+.actions { display: flex; gap: 0.5rem; margin: 0.9rem 0 0.7rem; }
+.btn {
+  flex: 1;
+  background: #1c1c26; border: 1px solid var(--line); border-radius: 10px;
+  color: #b8b8cc; font-family: inherit; font-size: 0.82rem;
+  padding: 0.7rem 0.5rem; min-height: 2.75rem; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.btn:active { background: #252532; }
+.btn:disabled { opacity: 0.35; cursor: default; }
+
+.warn {
+  background: #2a1a10; border: 1px solid #5a3a1a; color: #e0a060;
+  border-radius: 10px; padding: 0.55rem 0.7rem; font-size: 0.76rem;
+  margin-bottom: 0.7rem; line-height: 1.45;
+}
+
+/* ── help ──────────────────────────────────────────────────────────────── */
+details {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 0.6rem 0.75rem; font-size: 0.78rem; line-height: 1.55;
+  color: #a8a8bc;
+}
+summary { cursor: pointer; color: #b8b8cc; font-weight: 600; font-size: 0.8rem; }
+details p { margin-top: 0.55rem; }
+details b { color: #d8d8ea; }
+details ul { margin: 0.4rem 0 0 1rem; }
+details li { margin-bottom: 0.15rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1><span class="mask">&#127917;</span> Death Jester</h1>
+  <div class="sub">Grimcoven &middot; odds that a Gamble hits each rank</div>
+</header>
+
+<section class="odds">
+  <div class="odds-grid" id="odds"></div>
+  <div class="odds-foot" id="odds-foot"></div>
+</section>
+
+<div id="warn"></div>
+
+<section class="zone zone-hand">
+  <div class="zone-head">
+    <h2>Hand</h2><span class="count" id="c-hand">0</span>
+    <span class="hint">tap &rarr; discard</span>
+  </div>
+  <div class="tray" id="t-hand"></div>
+</section>
+
+<section class="zone zone-discard">
+  <div class="zone-head">
+    <h2>Discard</h2><span class="count" id="c-discard">0</span>
+    <span class="hint">tap &rarr; deck</span>
+  </div>
+  <div class="tray" id="t-discard"></div>
+</section>
+
+<section class="zone zone-deck">
+  <div class="zone-head">
+    <h2>Fate deck</h2><span class="count" id="c-deck">14</span>
+    <span class="hint">tap &rarr; hand</span>
+  </div>
+  <div class="tray" id="t-deck"></div>
+</section>
+
+<div class="actions">
+  <button class="btn" id="reshuffle">&#8635; Reshuffle discard</button>
+  <button class="btn" id="reset">Reset all</button>
+</div>
+
+<details>
+  <summary>How this works</summary>
+  <p>A Gamble puts the <b>top three cards of the Fate deck</b> in a sequence, then lets you
+  <b>replace any number of them with cards from your hand</b>. So a Gamble succeeds if any three
+  cards out of <i>(the three you draw + your whole hand)</i> make the rank.</p>
+  <p>Tell the app which cards you're holding and which are in the discard pile; everything else is
+  still in the deck. It then checks <b>every possible three-card draw</b> from the remaining deck &mdash;
+  no simulation, these are exact odds.</p>
+  <p><b>Ranks</b></p>
+  <ul>
+    <li><b>Pair</b> &mdash; two figures of the same kind</li>
+    <li><b>Army</b> &mdash; three Knights</li>
+    <li><b>Successors</b> &mdash; a Prince and a Princess</li>
+    <li><b>Rulers</b> &mdash; a King and a Queen</li>
+    <li><b>Color</b> &mdash; all cards in the same suit</li>
+  </ul>
+  <p><b>The 14-card Fate deck</b><br>
+  1&times; Hanged Man (Black) &middot; 1&times; Jester (White) &middot; 1&times; King (Violet) &middot;
+  1&times; Queen (Yellow) &middot; 2&times; Princess (Yellow, Red) &middot; 2&times; Prince (Red, Violet) &middot;
+  6&times; Knight (2 Red, 2 Violet, 2 Yellow).</p>
+  <p>The <b>Jester</b> counts as any figure in any suit. The <b>Hanged Man</b> is its own fourth suit,
+  so it forms no figure ranks and can never complete a Color.</p>
+  <p>Discards reshuffle into the deck after a Pass, or when the deck runs out mid-draw &mdash; the app
+  handles that automatically when fewer than three cards remain.</p>
+</details>
+
+</div>
+
+<script>
+// ── the Fate deck ────────────────────────────────────────────────────────────
+const SUITS = {
+  violet: { label: 'Violet', c: '#a78bfa', tint: 'rgba(167,139,250,0.10)' },
+  yellow: { label: 'Yellow', c: '#eab308', tint: 'rgba(234,179,8,0.10)'   },
+  red:    { label: 'Red',    c: '#ef4444', tint: 'rgba(239,68,68,0.10)'   },
+  black:  { label: 'Black',  c: '#8b8b9e', tint: 'rgba(139,139,158,0.10)' },
+  white:  { label: 'White',  c: '#e2e2ee', tint: 'rgba(226,226,238,0.08)' },
+};
+
+const GLYPH = {
+  hanged: '†', jester: '✦', king: '♛',
+  queen: '♥', princess: '✿', prince: '⚜', knight: '♣',
+};
+const NAME = {
+  hanged: 'Hanged Man', jester: 'Jester', king: 'King',
+  queen: 'Queen', princess: 'Princess', prince: 'Prince', knight: 'Knight',
+};
+
+// The five figures the ranks are built from. Hanged Man is deliberately absent:
+// it is a suit unto itself and forms no figure rank.
+const FIGURES = ['knight', 'princess', 'prince', 'queen', 'king'];
+// A Jester may stand in as any figure in any suit — including Black, which is
+// harmless since one Hanged Man can never make a three-card Black Color.
+const WILD_SUITS = ['violet', 'yellow', 'red', 'black'];
+
+const DECK = [
+  { fig: 'hanged',   suit: 'black'  },
+  { fig: 'jester',   suit: 'white'  },
+  { fig: 'king',     suit: 'violet' },
+  { fig: 'queen',    suit: 'yellow' },
+  { fig: 'princess', suit: 'yellow' },
+  { fig: 'princess', suit: 'red'    },
+  { fig: 'prince',   suit: 'red'    },
+  { fig: 'prince',   suit: 'violet' },
+  { fig: 'knight',   suit: 'red'    },
+  { fig: 'knight',   suit: 'red'    },
+  { fig: 'knight',   suit: 'violet' },
+  { fig: 'knight',   suit: 'violet' },
+  { fig: 'knight',   suit: 'yellow' },
+  { fig: 'knight',   suit: 'yellow' },
+].map((c, id) => ({ ...c, id }));
+
+const RANKS = [
+  { key: 'pair',   name: 'Pair',       req: 'two figures of the same kind' },
+  { key: 'army',   name: 'Army',       req: 'three Knights'                },
+  { key: 'succ',   name: 'Successors', req: 'a Prince and a Princess'      },
+  { key: 'rulers', name: 'Rulers',     req: 'a King and a Queen'           },
+  { key: 'color',  name: 'Color',      req: 'all cards in the same suit'   },
+];
+
+// ── rank evaluation ──────────────────────────────────────────────────────────
+function plainMeets(cards, rank) {
+  const n = f => cards.reduce((a, c) => a + (c.fig === f), 0);
+  switch (rank) {
+    case 'pair':   return FIGURES.some(f => n(f) >= 2);
+    case 'army':   return n('knight') === 3;
+    case 'succ':   return n('prince') >= 1 && n('princess') >= 1;
+    case 'rulers': return n('king') >= 1 && n('queen') >= 1;
+    case 'color':  return cards.every(c => c.suit === cards[0].suit);
+  }
+  return false;
+}
+
+// Resolve the Jester by trying every figure/suit it could stand for.
+function meets(cards, rank) {
+  const j = cards.findIndex(c => c.fig === 'jester');
+  if (j === -1) return plainMeets(cards, rank);
+  const rest = cards.slice();
+  for (const fig of FIGURES) {
+    for (const suit of WILD_SUITS) {
+      rest[j] = { fig, suit };
+      if (plainMeets(rest, rank)) return true;
+    }
+  }
+  return false;
+}
+
+function combos(arr, k) {
+  const out = [];
+  (function rec(start, cur) {
+    if (cur.length === k) { out.push(cur.slice()); return; }
+    for (let i = start; i <= arr.length - (k - cur.length); i++) {
+      cur.push(arr[i]); rec(i + 1, cur); cur.pop();
+    }
+  })(0, []);
+  return out;
+}
+
+// Every three-card combination that makes each rank, precomputed once by card id.
+const WINNERS = {};
+{
+  const all = combos(DECK, 3);
+  for (const r of RANKS) {
+    WINNERS[r.key] = all.filter(t => meets(t, r.key)).map(t => t.map(c => c.id));
+  }
+}
+
+// ── state ────────────────────────────────────────────────────────────────────
+const SK = 'dj-zones';
+const ZONES = ['deck', 'hand', 'discard'];
+let zone = DECK.map(() => 'deck');
+
+try {
+  const saved = JSON.parse(localStorage.getItem(SK) || 'null');
+  if (Array.isArray(saved) && saved.length === DECK.length
+      && saved.every(z => ZONES.includes(z))) zone = saved;
+} catch {}
+
+const persist = () => { try { localStorage.setItem(SK, JSON.stringify(zone)); } catch {} };
+const idsIn = z => DECK.filter(c => zone[c.id] === z).map(c => c.id);
+
+// ── odds ─────────────────────────────────────────────────────────────────────
+// A Gamble succeeds if ANY three cards from (the three drawn + the whole hand)
+// make the rank — keeping a drawn card and swapping in a hand card are the same
+// choice from the sequence's point of view.
+function drawCombos() {
+  const deck = idsIn('deck'), discard = idsIn('discard');
+  if (deck.length >= 3) return combos(deck, 3);
+  // Deck runs dry mid-draw: the discard pile is reshuffled and supplies the rest.
+  const need = 3 - deck.length;
+  if (discard.length < need) return null;
+  return combos(discard, need).map(rest => deck.concat(rest));
+}
+
+function odds() {
+  const draws = drawCombos();
+  const hand = idsIn('hand');
+  const out = {};
+  for (const r of RANKS) {
+    if (!draws) { out[r.key] = null; continue; }
+    const wins = WINNERS[r.key];
+    let hit = 0;
+    for (const d of draws) {
+      const pool = new Set(hand);
+      for (const id of d) pool.add(id);
+      for (const t of wins) {
+        if (pool.has(t[0]) && pool.has(t[1]) && pool.has(t[2])) { hit++; break; }
+      }
+    }
+    out[r.key] = { hit, total: draws.length };
+  }
+  return out;
+}
+
+// ── rendering ────────────────────────────────────────────────────────────────
+const g = id => document.getElementById(id);
+const oddsEl = g('odds');
+
+const rankEls = {};
+for (const r of RANKS) {
+  const el = document.createElement('div');
+  el.className = 'rank';
+  el.innerHTML =
+    '<div><span class="name"></span> <span class="req"></span></div>' +
+    '<div class="pct"></div><div class="bar"><i></i></div>';
+  el.querySelector('.name').textContent = r.name;
+  el.querySelector('.req').textContent = r.req;
+  oddsEl.appendChild(el);
+  rankEls[r.key] = el;
+}
+
+function cardEl(card) {
+  const s = SUITS[card.suit];
+  const b = document.createElement('button');
+  b.className = 'card';
+  b.style.setProperty('--c', s.c);
+  b.style.setProperty('--tint', s.tint);
+  b.dataset.id = card.id;
+  b.setAttribute('aria-label', `${NAME[card.fig]}, ${s.label}, in ${zone[card.id]}`);
+
+  const gl = document.createElement('span');
+  gl.className = 'glyph'; gl.textContent = GLYPH[card.fig];
+  const fg = document.createElement('span');
+  fg.className = 'fig'; fg.textContent = NAME[card.fig];
+  const su = document.createElement('span');
+  su.className = 'suit'; su.textContent = s.label;
+
+  b.append(gl, fg, su);
+  return b;
+}
+
+function renderTray(z) {
+  const tray = g('t-' + z);
+  const cards = DECK.filter(c => zone[c.id] === z);
+  g('c-' + z).textContent = cards.length;
+  tray.replaceChildren();
+  tray.classList.toggle('empty', cards.length === 0);
+  if (!cards.length) {
+    const p = document.createElement('div');
+    p.className = 'placeholder';
+    p.textContent = z === 'hand' ? 'No cards in hand — tap deck cards to add them'
+                  : z === 'discard' ? 'Nothing discarded'
+                  : 'Deck is empty';
+    tray.appendChild(p);
+    return;
+  }
+  for (const c of cards) tray.appendChild(cardEl(c));
+}
+
+function render() {
+  for (const z of ZONES) renderTray(z);
+
+  const o = odds();
+  const short = o[RANKS[0].key] === null;
+  g('warn').innerHTML = short
+    ? '<div class="warn">Fewer than three cards are available to draw, so no sequence can be ' +
+      'dealt. Move some cards out of your hand.</div>'
+    : '';
+
+  for (const r of RANKS) {
+    const el = rankEls[r.key], res = o[r.key];
+    if (!res) {
+      el.querySelector('.pct').textContent = '—';
+      el.querySelector('.bar i').style.width = '0%';
+      el.className = 'rank never';
+      continue;
+    }
+    const p = res.hit / res.total * 100;
+    el.querySelector('.pct').textContent =
+      p === 100 ? '100%' : p === 0 ? '0%' : p.toFixed(1) + '%';
+    el.querySelector('.bar i').style.width = p + '%';
+    el.className = 'rank' + (p === 100 ? ' sure' : p === 0 ? ' never' : '');
+  }
+
+  const total = o[RANKS[0].key] ? o[RANKS[0].key].total : 0;
+  const deckN = idsIn('deck').length;
+  g('odds-foot').textContent = total
+    ? `${total} possible draw${total === 1 ? '' : 's'} from ${deckN} card${deckN === 1 ? '' : 's'}`
+      + (deckN < 3 ? ' + reshuffled discard' : '')
+    : '';
+
+  g('reshuffle').disabled = !idsIn('discard').length;
+}
+
+// ── controls: tapping a card advances it deck → hand → discard → deck ────────
+document.addEventListener('click', e => {
+  const card = e.target.closest('.card');
+  if (!card) return;
+  const id = +card.dataset.id;
+  zone[id] = ZONES[(ZONES.indexOf(zone[id]) + 1) % ZONES.length];
+  persist();
+  render();
+});
+
+g('reshuffle').onclick = () => {
+  zone = zone.map(z => (z === 'discard' ? 'deck' : z));
+  persist(); render();
+};
+
+g('reset').onclick = () => {
+  zone = DECK.map(() => 'deck');
+  persist(); render();
+};
+
+// ── PWA ──────────────────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+render();
+</script>
+</body>
+</html>
