@@ -88,14 +88,26 @@ h1 .mask { color: var(--accent); font-size: 1.5rem; line-height: 1; }
   margin-top: 0.4rem; font-variant-numeric: tabular-nums;
 }
 
-/* sequence length picker */
-.seq {
+/* sequence length picker (set once per Action, so it stays out of the pinned
+   panel) and the tap destination toggle (flipped constantly, so it stays in) */
+.seq, .mode {
   display: flex; align-items: center; gap: 0.5rem;
   background: var(--panel); border: 1px solid var(--line);
   border-radius: 9px; padding: 0.3rem 0.35rem 0.3rem 0.6rem;
-  margin-bottom: 0.4rem;
 }
-.seq-label { font-size: 0.72rem; color: var(--dim); white-space: nowrap; }
+.seq { margin: 0.2rem 0 0.5rem; }
+.mode { margin-top: 0.5rem; }
+.seq-label, .mode-label {
+  font-size: 0.72rem; color: var(--dim); white-space: nowrap;
+}
+.mode-label { color: #9a9ab0; }
+#mode button { font-size: 0.88rem; min-height: 2.6rem; }
+#mode button[aria-pressed="true"][data-zone="hand"] {
+  background: rgba(167, 139, 250, 0.18); border-color: var(--accent); color: #fff;
+}
+#mode button[aria-pressed="true"][data-zone="discard"] {
+  background: rgba(200, 110, 80, 0.18); border-color: #c86e50; color: #fff;
+}
 .seg { display: flex; gap: 0.25rem; flex: 1; }
 .seg button {
   flex: 1; min-height: 2.5rem;
@@ -198,13 +210,18 @@ details li { margin-bottom: 0.15rem; }
   <div class="sub">Grimcoven &middot; odds that a Gamble hits each rank</div>
 </header>
 
+<div class="seq">
+  <span class="seq-label">Cards drawn</span>
+  <div class="seg" id="seq"></div>
+</div>
+
 <section class="odds">
-  <div class="seq">
-    <span class="seq-label">Cards drawn</span>
-    <div class="seg" id="seq"></div>
-  </div>
   <div class="odds-grid" id="odds"></div>
   <div class="odds-foot" id="odds-foot"></div>
+  <div class="mode">
+    <span class="mode-label">Tap a card &rarr;</span>
+    <div class="seg" id="mode"></div>
+  </div>
 </section>
 
 <div id="warn"></div>
@@ -246,6 +263,11 @@ details li { margin-bottom: 0.15rem; }
   <p>Tell the app which cards you're holding and which are in the discard pile; everything else is
   still in the deck. It then checks <b>every possible draw</b> from the remaining deck &mdash;
   no simulation, these are exact odds.</p>
+  <p><b>Moving cards</b> &mdash; the <b>Hand / Discard</b> toggle picks where a tap sends a card.
+  Tap any card to send it to that pile; tap a card already sitting there to put it back in the
+  deck. Set the toggle to match what you're doing &mdash; Hand while drawing in the Refresh step,
+  Discard while resolving a Gamble &mdash; and every card is one tap. Each pile's header shows
+  where its cards will go.</p>
   <p><b>Cards drawn</b> is three by default. Set it higher for effects that deal a longer sequence,
   such as The Moon. A longer sequence cuts both ways: Pair, Army, Successors and Rulers only need
   the sequence to <i>contain</i> something, so more cards make them <b>easier</b> &mdash; but Color
@@ -387,10 +409,11 @@ function winners(len) {
 }
 
 // ── state ────────────────────────────────────────────────────────────────────
-const SK = 'dj-zones', SK_SEQ = 'dj-seq';
+const SK = 'dj-zones', SK_SEQ = 'dj-seq', SK_MODE = 'dj-mode';
 const ZONES = ['deck', 'hand', 'discard'];
 let zone = DECK.map(() => 'deck');
 let seqLen = DEFAULT_SEQ;
+let sendTo = 'hand';           // where a tapped card goes
 
 try {
   const saved = JSON.parse(localStorage.getItem(SK) || 'null');
@@ -398,14 +421,22 @@ try {
       && saved.every(z => ZONES.includes(z))) zone = saved;
   const n = parseInt(localStorage.getItem(SK_SEQ), 10);
   if (SEQ_LENGTHS.includes(n)) seqLen = n;
+  const m = localStorage.getItem(SK_MODE);
+  if (m === 'hand' || m === 'discard') sendTo = m;
 } catch {}
 
 const persist = () => {
   try {
     localStorage.setItem(SK, JSON.stringify(zone));
     localStorage.setItem(SK_SEQ, String(seqLen));
+    localStorage.setItem(SK_MODE, sendTo);
   } catch {}
 };
+
+// One rule covers every move: a tap sends the card to the active pile, and a
+// card already sitting there goes back to the deck. So each of the six
+// transitions is a single tap once the toggle is set the way you're working.
+const tapTarget = z => (z === sendTo ? 'deck' : sendTo);
 const idsIn = z => DECK.filter(c => zone[c.id] === z).map(c => c.id);
 
 // ── odds ─────────────────────────────────────────────────────────────────────
@@ -471,6 +502,16 @@ for (const n of SEQ_LENGTHS) {
   seqEl.appendChild(b);
 }
 
+const modeEl = g('mode');
+for (const z of ['hand', 'discard']) {
+  const b = document.createElement('button');
+  b.textContent = z === 'hand' ? 'Hand' : 'Discard';
+  b.dataset.zone = z;
+  b.setAttribute('aria-label', `Tapping a card puts it in the ${z}`);
+  b.onclick = () => { sendTo = z; persist(); render(); };
+  modeEl.appendChild(b);
+}
+
 function cardEl(card) {
   const s = SUITS[card.suit];
   const b = document.createElement('button');
@@ -478,7 +519,8 @@ function cardEl(card) {
   b.style.setProperty('--c', s.c);
   b.style.setProperty('--tint', s.tint);
   b.dataset.id = card.id;
-  b.setAttribute('aria-label', `${NAME[card.fig]}, ${s.label}, in ${zone[card.id]}`);
+  b.setAttribute('aria-label',
+    `${NAME[card.fig]}, ${s.label}, in ${zone[card.id]} — tap to move to ${tapTarget(zone[card.id])}`);
 
   const gl = document.createElement('span');
   gl.className = 'glyph'; gl.textContent = GLYPH[card.fig];
@@ -491,10 +533,14 @@ function cardEl(card) {
   return b;
 }
 
+const LABEL = { deck: 'deck', hand: 'hand', discard: 'discard' };
+
 function renderTray(z) {
   const tray = g('t-' + z);
   const cards = DECK.filter(c => zone[c.id] === z);
   g('c-' + z).textContent = cards.length;
+  document.querySelector('.zone-' + z + ' .hint').textContent =
+    'tap → ' + LABEL[tapTarget(z)];
   tray.replaceChildren();
   tray.classList.toggle('empty', cards.length === 0);
   if (!cards.length) {
@@ -514,6 +560,9 @@ function render() {
 
   for (const b of seqEl.children) {
     b.setAttribute('aria-pressed', String(+b.dataset.n === seqLen));
+  }
+  for (const b of modeEl.children) {
+    b.setAttribute('aria-pressed', String(b.dataset.zone === sendTo));
   }
   // Army wants three Knights however long the sequence is; at length 2 that is
   // simply out of reach, and the odds below will say so.
@@ -554,12 +603,12 @@ function render() {
   g('reshuffle').disabled = !idsIn('discard').length;
 }
 
-// ── controls: tapping a card advances it deck → hand → discard → deck ────────
+// ── controls ─────────────────────────────────────────────────────────────────
 document.addEventListener('click', e => {
   const card = e.target.closest('.card');
   if (!card) return;
   const id = +card.dataset.id;
-  zone[id] = ZONES[(ZONES.indexOf(zone[id]) + 1) % ZONES.length];
+  zone[id] = tapTarget(zone[id]);
   persist();
   render();
 });
