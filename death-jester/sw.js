@@ -1,4 +1,4 @@
-const CACHE = 'dj-v1';
+const CACHE = 'dj-v2';
 const FILES = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {

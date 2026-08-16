@@ -40,11 +40,15 @@ h1 .mask { color: var(--accent); font-size: 1.5rem; line-height: 1; }
 
 /* ── odds panel (sticky) ───────────────────────────────────────────────── */
 .odds {
-  position: sticky; top: 0; z-index: 5;
   background: var(--bg);
   padding: 0.5rem 0 0.6rem;
   border-bottom: 1px solid var(--line);
   margin-bottom: 0.7rem;
+}
+/* Pin the odds in view while cards are tapped — but only on screens tall
+   enough that doing so leaves room for the trays underneath. */
+@media (min-height: 720px) {
+  .odds { position: sticky; top: 0; z-index: 5; }
 }
 .odds-grid { display: flex; flex-direction: column; gap: 0.4rem; }
 
@@ -82,6 +86,27 @@ h1 .mask { color: var(--accent); font-size: 1.5rem; line-height: 1; }
 .odds-foot {
   font-size: 0.68rem; color: #4a4a5c; text-align: center;
   margin-top: 0.4rem; font-variant-numeric: tabular-nums;
+}
+
+/* sequence length picker */
+.seq {
+  display: flex; align-items: center; gap: 0.5rem;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 9px; padding: 0.3rem 0.35rem 0.3rem 0.6rem;
+  margin-bottom: 0.4rem;
+}
+.seq-label { font-size: 0.72rem; color: var(--dim); white-space: nowrap; }
+.seg { display: flex; gap: 0.25rem; flex: 1; }
+.seg button {
+  flex: 1; min-height: 2.5rem;
+  background: #14141c; border: 1px solid var(--line); border-radius: 7px;
+  color: #9a9ab0; font-family: inherit; font-size: 0.85rem; font-weight: 600;
+  cursor: pointer; font-variant-numeric: tabular-nums;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.seg button[aria-pressed="true"] {
+  background: rgba(167, 139, 250, 0.16);
+  border-color: var(--accent); color: #fff;
 }
 
 /* ── zones ─────────────────────────────────────────────────────────────── */
@@ -174,6 +199,10 @@ details li { margin-bottom: 0.15rem; }
 </header>
 
 <section class="odds">
+  <div class="seq">
+    <span class="seq-label">Cards drawn</span>
+    <div class="seg" id="seq"></div>
+  </div>
   <div class="odds-grid" id="odds"></div>
   <div class="odds-foot" id="odds-foot"></div>
 </section>
@@ -215,8 +244,13 @@ details li { margin-bottom: 0.15rem; }
   <b>replace any number of them with cards from your hand</b>. So a Gamble succeeds if any three
   cards out of <i>(the three you draw + your whole hand)</i> make the rank.</p>
   <p>Tell the app which cards you're holding and which are in the discard pile; everything else is
-  still in the deck. It then checks <b>every possible three-card draw</b> from the remaining deck &mdash;
+  still in the deck. It then checks <b>every possible draw</b> from the remaining deck &mdash;
   no simulation, these are exact odds.</p>
+  <p><b>Cards drawn</b> is three by default. Set it higher for effects that deal a longer sequence,
+  such as The Moon. A longer sequence cuts both ways: Pair, Army, Successors and Rulers only need
+  the sequence to <i>contain</i> something, so more cards make them <b>easier</b> &mdash; but Color
+  needs <i>every</i> card in the sequence to share a suit, so more cards make it <b>harder</b>
+  (beyond five it becomes impossible, as no suit has that many cards even with the Jester).</p>
   <p><b>Ranks</b></p>
   <ul>
     <li><b>Pair</b> &mdash; two figures of the same kind</li>
@@ -288,12 +322,19 @@ const RANKS = [
   { key: 'color',  name: 'Color',      req: 'all cards in the same suit'   },
 ];
 
+// A Gamble normally deals three cards, but effects such as The Moon deal more.
+const SEQ_LENGTHS = [2, 3, 4, 5, 6];
+const DEFAULT_SEQ = 3;
+
 // ── rank evaluation ──────────────────────────────────────────────────────────
+// Note how sequence length cuts both ways. Pair/Army/Successors/Rulers only ask
+// that the sequence *contain* something, so a longer sequence makes them easier.
+// Color asks that *every* card match, so a longer sequence makes it harder.
 function plainMeets(cards, rank) {
   const n = f => cards.reduce((a, c) => a + (c.fig === f), 0);
   switch (rank) {
     case 'pair':   return FIGURES.some(f => n(f) >= 2);
-    case 'army':   return n('knight') === 3;
+    case 'army':   return n('knight') >= 3;
     case 'succ':   return n('prince') >= 1 && n('princess') >= 1;
     case 'rulers': return n('king') >= 1 && n('queen') >= 1;
     case 'color':  return cards.every(c => c.suit === cards[0].suit);
@@ -326,55 +367,76 @@ function combos(arr, k) {
   return out;
 }
 
-// Every three-card combination that makes each rank, precomputed once by card id.
-const WINNERS = {};
-{
-  const all = combos(DECK, 3);
-  for (const r of RANKS) {
-    WINNERS[r.key] = all.filter(t => meets(t, r.key)).map(t => t.map(c => c.id));
+// Every winning sequence of a given length, as a bitmask over card ids. Masks
+// turn "can these cards make the rank?" into a single AND, which keeps things
+// instant at the longer sequence lengths where the combination counts climb.
+// Memoised per length, since the length changes far less often than the zones.
+const winCache = new Map();
+function winners(len) {
+  if (winCache.has(len)) return winCache.get(len);
+  const out = {};
+  for (const r of RANKS) out[r.key] = [];
+  for (const combo of combos(DECK, len)) {
+    let mask = 0;
+    for (const c of combo) mask |= 1 << c.id;
+    for (const r of RANKS) if (meets(combo, r.key)) out[r.key].push(mask);
   }
+  for (const r of RANKS) out[r.key] = Int32Array.from(out[r.key]);
+  winCache.set(len, out);
+  return out;
 }
 
 // ── state ────────────────────────────────────────────────────────────────────
-const SK = 'dj-zones';
+const SK = 'dj-zones', SK_SEQ = 'dj-seq';
 const ZONES = ['deck', 'hand', 'discard'];
 let zone = DECK.map(() => 'deck');
+let seqLen = DEFAULT_SEQ;
 
 try {
   const saved = JSON.parse(localStorage.getItem(SK) || 'null');
   if (Array.isArray(saved) && saved.length === DECK.length
       && saved.every(z => ZONES.includes(z))) zone = saved;
+  const n = parseInt(localStorage.getItem(SK_SEQ), 10);
+  if (SEQ_LENGTHS.includes(n)) seqLen = n;
 } catch {}
 
-const persist = () => { try { localStorage.setItem(SK, JSON.stringify(zone)); } catch {} };
+const persist = () => {
+  try {
+    localStorage.setItem(SK, JSON.stringify(zone));
+    localStorage.setItem(SK_SEQ, String(seqLen));
+  } catch {}
+};
 const idsIn = z => DECK.filter(c => zone[c.id] === z).map(c => c.id);
 
 // ── odds ─────────────────────────────────────────────────────────────────────
-// A Gamble succeeds if ANY three cards from (the three drawn + the whole hand)
-// make the rank — keeping a drawn card and swapping in a hand card are the same
-// choice from the sequence's point of view.
-function drawCombos() {
+// A Gamble succeeds if ANY sequence-length worth of cards from (those drawn +
+// the whole hand) makes the rank — keeping a drawn card and swapping in a hand
+// card are the same choice from the sequence's point of view.
+function drawCombos(len) {
   const deck = idsIn('deck'), discard = idsIn('discard');
-  if (deck.length >= 3) return combos(deck, 3);
+  if (deck.length >= len) return combos(deck, len);
   // Deck runs dry mid-draw: the discard pile is reshuffled and supplies the rest.
-  const need = 3 - deck.length;
+  const need = len - deck.length;
   if (discard.length < need) return null;
   return combos(discard, need).map(rest => deck.concat(rest));
 }
 
 function odds() {
-  const draws = drawCombos();
-  const hand = idsIn('hand');
+  const draws = drawCombos(seqLen);
+  const win = winners(seqLen);
+  let handMask = 0;
+  for (const id of idsIn('hand')) handMask |= 1 << id;
+
   const out = {};
   for (const r of RANKS) {
     if (!draws) { out[r.key] = null; continue; }
-    const wins = WINNERS[r.key];
+    const w = win[r.key];
     let hit = 0;
     for (const d of draws) {
-      const pool = new Set(hand);
-      for (const id of d) pool.add(id);
-      for (const t of wins) {
-        if (pool.has(t[0]) && pool.has(t[1]) && pool.has(t[2])) { hit++; break; }
+      let pool = handMask;
+      for (const id of d) pool |= 1 << id;
+      for (let i = 0; i < w.length; i++) {
+        if ((w[i] & pool) === w[i]) { hit++; break; }
       }
     }
     out[r.key] = { hit, total: draws.length };
@@ -397,6 +459,16 @@ for (const r of RANKS) {
   el.querySelector('.req').textContent = r.req;
   oddsEl.appendChild(el);
   rankEls[r.key] = el;
+}
+
+const seqEl = g('seq');
+for (const n of SEQ_LENGTHS) {
+  const b = document.createElement('button');
+  b.textContent = n;
+  b.dataset.n = n;
+  b.setAttribute('aria-label', `Draw ${n} cards`);
+  b.onclick = () => { seqLen = n; persist(); render(); };
+  seqEl.appendChild(b);
 }
 
 function cardEl(card) {
@@ -440,11 +512,21 @@ function renderTray(z) {
 function render() {
   for (const z of ZONES) renderTray(z);
 
+  for (const b of seqEl.children) {
+    b.setAttribute('aria-pressed', String(+b.dataset.n === seqLen));
+  }
+  // Army wants three Knights however long the sequence is; at length 2 that is
+  // simply out of reach, and the odds below will say so.
+  rankEls.army.querySelector('.req').textContent =
+    seqLen > 3 ? 'at least three Knights' : 'three Knights';
+  rankEls.color.querySelector('.req').textContent =
+    `all ${seqLen} cards in the same suit`;
+
   const o = odds();
   const short = o[RANKS[0].key] === null;
   g('warn').innerHTML = short
-    ? '<div class="warn">Fewer than three cards are available to draw, so no sequence can be ' +
-      'dealt. Move some cards out of your hand.</div>'
+    ? `<div class="warn">Fewer than ${seqLen} cards are available to draw, so no sequence can be ` +
+      'dealt. Move some cards out of your hand, or draw fewer.</div>'
     : '';
 
   for (const r of RANKS) {
