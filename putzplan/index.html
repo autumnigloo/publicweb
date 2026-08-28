@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Putzplan</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f0f13">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f0f13;
+  --panel: #1a1a24;
+  --line: #2a2a3a;
+  --field: #14141c;
+  --dim: #6a6a7e;
+  --text: #e0e0e0;
+  --accent: #3fbf9a;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100dvh;
+  padding: 0 0 3rem;
+  -webkit-text-size-adjust: 100%;
+}
+.wrap { max-width: 720px; margin: 0 auto; padding: 0 0.7rem; }
+
+header { padding: 1.3rem 0.2rem 0.9rem; }
+h1 { font-size: 1.5rem; line-height: 1.35; font-weight: 600; color: #fff; display: flex; align-items: center; gap: 0.55rem; }
+.sub { font-size: 0.82rem; color: var(--dim); margin-top: 0.3rem; line-height: 1.5; }
+
+.card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; padding: 0.85rem; margin-bottom: 0.8rem;
+}
+h2 {
+  font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: #b8b8cc; margin-bottom: 0.7rem;
+}
+
+/* ── Felder ──────────────────────────────────────────────────────────────── */
+input, select, button { font-family: inherit; font-size: 0.9rem; }
+input[type="text"], input[type="date"], input[type="number"], select {
+  background: var(--field); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--text); padding: 0.55rem 0.6rem; min-height: 2.75rem; width: 100%;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+select { appearance: none; -webkit-appearance: none; padding-right: 1.6rem;
+  background-image: linear-gradient(45deg, transparent 50%, #7a7a90 50%), linear-gradient(135deg, #7a7a90 50%, transparent 50%);
+  background-position: right 0.75rem center, right 0.5rem center;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+
+.btn {
+  background: #23232f; border: 1px solid var(--line); border-radius: 9px;
+  color: #c8c8dc; padding: 0.6rem 0.85rem; min-height: 2.75rem;
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.btn:active { background: #2c2c3c; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #06231b; font-weight: 600; }
+.btn.big { width: 100%; font-size: 1rem; font-weight: 600; min-height: 3.1rem; margin-top: 0.7rem; }
+.btn.danger { color: #d97070; border-color: #4a2626; background: #1e1416; }
+
+.icon-btn {
+  background: none; border: 1px solid transparent; border-radius: 8px;
+  color: #6a6a7e; width: 2.75rem; min-height: 2.75rem; flex: 0 0 auto;
+  cursor: pointer; font-size: 1rem; touch-action: manipulation;
+}
+.icon-btn:active { background: #2a2a38; }
+.icon-btn.del:hover { color: #e07070; }
+
+/* ── Listenzeilen ────────────────────────────────────────────────────────── */
+.row {
+  display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
+  padding: 0.45rem; margin-bottom: 0.4rem;
+  background: var(--field); border: 1px solid var(--line); border-radius: 9px;
+}
+.row .grow { flex: 1 1 8rem; min-width: 0; }
+.row input[type="text"] { background: transparent; border-color: transparent; padding-left: 0.35rem; }
+.row input[type="text"]:focus { background: var(--bg); border-color: var(--accent); }
+.row .meta { display: flex; gap: 0.4rem; align-items: center; flex: 1 1 100%; }
+.row .meta select { flex: 1 1 auto; }
+.minbox { display: flex; align-items: center; gap: 0.3rem; flex: 0 0 6.6rem; }
+.minbox input { text-align: right; }
+.minbox span { font-size: 0.78rem; color: var(--dim); }
+
+.addrow { display: flex; gap: 0.45rem; margin-top: 0.55rem; }
+.addrow input { flex: 1; }
+
+.empty-hint { font-size: 0.82rem; color: var(--dim); padding: 0.5rem 0.35rem; }
+
+.period { display: flex; gap: 0.5rem; }
+.period label { flex: 1; font-size: 0.75rem; color: var(--dim); display: flex; flex-direction: column; gap: 0.3rem; }
+.period label:last-child { flex: 0 0 6.5rem; }
+
+.notice {
+  font-size: 0.8rem; line-height: 1.5; border-radius: 9px;
+  padding: 0.55rem 0.7rem; margin-top: 0.6rem;
+  background: #2a2010; border: 1px solid #574318; color: #e0b060;
+}
+.notice:empty { display: none; }
+
+/* ── Plan ────────────────────────────────────────────────────────────────── */
+.planhead { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 1.4rem 0 0.7rem; padding: 0 0.2rem; }
+.planhead h2 { margin: 0; flex: 1; font-size: 0.95rem; text-transform: none; letter-spacing: 0; color: #fff; }
+.planbtns { display: flex; gap: 0.4rem; }
+.planbtns .btn { font-size: 0.8rem; padding: 0.5rem 0.65rem; }
+
+.bars { display: flex; flex-direction: column; gap: 0.35rem; }
+.brow { display: grid; grid-template-columns: 5.5rem 1fr auto; gap: 0.5rem; align-items: center; font-size: 0.82rem; }
+.bname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d0d0e0; }
+.bbar { height: 8px; border-radius: 4px; background: var(--field); overflow: hidden; }
+.bbar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.bval { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 0.78rem; }
+.bval small { color: #4a4a5c; }
+
+.week { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 0.75rem; margin-bottom: 0.7rem; }
+.week h3 { font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 0.6rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; }
+.week h3 .wdate { font-size: 0.72rem; font-weight: 400; color: var(--dim); }
+
+.prow {
+  display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
+  padding: 0.45rem 0; border-top: 1px solid #23232f;
+}
+.prow:first-of-type { border-top: none; }
+.ptask { flex: 1 1 9rem; min-width: 0; }
+.pname { display: block; font-size: 0.88rem; color: #e4e4f0; }
+.pfreq { display: block; font-size: 0.7rem; color: var(--dim); margin-top: 0.1rem; }
+.passign { display: flex; gap: 0.35rem; align-items: center; flex: 0 0 auto; }
+.passign select { width: 8.5rem; }
+.lock { background: none; border: 1px solid transparent; border-radius: 8px; width: 2.5rem; min-height: 2.75rem; cursor: pointer; font-size: 0.95rem; opacity: 0.22; filter: grayscale(1); touch-action: manipulation; }
+.lock.on { opacity: 1; filter: none; border-color: var(--accent); background: rgba(63, 191, 154, 0.12); }
+
+.week .none { font-size: 0.78rem; color: #4a4a5c; padding: 0.3rem 0; }
+
+details { font-size: 0.82rem; line-height: 1.6; color: #a8a8bc; }
+summary { cursor: pointer; color: #b8b8cc; font-weight: 600; }
+details p { margin-top: 0.5rem; }
+details b { color: #d8d8ea; }
+
+/* ── Druck ───────────────────────────────────────────────────────────────── */
+@media print {
+  body { background: #fff; color: #000; padding: 0; }
+  .no-print { display: none !important; }
+  .wrap { max-width: none; padding: 0; }
+  /* Panels verlieren ihren dunklen Grund, sonst steht schwarze Schrift auf Dunkelgrau. */
+  .card { background: none; border: 1px solid #999; }
+  #balance h2 { color: #000; }
+  .planhead { margin: 0 0 0.5rem; }
+  .planhead h2 { color: #000; }
+  .week { background: none; border: 1px solid #999; break-inside: avoid; page-break-inside: avoid; margin-bottom: 0.4rem; }
+  .week h3, .pname { color: #000; }
+  .week h3 .wdate, .pfreq { color: #555; }
+  .prow { border-top: 1px solid #ddd; }
+  .passign select {
+    appearance: none; -webkit-appearance: none; background: none; border: none;
+    color: #000; font-weight: 700; width: auto; min-height: 0; padding: 0; text-align: right;
+  }
+  .lock { display: none; }
+  .brow { font-size: 0.75rem; }
+  .bname, .bval { color: #000; }
+  .bbar { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="no-print">
+  <h1>🧹 Putzplan</h1>
+  <p class="sub">Personen und Tätigkeiten eintragen, Plan erstellen — danach lässt sich jede
+  Zuteilung von Hand ändern.</p>
+</header>
+
+<section class="card no-print">
+  <h2>Personen</h2>
+  <div id="people"></div>
+  <form class="addrow" id="add-person">
+    <input type="text" id="person-name" placeholder="Name" autocomplete="off" maxlength="40">
+    <button class="btn primary" type="submit">Hinzufügen</button>
+  </form>
+</section>
+
+<section class="card no-print">
+  <h2>Tätigkeiten</h2>
+  <div id="tasks"></div>
+  <form class="addrow" id="add-task">
+    <input type="text" id="task-name" placeholder="Tätigkeit" autocomplete="off" maxlength="60">
+    <button class="btn primary" type="submit">Hinzufügen</button>
+  </form>
+</section>
+
+<section class="card no-print">
+  <h2>Zeitraum</h2>
+  <div class="period">
+    <label>Erste Woche ab <input type="date" id="start"></label>
+    <label>Wochen <input type="number" id="weeks" min="1" max="26" step="1"></label>
+  </div>
+  <button class="btn primary big" id="generate">Putzplan erstellen</button>
+  <div class="notice" id="notice"></div>
+</section>
+
+<section id="plan-section" hidden>
+  <div class="planhead">
+    <h2 id="plan-title">Putzplan</h2>
+    <div class="planbtns no-print">
+      <button class="btn" id="regen" title="Neu verteilen, gesperrte Felder bleiben">Neu mischen</button>
+      <button class="btn" id="unlock">Sperren lösen</button>
+      <button class="btn" id="print">Drucken</button>
+    </div>
+  </div>
+  <div class="card" id="balance"></div>
+  <div id="plan"></div>
+</section>
+
+<section class="card no-print">
+  <details>
+    <summary>Wie der Plan verteilt wird</summary>
+    <p>Jede Tätigkeit bekommt einen <b>Aufwand in Minuten</b> und eine <b>Häufigkeit</b>. Daraus
+    ergibt sich, wie viel Arbeit pro Woche anfällt. Der Plan verteilt die Tätigkeiten so, dass
+    alle über den ganzen Zeitraum ungefähr gleich viele Minuten bekommen — und wechselt dabei
+    durch, damit nicht immer dieselbe Person dieselbe Arbeit erwischt.</p>
+    <p>Der <b>Anteil</b> einer Person gewichtet das: Bei <b>½</b> bekommt sie halb so viel wie
+    jemand mit <b>1</b>. <b>Pausiert</b> heißt, sie wird gar nicht eingeplant.</p>
+    <p>Tätigkeiten, die nur alle 2 oder 4 Wochen dran sind, werden automatisch auf verschiedene
+    Wochen verteilt, damit nicht alles in derselben Woche zusammenfällt.</p>
+    <p><b>Von Hand ändern:</b> In jeder Zeile lässt sich die zuständige Person umstellen. Wer von
+    Hand geändert wird, wird automatisch <b>gesperrt</b> (🔒) und bleibt beim nächsten
+    „Neu mischen“ so stehen. Über das Schloss lässt sich das wieder aufheben.</p>
+  </details>
+  <button class="btn danger" id="reset" style="margin-top:0.8rem">Alles zurücksetzen</button>
+</section>
+
+</div>
+
+<script>
+// ── Grunddaten ───────────────────────────────────────────────────────────────
+const $  = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Math.random().toString(36).slice(2, 9);
+
+const FREQS = [
+  { id: 'd',   label: 'täglich',       perWeek: 7, every: 1 },
+  { id: 'w3',  label: '3× pro Woche',  perWeek: 3, every: 1 },
+  { id: 'w2',  label: '2× pro Woche',  perWeek: 2, every: 1 },
+  { id: 'w1',  label: 'wöchentlich',   perWeek: 1, every: 1 },
+  { id: 'w14', label: 'alle 2 Wochen', perWeek: 1, every: 2 },
+  { id: 'm',   label: 'alle 4 Wochen', perWeek: 1, every: 4 },
+];
+const freqOf = id => FREQS.find(f => f.id === id) || FREQS[3];
+
+const SHARES = [
+  { v: 0,    label: 'pausiert' },
+  { v: 0.5,  label: 'Anteil ½' },
+  { v: 0.75, label: 'Anteil ¾' },
+  { v: 1,    label: 'Anteil 1' },
+  { v: 1.25, label: 'Anteil 1¼' },
+  { v: 1.5,  label: 'Anteil 1½' },
+];
+
+const DEFAULT_TASKS = [
+  { name: 'Müll rausbringen', freq: 'w2',  minutes: 5  },
+  { name: 'Küche putzen',     freq: 'w1',  minutes: 30 },
+  { name: 'Bad putzen',       freq: 'w1',  minutes: 30 },
+  { name: 'Staubsaugen',      freq: 'w1',  minutes: 25 },
+  { name: 'Boden wischen',    freq: 'w14', minutes: 25 },
+  { name: 'Fenster putzen',   freq: 'm',   minutes: 45 },
+];
+
+// Arbeitsminuten, die eine Tätigkeit in einer Woche kostet, in der sie dran ist.
+const weekLoad = t => t.minutes * freqOf(t.freq).perWeek;
+
+// ── Datum ────────────────────────────────────────────────────────────────────
+const isoDate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+function nextMonday() {
+  const d = new Date();
+  d.setDate(d.getDate() + ((1 - d.getDay() + 7) % 7));
+  return isoDate(d);
+}
+
+function isoWeek(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  return Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7);
+}
+
+function weekLabel(startISO, w) {
+  const s = new Date(startISO + 'T12:00:00');
+  if (isNaN(s)) return '';
+  s.setDate(s.getDate() + w * 7);
+  const e = new Date(s);
+  e.setDate(e.getDate() + 6);
+  const f = d => d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' });
+  return `KW ${isoWeek(s)} · ${f(s)} – ${f(e)}`;
+}
+
+function fmtMin(m) {
+  if (m < 60) return m + ' Min';
+  const h = Math.floor(m / 60), r = m % 60;
+  return r ? `${h} h ${r}` : `${h} h`;
+}
+
+// ── Zustand ──────────────────────────────────────────────────────────────────
+const SK = 'pp-state';
+let state = {
+  people: [],
+  tasks: DEFAULT_TASKS.map(t => ({ id: uid(), ...t })),
+  start: nextMonday(),
+  weeks: 4,
+  plan: null,
+};
+
+try {
+  const saved = JSON.parse(localStorage.getItem(SK) || 'null');
+  if (saved && Array.isArray(saved.people) && Array.isArray(saved.tasks)) {
+    state = Object.assign(state, saved);
+    state.people = saved.people.map(p => ({
+      id: p.id || uid(), name: String(p.name || ''),
+      share: typeof p.share === 'number' ? p.share : 1,
+    }));
+    state.tasks = saved.tasks.map(t => ({
+      id: t.id || uid(), name: String(t.name || ''),
+      freq: freqOf(t.freq).id, minutes: Math.max(1, parseInt(t.minutes, 10) || 15),
+    }));
+  }
+} catch {}
+
+const save = () => { try { localStorage.setItem(SK, JSON.stringify(state)); } catch {} };
+
+// ── Verteilung ───────────────────────────────────────────────────────────────
+// Tätigkeiten, die seltener als wöchentlich dran sind, werden über die Wochen
+// versetzt, damit nicht alles Seltene in derselben Woche zusammenkommt.
+function taskOffsets(tasks) {
+  const seen = {}, map = {};
+  for (const t of tasks) {
+    const e = freqOf(t.freq).every;
+    seen[e] = seen[e] || 0;
+    map[t.id] = seen[e]++ % e;
+  }
+  return map;
+}
+
+const dueIn = (t, w, offs) => w % freqOf(t.freq).every === (offs[t.id] || 0);
+
+function generate() {
+  const people = state.people.filter(p => p.share > 0);
+  const prev   = (state.plan && state.plan.cells) || {};
+  const offs   = taskOffsets(state.tasks);
+  const seed   = ((state.plan && state.plan.seed) || 0) + 1;
+
+  const cells = {};
+  const load  = {};
+  const times = {};      // Tätigkeit|Person -> wie oft schon gemacht
+  const last  = {};      // Tätigkeit|Person -> zuletzt in Woche
+  people.forEach(p => { load[p.id] = 0; });
+
+  const book = (tid, pid, w, add) => {
+    if (load[pid] === undefined) return;
+    load[pid] += add;
+    times[tid + '|' + pid] = (times[tid + '|' + pid] || 0) + 1;
+    last[tid + '|' + pid] = w;
+  };
+
+  for (let w = 0; w < state.weeks; w++) {
+    // Die aufwendigsten Tätigkeiten zuerst — sie bestimmen die Balance am stärksten.
+    const due = state.tasks.filter(t => dueIn(t, w, offs))
+                           .sort((a, b) => weekLoad(b) - weekLoad(a));
+    for (const t of due) {
+      const key = w + '|' + t.id;
+      const old = prev[key];
+      if (old && old.locked) {                     // von Hand gesetzt: unangetastet
+        cells[key] = { person: old.person || null, locked: true };
+        if (old.person) book(t.id, old.person, w, weekLoad(t));
+        continue;
+      }
+      if (!people.length) { cells[key] = { person: null, locked: false }; continue; }
+
+      const add  = weekLoad(t);
+      const cand = people.slice();
+      cand.push(...cand.splice(0, (seed + w) % cand.length));   // Startpunkt rotieren
+
+      cand.sort((a, b) => {
+        // Zuerst Fairness: wer nach dieser Aufgabe relativ am wenigsten hätte.
+        const la = (load[a.id] + add) / a.share, lb = (load[b.id] + add) / b.share;
+        if (Math.abs(la - lb) > 10) return la - lb;       // 10 Min Toleranz
+        // Bei annähernd gleicher Last: durchwechseln.
+        const ta = times[t.id + '|' + a.id] || 0, tb = times[t.id + '|' + b.id] || 0;
+        if (ta !== tb) return ta - tb;
+        return (last[t.id + '|' + a.id] ?? -99) - (last[t.id + '|' + b.id] ?? -99);
+      });
+
+      cells[key] = { person: cand[0].id, locked: false };
+      book(t.id, cand[0].id, w, add);
+    }
+  }
+
+  state.plan = { start: state.start, weeks: state.weeks, offsets: offs, cells, seed };
+}
+
+// Aufwand je Person aus dem tatsächlichen Plan — also inklusive Handänderungen.
+function balance() {
+  const load = {};
+  state.people.forEach(p => { load[p.id] = 0; });
+  if (!state.plan) return load;
+  for (const [key, cell] of Object.entries(state.plan.cells)) {
+    if (!cell.person || load[cell.person] === undefined) continue;
+    const t = state.tasks.find(x => x.id === key.split('|')[1]);
+    if (t) load[cell.person] += weekLoad(t);
+  }
+  return load;
+}
+
+// ── Darstellung ──────────────────────────────────────────────────────────────
+function renderPeople() {
+  const box = $('#people');
+  if (!state.people.length) {
+    box.innerHTML = '<p class="empty-hint">Noch keine Personen — unten eintragen.</p>';
+    return;
+  }
+  box.innerHTML = state.people.map(p => `
+    <div class="row" data-id="${p.id}">
+      <input type="text" class="grow p-name" value="${esc(p.name)}" aria-label="Name" maxlength="40">
+      <select class="p-share" style="flex:0 0 8rem" aria-label="Anteil von ${esc(p.name)}">
+        ${SHARES.map(s => `<option value="${s.v}"${s.v === p.share ? ' selected' : ''}>${s.label}</option>`).join('')}
+      </select>
+      <button class="icon-btn del" type="button" title="Entfernen" aria-label="${esc(p.name)} entfernen">✕</button>
+    </div>`).join('');
+}
+
+function renderTasks() {
+  const box = $('#tasks');
+  if (!state.tasks.length) {
+    box.innerHTML = '<p class="empty-hint">Noch keine Tätigkeiten — unten eintragen.</p>';
+    return;
+  }
+  box.innerHTML = state.tasks.map(t => `
+    <div class="row" data-id="${t.id}">
+      <input type="text" class="grow t-name" value="${esc(t.name)}" aria-label="Tätigkeit" maxlength="60">
+      <div class="meta">
+        <select class="t-freq" aria-label="Häufigkeit von ${esc(t.name)}">
+          ${FREQS.map(f => `<option value="${f.id}"${f.id === t.freq ? ' selected' : ''}>${f.label}</option>`).join('')}
+        </select>
+        <span class="minbox">
+          <input type="number" class="t-min" value="${t.minutes}" min="1" max="600" step="5"
+                 aria-label="Aufwand in Minuten"><span>Min</span>
+        </span>
+        <button class="icon-btn del" type="button" title="Entfernen" aria-label="${esc(t.name)} entfernen">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderBalance() {
+  if (!state.plan) return;
+  const load = balance();
+  const shown = state.people.filter(p => p.share > 0 || load[p.id]);
+  if (!shown.length) { $('#balance').innerHTML = ''; return; }
+  const max = Math.max(1, ...shown.map(p => load[p.id] || 0));
+  $('#balance').innerHTML =
+    '<h2>Aufwand pro Person</h2><div class="bars">' + shown.map(p => {
+      const m = load[p.id] || 0;
+      const per = Math.round(m / Math.max(1, state.plan.weeks));
+      return `<div class="brow">
+        <span class="bname">${esc(p.name)}</span>
+        <span class="bbar"><i style="width:${(m / max * 100).toFixed(1)}%"></i></span>
+        <span class="bval">${fmtMin(m)} <small>· Ø ${fmtMin(per)}/Wo</small></span>
+      </div>`;
+    }).join('') + '</div>';
+}
+
+function renderPlan() {
+  const sec = $('#plan-section');
+  if (!state.plan) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const p = state.plan;
+  $('#plan-title').textContent = `Putzplan · ${p.weeks} Woche${p.weeks === 1 ? '' : 'n'} ab ${
+    new Date(p.start + 'T12:00:00').toLocaleDateString('de-DE')}`;
+
+  const opts = cur => '<option value="">— offen —</option>' + state.people.map(pe =>
+    `<option value="${pe.id}"${cur === pe.id ? ' selected' : ''}>${esc(pe.name)}</option>`).join('');
+
+  let html = '';
+  for (let w = 0; w < p.weeks; w++) {
+    const due = state.tasks.filter(t => dueIn(t, w, p.offsets));
+    html += `<div class="week"><h3>Woche ${w + 1}<span class="wdate">${esc(weekLabel(p.start, w))}</span></h3>`;
+    html += due.length ? due.map(t => {
+      const cell = p.cells[w + '|' + t.id] || { person: null, locked: false };
+      return `<div class="prow" data-key="${w}|${t.id}">
+        <span class="ptask">
+          <span class="pname">${esc(t.name)}</span>
+          <span class="pfreq">${esc(freqOf(t.freq).label)} · ${t.minutes} Min</span>
+        </span>
+        <span class="passign">
+          <select class="p-sel" aria-label="Zuständig für ${esc(t.name)} in Woche ${w + 1}">${opts(cell.person)}</select>
+          <button class="lock no-print${cell.locked ? ' on' : ''}" type="button"
+                  aria-pressed="${!!cell.locked}" title="${cell.locked ? 'Gesperrt — bleibt beim Neu mischen' : 'Nicht gesperrt'}">${cell.locked ? '🔒' : '🔓'}</button>
+        </span>
+      </div>`;
+    }).join('') : '<p class="none">Diese Woche ist nichts fällig.</p>';
+    html += '</div>';
+  }
+  $('#plan').innerHTML = html;
+  renderBalance();
+}
+
+function renderNotice() {
+  const n = $('#notice');
+  const active = state.people.filter(p => p.share > 0);
+  if (!active.length)      n.textContent = 'Für einen Plan braucht es mindestens eine Person, die nicht pausiert ist.';
+  else if (!state.tasks.length) n.textContent = 'Für einen Plan braucht es mindestens eine Tätigkeit.';
+  else if (state.plan && (state.plan.weeks !== state.weeks || state.plan.start !== state.start))
+    n.textContent = 'Zeitraum geändert — der Plan unten zeigt noch den alten. „Putzplan erstellen“ übernimmt ihn.';
+  else n.textContent = '';
+}
+
+function renderAll() { renderPeople(); renderTasks(); renderPlan(); renderNotice(); }
+
+// ── Eingaben ─────────────────────────────────────────────────────────────────
+$('#add-person').addEventListener('submit', e => {
+  e.preventDefault();
+  const inp = $('#person-name'), name = inp.value.trim();
+  if (!name) return;
+  state.people.push({ id: uid(), name, share: 1 });
+  inp.value = '';
+  save(); renderPeople(); renderNotice(); renderBalance();
+});
+
+$('#add-task').addEventListener('submit', e => {
+  e.preventDefault();
+  const inp = $('#task-name'), name = inp.value.trim();
+  if (!name) return;
+  state.tasks.push({ id: uid(), name, freq: 'w1', minutes: 20 });
+  inp.value = '';
+  save(); renderTasks(); renderNotice();
+});
+
+$('#people').addEventListener('input', e => {
+  const row = e.target.closest('.row'); if (!row) return;
+  const p = state.people.find(x => x.id === row.dataset.id); if (!p) return;
+  if (e.target.classList.contains('p-name'))  p.name = e.target.value;
+  if (e.target.classList.contains('p-share')) p.share = parseFloat(e.target.value);
+  save(); renderNotice(); renderPlan();
+});
+
+$('#people').addEventListener('click', e => {
+  if (!e.target.closest('.del')) return;
+  const row = e.target.closest('.row');
+  state.people = state.people.filter(x => x.id !== row.dataset.id);
+  save(); renderPeople(); renderNotice(); renderPlan();
+});
+
+$('#tasks').addEventListener('input', e => {
+  const row = e.target.closest('.row'); if (!row) return;
+  const t = state.tasks.find(x => x.id === row.dataset.id); if (!t) return;
+  if (e.target.classList.contains('t-name')) t.name = e.target.value;
+  if (e.target.classList.contains('t-freq')) t.freq = e.target.value;
+  if (e.target.classList.contains('t-min'))  t.minutes = Math.max(1, parseInt(e.target.value, 10) || 1);
+  save(); renderPlan();
+});
+
+$('#tasks').addEventListener('click', e => {
+  if (!e.target.closest('.del')) return;
+  const row = e.target.closest('.row');
+  state.tasks = state.tasks.filter(x => x.id !== row.dataset.id);
+  save(); renderTasks(); renderNotice(); renderPlan();
+});
+
+$('#start').addEventListener('change', e => { state.start = e.target.value || nextMonday(); save(); renderNotice(); });
+$('#weeks').addEventListener('change', e => {
+  state.weeks = Math.min(26, Math.max(1, parseInt(e.target.value, 10) || 4));
+  e.target.value = state.weeks;
+  save(); renderNotice();
+});
+
+// ── Plan erstellen und ändern ────────────────────────────────────────────────
+function build() {
+  if (!state.people.filter(p => p.share > 0).length || !state.tasks.length) { renderNotice(); return; }
+  generate(); save(); renderAll();
+  $('#plan-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+$('#generate').addEventListener('click', build);
+$('#regen').addEventListener('click', build);
+
+$('#unlock').addEventListener('click', () => {
+  if (!state.plan) return;
+  for (const c of Object.values(state.plan.cells)) c.locked = false;
+  save(); renderPlan();
+});
+
+$('#print').addEventListener('click', () => window.print());
+
+$('#reset').addEventListener('click', () => {
+  if (!confirm('Personen, Tätigkeiten und Plan wirklich löschen?')) return;
+  try { localStorage.removeItem(SK); } catch {}
+  location.reload();
+});
+
+// Handänderung: Person umstellen sperrt das Feld, damit sie das nächste
+// „Neu mischen“ übersteht.
+$('#plan').addEventListener('change', e => {
+  const sel = e.target.closest('.p-sel'); if (!sel) return;
+  const row = sel.closest('.prow');
+  const cell = state.plan.cells[row.dataset.key] || (state.plan.cells[row.dataset.key] = { person: null, locked: false });
+  cell.person = sel.value || null;
+  cell.locked = true;
+  const lock = row.querySelector('.lock');
+  lock.classList.add('on');
+  lock.textContent = '🔒';
+  lock.setAttribute('aria-pressed', 'true');
+  lock.title = 'Gesperrt — bleibt beim Neu mischen';
+  save(); renderBalance();
+});
+
+$('#plan').addEventListener('click', e => {
+  const btn = e.target.closest('.lock'); if (!btn) return;
+  const row = btn.closest('.prow');
+  const cell = state.plan.cells[row.dataset.key] || (state.plan.cells[row.dataset.key] = { person: null, locked: false });
+  cell.locked = !cell.locked;
+  btn.classList.toggle('on', cell.locked);
+  btn.textContent = cell.locked ? '🔒' : '🔓';
+  btn.setAttribute('aria-pressed', String(cell.locked));
+  btn.title = cell.locked ? 'Gesperrt — bleibt beim Neu mischen' : 'Nicht gesperrt';
+  save();
+});
+
+// ── PWA ──────────────────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+$('#start').value = state.start;
+$('#weeks').value = state.weeks;
+renderAll();
+</script>
+</body>
+</html>
