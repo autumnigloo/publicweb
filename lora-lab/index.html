@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>LoRA Lab</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f13; --surface: #1a1a22; --s2: #14141b; --border: #2a2a38;
+    --text: #e6e6ee; --muted: #8a8a9a; --dim: #5a5a6a;
+    --series-1: #3987e5;   /* loss curve, "inside the rank budget" */
+    --series-2: #d95926;   /* trainable factors */
+    --pos: #e66767;        /* diverging + arm */
+    --neg: #5598e7;        /* diverging - arm */
+    --zero: #23232d;       /* diverging midpoint: reads as "nothing" */
+    --good: #0ca30c; --critical: #d03b3b;
+  }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    padding: max(14px, env(safe-area-inset-top)) 12px max(28px, env(safe-area-inset-bottom));
+    max-width: 940px; margin: 0 auto; line-height: 1.5;
+  }
+  h1 { font-size: 1.3rem; font-weight: 600; letter-spacing: 0.04em; }
+  header p { color: var(--muted); font-size: 0.82rem; margin-top: 6px; max-width: 68ch; }
+  header p b { color: var(--text); font-weight: 600; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 13px 14px; margin-top: 12px;
+  }
+  .card > h2 {
+    font-size: 0.7rem; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; margin-bottom: 10px;
+  }
+  .card > h2 .sub { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--dim); margin-left: 6px; }
+
+  /* ---- stat tiles ---- */
+  #stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; margin-top: 12px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 9px 11px; }
+  .stat .lab { font-size: 0.63rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .stat .val { font-size: 1.32rem; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .stat .note { font-size: 0.68rem; color: var(--dim); margin-top: 1px; }
+  .stat.hl .val { color: var(--series-1); }
+  .stat.warn .val { color: var(--critical); }
+  .stat.okv .val { color: var(--good); }
+
+  /* ---- controls ---- */
+  .ctl { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 11px 16px; }
+  .ctl label { display: block; font-size: 0.72rem; color: var(--muted); margin-bottom: 5px; }
+  .ctl label b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 700; }
+  .ctl input[type=range] { width: 100%; accent-color: var(--series-1); height: 18px; cursor: pointer; }
+  .btnrow { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
+  button {
+    background: var(--s2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 7px 15px; font-size: 0.79rem; cursor: pointer;
+    font-family: inherit; transition: background .15s, border-color .15s;
+  }
+  button:hover { background: #22222e; border-color: #44445c; }
+  button.primary { background: #1c3f6b; border-color: #2f6199; color: #dce9fb; }
+  button.primary:hover { background: #24507f; }
+
+  /* ---- matrix pipeline ---- */
+  /* The equation must never wrap — a stranded term stops reading as an equation.
+     It scrolls inside its own box instead, so the page itself never scrolls sideways. */
+  #pipe {
+    display: flex; align-items: center; justify-content: flex-start;
+    gap: 9px; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px;
+  }
+  #pipe > * { flex: 0 0 auto; }
+  #pipe::after { content: ''; flex: 1 0 0; }
+  #pipe::before { content: ''; flex: 1 0 0; }
+  .mwrap { text-align: center; }
+  .mtitle { font-size: 0.72rem; font-weight: 600; margin-bottom: 1px; white-space: nowrap; }
+  .msub { font-size: 0.62rem; color: var(--dim); margin-bottom: 9px; height: 1.1em; white-space: nowrap; }
+  .grid { display: grid; gap: 2px; margin: 0 auto; }
+  .grid i {
+    display: block; border-radius: 2px; cursor: crosshair;
+    transition: background .12s linear;
+  }
+  .grid.frozen { outline: 1px dashed #3a3a4a; outline-offset: 4px; }
+  .grid.train  { outline: 1px solid var(--series-2); outline-offset: 4px; }
+  .op { font-size: 1.15rem; color: var(--muted); padding: 0 1px; align-self: center; margin-top: 12px; }
+  .tag {
+    display: inline-block; margin-top: 9px; font-size: 0.58rem; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 1px 6px; border-radius: 999px; font-weight: 700;
+  }
+  .tag.frozen { background: #23232e; color: var(--dim); }
+  .tag.train { background: #3a1e10; color: #f0a06f; }
+
+  /* ---- charts ---- */
+  .chartbox { position: relative; }
+  canvas { display: block; width: 100%; }
+  #tip {
+    position: fixed; pointer-events: none; z-index: 50; opacity: 0; transition: opacity .1s;
+    background: #05050a; border: 1px solid #3a3a4c; border-radius: 7px;
+    padding: 6px 9px; font-size: 0.72rem; color: var(--text);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0,0,0,.6);
+  }
+  #tip .k { color: var(--muted); }
+
+  /* ---- spectrum ---- */
+  #spec { display: flex; align-items: flex-end; gap: 6px; height: 92px; justify-content: flex-start; }
+  .sbar { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; cursor: pointer; }
+  .sbar { max-width: 78px; }
+  .sbar .fill { border-radius: 4px 4px 0 0; min-height: 3px; transition: height .2s, background .2s; }
+  .sbar .idx { font-size: 0.6rem; color: var(--dim); text-align: center; margin-top: 3px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.7rem; color: var(--muted); margin-top: 9px; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .swatch { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+
+  .note { font-size: 0.76rem; color: var(--muted); margin-top: 10px; line-height: 1.6; }
+  .note b { color: var(--text); font-weight: 600; }
+  .note code, code {
+    background: #23232e; padding: 1px 5px; border-radius: 4px;
+    font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; color: #c8c8e0;
+  }
+  #banner {
+    display: none; margin-top: 12px; padding: 9px 12px; border-radius: 9px;
+    background: #3a1616; border: 1px solid #6a2a2a; color: #f0b8b8; font-size: 0.78rem;
+  }
+  #banner.on { display: block; }
+  table.tv { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 8px; }
+  table.tv th, table.tv td { text-align: right; padding: 3px 6px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  table.tv th { color: var(--muted); font-weight: 600; }
+  table.tv td:first-child, table.tv th:first-child { text-align: left; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; font-size: 0.74rem; color: var(--muted); }
+  summary:hover { color: var(--text); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>LoRA Lab</h1>
+  <p>
+    A <b>toy 8&times;8 model</b> that does nothing useful, fine-tuned in your browser with real gradient
+    descent. The pretrained weights <code>W₀</code> stay frozen; training only touches the two thin
+    factors <code>B</code> and <code>A</code>. Watch the update <code>ΔW = (α/r)·BA</code> build itself
+    out of nothing, and find the rank at which it <em>can't</em> keep up.
+  </p>
+</header>
+
+<div id="stats">
+  <div class="stat"><div class="lab">Trainable params</div><div class="val" id="s-par">32</div><div class="note" id="s-parn">vs 64 full · r(d+k)</div></div>
+  <div class="stat hl"><div class="lab">Loss</div><div class="val" id="s-loss">1.000</div><div class="note">fraction of ΔW* unlearned</div></div>
+  <div class="stat"><div class="lab">Rank-r floor</div><div class="val" id="s-floor">0.168</div><div class="note" id="s-floorn">best rank-2 can ever do</div></div>
+  <div class="stat"><div class="lab">Step</div><div class="val" id="s-step">0</div><div class="note" id="s-status">idle</div></div>
+</div>
+
+<div id="banner"></div>
+
+<div class="card">
+  <h2>Controls</h2>
+  <div class="ctl">
+    <div>
+      <label>LoRA rank <b id="l-r">2</b> <span style="color:var(--dim)">— the budget you choose</span></label>
+      <input type="range" id="i-r" min="1" max="8" step="1" value="2">
+    </div>
+    <div>
+      <label>True rank of the task <b id="l-tr">3</b> <span style="color:var(--dim)">— what the job needs</span></label>
+      <input type="range" id="i-tr" min="1" max="8" step="1" value="3">
+    </div>
+    <div>
+      <label>α (alpha) <b id="l-a">4</b> <span style="color:var(--dim)">— scale is α/r = <b id="l-sc">2.00</b></span></label>
+      <input type="range" id="i-a" min="1" max="16" step="1" value="4">
+    </div>
+    <div>
+      <label>Learning rate <b id="l-lr">0.050</b></label>
+      <input type="range" id="i-lr" min="1" max="60" step="1" value="25">
+    </div>
+  </div>
+  <div class="btnrow">
+    <button class="primary" id="b-play">▶ Train</button>
+    <button id="b-step">Step ×20</button>
+    <button id="b-reset">Reset adapter</button>
+    <button id="b-seed">New random task</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>The model <span class="sub">W = W₀ + (α/r)·B·A &nbsp;— hover any cell for its value</span></h2>
+  <div id="pipe">
+    <div class="mwrap">
+      <div class="mtitle">W₀</div><div class="msub">8 × 8 pretrained</div>
+      <div class="grid frozen" id="g-w0"></div>
+      <span class="tag frozen">🔒 frozen · 64</span>
+    </div>
+    <div class="op">+</div>
+    <div class="mwrap">
+      <div class="mtitle">B</div><div class="msub" id="sub-b">8 × 2</div>
+      <div class="grid train" id="g-b"></div>
+      <span class="tag train">trainable · <b id="nb">16</b></span>
+    </div>
+    <div class="op">×</div>
+    <div class="mwrap">
+      <div class="mtitle">A</div><div class="msub" id="sub-a">2 × 8</div>
+      <div class="grid train" id="g-a"></div>
+      <span class="tag train">trainable · <b id="na">16</b></span>
+    </div>
+    <div class="op">=</div>
+    <div class="mwrap">
+      <div class="mtitle">ΔW</div><div class="msub">the update</div>
+      <div class="grid" id="g-dw"></div>
+      <span class="tag frozen">rank ≤ <b id="rr">2</b></span>
+    </div>
+    <div class="op">→</div>
+    <div class="mwrap">
+      <div class="mtitle">W</div><div class="msub">what runs</div>
+      <div class="grid" id="g-w"></div>
+      <span class="tag frozen">effective</span>
+    </div>
+  </div>
+  <div class="legend">
+    <span><span class="swatch" style="background:var(--neg)"></span>negative</span>
+    <span><span class="swatch" style="background:var(--zero);border:1px solid #3a3a48"></span>zero</span>
+    <span><span class="swatch" style="background:var(--pos)"></span>positive</span>
+    <span style="color:var(--dim)">W₀, ΔW and W share one colour scale, so ΔW looks as small as it really is.</span>
+  </div>
+  <div class="note" id="initnote">
+    <b>B starts at exactly zero</b>, so ΔW starts at zero and the fine-tuned model begins life
+    behaving <em>identically</em> to the pretrained one. That is the whole trick: LoRA is a no-op at
+    initialisation, so you can never make the model worse by attaching an untrained adapter.
+  </div>
+</div>
+
+<div class="card">
+  <h2>Training loss <span class="sub">and the floor that rank r cannot cross</span></h2>
+  <div class="chartbox"><canvas id="cv" height="300"></canvas></div>
+  <div class="legend">
+    <span><span class="swatch" style="background:var(--series-1)"></span>loss</span>
+    <span><span class="swatch" style="background:var(--muted);height:2px;border-radius:1px"></span>rank-r floor (theory)</span>
+  </div>
+  <div class="note" id="lossnote"></div>
+</div>
+
+<div class="card">
+  <h2>What the task actually demands <span class="sub">singular values of the ideal update ΔW*</span></h2>
+  <div id="spec"></div>
+  <div class="legend">
+    <span><span class="swatch" style="background:var(--series-1)"></span>inside your rank budget — learnable</span>
+    <span><span class="swatch" style="background:#3a3a48"></span>beyond it — permanently lost</span>
+  </div>
+  <div class="note">
+    The perfect update <code>ΔW*</code> breaks into 8 independent directions of decreasing importance.
+    A rank-<b id="rr2">2</b> adapter can represent the first <b id="rr3">2</b> of them and no more.
+    The squared lengths of the greyed-out bars are <em>exactly</em> the floor drawn on the loss chart —
+    that is not an empirical observation, it's the Eckart–Young theorem, and the training run above
+    lands on it to five decimal places.
+  </div>
+  <details>
+    <summary>Show the numbers as a table</summary>
+    <table class="tv" id="tv"><thead><tr><th>Direction</th><th>σ</th><th>σ²</th><th>Status</th></tr></thead><tbody></tbody></table>
+  </details>
+</div>
+
+<div class="card">
+  <h2>Does this actually save anything?</h2>
+  <div class="note" id="econ"></div>
+</div>
+
+<div id="tip"></div>
+
+<script>
+"use strict";
+const D = 8, K = 8, N = 32;
+
+/* ---------------- matrix helpers (row-major flat) ---------------- */
+function mm(A, B, n, m, p) {
+  const C = new Float64Array(n * p);
+  for (let i = 0; i < n; i++)
+    for (let t = 0; t < m; t++) {
+      const a = A[i * m + t]; if (a === 0) continue;
+      for (let j = 0; j < p; j++) C[i * p + j] += a * B[t * p + j];
+    }
+  return C;
+}
+function mmT(A, B, n, m, p) {           // A(n×m) · B(p×m)ᵀ → n×p
+  const C = new Float64Array(n * p);
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < p; j++) {
+      let s = 0;
+      for (let t = 0; t < m; t++) s += A[i * m + t] * B[j * m + t];
+      C[i * p + j] = s;
+    }
+  return C;
+}
+function mTm(A, B, n, m, p) {           // A(n×m)ᵀ · B(n×p) → m×p
+  const C = new Float64Array(m * p);
+  for (let t = 0; t < n; t++)
+    for (let i = 0; i < m; i++) {
+      const a = A[t * m + i]; if (a === 0) continue;
+      for (let j = 0; j < p; j++) C[i * p + j] += a * B[t * p + j];
+    }
+  return C;
+}
+function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+function gauss(r) { let u = 0, v = 0; while (u === 0) u = r(); while (v === 0) v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+function orthoRows(n, L, rand) {        // n orthonormal rows of length L
+  const M = new Float64Array(n * L);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < L; j++) M[i * L + j] = gauss(rand);
+    for (let p = 0; p < i; p++) {
+      let d = 0; for (let j = 0; j < L; j++) d += M[i * L + j] * M[p * L + j];
+      for (let j = 0; j < L; j++) M[i * L + j] -= d * M[p * L + j];
+    }
+    let nr = 0; for (let j = 0; j < L; j++) nr += M[i * L + j] ** 2;
+    nr = Math.sqrt(nr);
+    for (let j = 0; j < L; j++) M[i * L + j] /= nr;
+  }
+  return M;
+}
+
+/* ---------------- OKLab colour interpolation (no muddy sRGB lerps) ---------------- */
+const f2s = v => v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+const s2f = v => v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+function hex2ok(h) {
+  const r = s2f(parseInt(h.slice(1, 3), 16) / 255),
+        g = s2f(parseInt(h.slice(3, 5), 16) / 255),
+        b = s2f(parseInt(h.slice(5, 7), 16) / 255);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b),
+        m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b),
+        s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+          1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+          0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s];
+}
+function ok2css(L, A, B) {
+  const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3,
+        m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3,
+        s = (L - 0.0894841775 * A - 1.2914855480 * B) ** 3;
+  const cl = v => Math.max(0, Math.min(255, Math.round(f2s(v) * 255)));
+  return `rgb(${cl(4.0767416621*l-3.3077115913*m+0.2309699292*s)},${cl(-1.2684380046*l+2.6097574011*m-0.3413193965*s)},${cl(-0.0041960863*l-0.7034186147*m+1.7076147010*s)})`;
+}
+const OK_NEG = hex2ok('#5598e7'), OK_ZERO = hex2ok('#23232d'), OK_POS = hex2ok('#e66767');
+function diverge(v, max) {              // v in [-max, max] → colour
+  let t = max > 1e-12 ? Math.max(-1, Math.min(1, v / max)) : 0;
+  const e = Math.sign(t) * Math.pow(Math.abs(t), 0.72);   // slight gamma so small values stay visible
+  const p = e < 0 ? OK_NEG : OK_POS, a = Math.abs(e);
+  return ok2css(OK_ZERO[0] + (p[0] - OK_ZERO[0]) * a,
+                OK_ZERO[1] + (p[1] - OK_ZERO[1]) * a,
+                OK_ZERO[2] + (p[2] - OK_ZERO[2]) * a);
+}
+
+/* ---------------- the world (frozen model + the task) ---------------- */
+let world = null, st = null, hist = [], stepN = 0, playing = false, diverged = false;
+let seed = 7, r = 2, taskRank = 3, alpha = 4, lr = 0.05;
+const DECAY = 0.75;
+
+function buildWorld() {
+  const rand = rng(seed);
+  const W0 = new Float64Array(D * K);
+  for (let i = 0; i < D * K; i++) W0[i] = gauss(rand) * 0.45;
+
+  // Build ΔW* directly from its SVD, so its spectrum is known exactly rather than estimated.
+  const U = orthoRows(D, D, rand), V = orthoRows(K, K, rand);
+  const sv = new Float64Array(D);
+  for (let i = 0; i < taskRank; i++) sv[i] = Math.pow(DECAY, i);
+  let ss = 0; for (let i = 0; i < D; i++) ss += sv[i] ** 2;
+  const inv = 1 / Math.sqrt(ss);
+  for (let i = 0; i < D; i++) sv[i] *= inv;              // Σσ² = 1 ⇒ initial loss is exactly 1
+  const dWt = new Float64Array(D * K);
+  for (let c = 0; c < D; c++) {
+    if (sv[c] === 0) continue;
+    for (let i = 0; i < D; i++)
+      for (let j = 0; j < K; j++) dWt[i * K + j] += sv[c] * U[c * D + i] * V[c * K + j];
+  }
+  // Whitened inputs: (1/N)XXᵀ = I exactly, so the data loss equals ‖ΔW − ΔW*‖²_F.
+  const Xr = orthoRows(K, N, rand), X = new Float64Array(K * N), sq = Math.sqrt(N);
+  for (let i = 0; i < K * N; i++) X[i] = Xr[i] * sq;
+  const Ws = new Float64Array(D * K);
+  for (let i = 0; i < D * K; i++) Ws[i] = W0[i] + dWt[i];
+  let mx = 0; for (let i = 0; i < D * K; i++) mx = Math.max(mx, Math.abs(W0[i]), Math.abs(Ws[i]));
+  world = { W0, dWt, sv, X, Ystar: mm(Ws, X, D, K, N), scale: mx };
+}
+function floorAt(rr) { let s = 0; for (let i = rr; i < D; i++) s += world.sv[i] ** 2; return s; }
+function resetAdapter() {
+  const rand = rng(seed + 999);
+  const A = new Float64Array(r * K);
+  for (let i = 0; i < r * K; i++) A[i] = gauss(rand) / Math.sqrt(K);
+  st = { A, B: new Float64Array(D * r) };   // B = 0 ⇒ ΔW = 0 ⇒ adapter is a no-op at init
+  hist = []; stepN = 0; diverged = false;
+}
+const scaleF = () => alpha / r;
+function deltaW() {
+  const dW = mm(st.B, st.A, D, r, K), s = scaleF();
+  for (let i = 0; i < D * K; i++) dW[i] *= s;
+  return dW;
+}
+function trainStep() {
+  const s = scaleF(), dW = deltaW(), W = new Float64Array(D * K);
+  for (let i = 0; i < D * K; i++) W[i] = world.W0[i] + dW[i];
+  const Y = mm(W, world.X, D, K, N), E = new Float64Array(D * N);
+  let loss = 0;
+  for (let i = 0; i < D * N; i++) { const e = Y[i] - world.Ystar[i]; E[i] = e; loss += e * e; }
+  loss /= N;
+  const G = mmT(E, world.X, D, N, K);
+  for (let i = 0; i < D * K; i++) G[i] *= 2 / N;
+  const gB = mmT(G, st.A, D, K, r), gA = mTm(st.B, G, D, r, K);
+  for (let i = 0; i < D * r; i++) st.B[i] -= lr * s * gB[i];
+  for (let i = 0; i < r * K; i++) st.A[i] -= lr * s * gA[i];
+  stepN++;
+  hist.push(loss);
+  if (hist.length > 4000) hist.shift();
+  if (!isFinite(loss) || loss > 1e3) { diverged = true; playing = false; }
+  return loss;
+}
+
+/* ---------------- grid rendering ---------------- */
+function buildGrid(el, rows, cols, cell) {
+  el.style.gridTemplateColumns = `repeat(${cols}, ${cell}px)`;
+  el.innerHTML = '';
+  for (let i = 0; i < rows * cols; i++) {
+    const c = document.createElement('i');
+    c.style.width = cell + 'px'; c.style.height = cell + 'px';
+    el.appendChild(c);
+  }
+}
+function paint(el, M, rows, cols, max, name) {
+  const ch = el.children;
+  for (let i = 0; i < rows * cols; i++) {
+    ch[i].style.background = diverge(M[i], max);
+    ch[i].dataset.v = M[i].toFixed(4);
+    ch[i].dataset.n = `${name}[${Math.floor(i / cols)},${i % cols}]`;
+  }
+}
+const CELL = 17;
+function layout() {
+  buildGrid(g_w0, D, K, CELL); buildGrid(g_dw, D, K, CELL); buildGrid(g_w, D, K, CELL);
+  buildGrid(g_b, D, r, CELL);  buildGrid(g_a, r, K, CELL);
+}
+
+/* ---------------- charts ---------------- */
+const cv = document.getElementById('cv'), cx = cv.getContext('2d');
+let cvW = 0, cvH = 0, hoverI = -1;
+function sizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  cvW = cv.clientWidth; cvH = 300;
+  cv.width = cvW * dpr; cv.height = cvH * dpr;
+  cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function drawLoss() {
+  const PL = 44, PR = 12, PT = 12, PB = 26;
+  const w = cvW - PL - PR, h = cvH - PT - PB;
+  cx.clearRect(0, 0, cvW, cvH);
+  const fl = floorAt(r);
+  const yMax = 1.05;
+  const X = i => PL + (hist.length <= 1 ? 0 : (i / (hist.length - 1)) * w);
+  const Y = v => PT + h - (Math.max(0, Math.min(yMax, v)) / yMax) * h;
+
+  cx.strokeStyle = '#24242f'; cx.lineWidth = 1;
+  cx.fillStyle = '#8a8a9a'; cx.font = '11px system-ui'; cx.textAlign = 'right';
+  for (let t = 0; t <= 5; t++) {
+    const v = (yMax / 5) * t, y = Y(v);
+    cx.beginPath(); cx.moveTo(PL, y); cx.lineTo(PL + w, y); cx.stroke();
+    cx.fillText(v.toFixed(1), PL - 7, y + 4);
+  }
+  cx.textAlign = 'center';
+  cx.fillText('training step →', PL + w / 2, cvH - 6);
+
+  // the floor: a reference line, deliberately recessive
+  if (fl > 1e-9) {
+    cx.save(); cx.setLineDash([5, 4]); cx.strokeStyle = '#8a8a9a'; cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(PL, Y(fl)); cx.lineTo(PL + w, Y(fl)); cx.stroke(); cx.restore();
+    cx.fillStyle = '#8a8a9a'; cx.textAlign = 'left'; cx.font = '11px system-ui';
+    const ly = Y(fl) - 6 < PT + 10 ? Y(fl) + 14 : Y(fl) - 6;
+    cx.fillText(`rank-${r} floor ${fl.toFixed(3)}`, PL + 6, ly);
+  }
+  if (hist.length > 1) {
+    cx.strokeStyle = '#3987e5'; cx.lineWidth = 2;
+    cx.lineJoin = 'round'; cx.beginPath();
+    for (let i = 0; i < hist.length; i++) {
+      const y = Y(hist[i]);
+      i ? cx.lineTo(X(i), y) : cx.moveTo(X(i), y);
+    }
+    cx.stroke();
+  }
+  if (hoverI >= 0 && hoverI < hist.length) {
+    const x = X(hoverI), y = Y(hist[hoverI]);
+    cx.strokeStyle = '#4a4a60'; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(x, PT); cx.lineTo(x, PT + h); cx.stroke();
+    cx.fillStyle = '#3987e5'; cx.strokeStyle = '#0f0f13'; cx.lineWidth = 2;
+    cx.beginPath(); cx.arc(x, y, 4.5, 0, 7); cx.fill(); cx.stroke();
+  }
+}
+function drawSpec() {
+  const el = document.getElementById('spec');
+  const mx = Math.max(...world.sv, 1e-9);
+  el.innerHTML = '';
+  for (let i = 0; i < D; i++) {
+    const b = document.createElement('div'); b.className = 'sbar';
+    const f = document.createElement('div'); f.className = 'fill';
+    const inb = i < r;
+    f.style.height = Math.max(2, (world.sv[i] / mx) * 74) + 'px';
+    f.style.background = world.sv[i] < 1e-9 ? '#20202a' : (inb ? '#3987e5' : '#3a3a48');
+    const lab = document.createElement('div'); lab.className = 'idx'; lab.textContent = i + 1;
+    b.appendChild(f); b.appendChild(lab);
+    b.dataset.n = `direction ${i + 1}`;
+    b.dataset.v = `σ = ${world.sv[i].toFixed(4)} · σ² = ${(world.sv[i] ** 2).toFixed(4)} · ${world.sv[i] < 1e-9 ? 'unused by this task' : inb ? 'inside budget' : 'beyond budget'}`;
+    el.appendChild(b);
+  }
+  const tb = document.querySelector('#tv tbody'); tb.innerHTML = '';
+  for (let i = 0; i < D; i++) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${i + 1}</td><td>${world.sv[i].toFixed(4)}</td><td>${(world.sv[i] ** 2).toFixed(4)}</td>` +
+      `<td>${world.sv[i] < 1e-9 ? '—' : i < r ? 'learnable' : 'lost'}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+/* ---------------- tooltip ---------------- */
+const tip = document.getElementById('tip');
+function showTip(e, html) {
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const pad = 14;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  const rc = tip.getBoundingClientRect();
+  if (x + rc.width > innerWidth - 6) x = e.clientX - rc.width - pad;
+  if (y + rc.height > innerHeight - 6) y = e.clientY - rc.height - pad;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+const hideTip = () => tip.style.opacity = 0;
+document.addEventListener('mouseover', e => {
+  const t = e.target;
+  if (t.tagName === 'I' && t.dataset.v !== undefined) showTip(e, `<span class="k">${t.dataset.n}</span> &nbsp;${t.dataset.v}`);
+  else if (t.closest && t.closest('.sbar')) { const b = t.closest('.sbar'); showTip(e, `<span class="k">${b.dataset.n}</span><br>${b.dataset.v}`); }
+});
+document.addEventListener('mousemove', e => {
+  const t = e.target;
+  if ((t.tagName === 'I' && t.dataset.v !== undefined) || (t.closest && t.closest('.sbar'))) {
+    const rc = tip.getBoundingClientRect(); let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + rc.width > innerWidth - 6) x = e.clientX - rc.width - 14;
+    if (y + rc.height > innerHeight - 6) y = e.clientY - rc.height - 14;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  } else if (!e.target.closest('#cv')) hideTip();
+});
+cv.addEventListener('mousemove', e => {
+  const rc = cv.getBoundingClientRect(), PL = 44, PR = 12;
+  const w = cvW - PL - PR, x = e.clientX - rc.left;
+  if (hist.length < 2 || x < PL - 6 || x > PL + w + 6) { hoverI = -1; hideTip(); drawLoss(); return; }
+  hoverI = Math.max(0, Math.min(hist.length - 1, Math.round(((x - PL) / w) * (hist.length - 1))));
+  const fl = floorAt(r);
+  showTip(e, `<span class="k">step</span> ${hoverI}<br><span class="k">loss</span> ${hist[hoverI].toFixed(5)}` +
+    (fl > 1e-9 ? `<br><span class="k">above floor</span> ${(hist[hoverI] - fl).toFixed(5)}` : ''));
+  drawLoss();
+});
+cv.addEventListener('mouseleave', () => { hoverI = -1; hideTip(); drawLoss(); });
+
+/* ---------------- render ---------------- */
+const $ = id => document.getElementById(id);
+// Hyphenated ids never become implicit globals, so bind them explicitly.
+const g_w0 = $('g-w0'), g_dw = $('g-dw'), g_w = $('g-w'), g_b = $('g-b'), g_a = $('g-a');
+function render() {
+  const dW = deltaW(), sc = world.scale;
+  const W = new Float64Array(D * K);
+  for (let i = 0; i < D * K; i++) W[i] = world.W0[i] + dW[i];
+  paint(g_w0, world.W0, D, K, sc, 'W₀');
+  paint(g_dw, dW, D, K, sc, 'ΔW');
+  paint(g_w, W, D, K, sc, 'W');
+  let mb = 1e-9, ma = 1e-9;
+  for (let i = 0; i < D * r; i++) mb = Math.max(mb, Math.abs(st.B[i]));
+  for (let i = 0; i < r * K; i++) ma = Math.max(ma, Math.abs(st.A[i]));
+  const f = Math.max(mb, ma);
+  paint(g_b, st.B, D, r, f, 'B');
+  paint(g_a, st.A, r, K, f, 'A');
+
+  const loss = hist.length ? hist[hist.length - 1] : 1;
+  const fl = floorAt(r), np = r * (D + K), full = D * K;
+  $('s-par').textContent = np;
+  $('s-parn').textContent = `vs ${full} full · ${np < full ? (100 * np / full).toFixed(0) + '% of full' : np === full ? 'break-even' : 'MORE than full'}`;
+  $('s-loss').textContent = diverged ? '∞' : loss.toFixed(4);
+  $('s-floor').textContent = fl.toFixed(4);
+  $('s-floorn').textContent = `best rank-${r} can ever do`;
+  $('s-step').textContent = stepN;
+  const st_ = $('s-status'), card = $('s-loss').parentElement;
+  card.className = 'stat hl';
+  if (diverged) { st_.textContent = 'diverged'; card.className = 'stat warn'; }
+  else if (playing) st_.textContent = 'training…';
+  else if (stepN === 0) st_.textContent = 'idle';
+  else if (loss - fl < 1e-5) { st_.textContent = 'converged'; card.className = 'stat okv'; }
+  else st_.textContent = 'paused';
+
+  $('sub-b').textContent = `8 × ${r}`; $('sub-a').textContent = `${r} × 8`;
+  $('nb').textContent = D * r; $('na').textContent = r * K;
+  $('rr').textContent = r; $('rr2').textContent = r; $('rr3').textContent = r;
+
+  const bn = $('banner');
+  if (diverged) {
+    bn.className = 'on';
+    bn.innerHTML = `<b>Training diverged.</b> α/r = ${scaleF().toFixed(2)} multiplies the effective learning
+      rate, and ${(lr * scaleF()).toFixed(3)} is too large for this problem — the loss exploded to infinity in
+      a handful of steps. This is real LoRA behaviour, not a bug: α is a learning-rate knob wearing a
+      different name. Lower α or the learning rate, then reset the adapter.`;
+  } else bn.className = '';
+
+  $('lossnote').innerHTML = fl < 1e-9
+    ? `Your budget (rank <b>${r}</b>) meets or exceeds what the task needs (rank <b>${taskRank}</b>), so there is
+       no floor — the loss goes to zero and the adapter reproduces the ideal update <em>exactly</em>. Every
+       parameter beyond rank ${taskRank} is spare capacity.`
+    : `Rank <b>${r}</b> is smaller than the task's true rank <b>${taskRank}</b>, so the loss cannot reach zero.
+       It flattens onto <b>${fl.toFixed(4)}</b> — meaning ${(fl * 100).toFixed(1)}% of the required update lies
+       in directions this adapter has no way to express. Adding steps will not help; only adding rank will.`;
+
+  const bigD = 4096, bigFull = bigD * bigD, bigL = r * 2 * bigD;
+  $('econ').innerHTML = `On this toy, rank ${r} costs <b>${np}</b> trainable numbers against <b>${full}</b> for a
+    full fine-tune — ${np < full ? `a genuine saving of ${full - np}` : np === full ? 'exactly break-even' : `<b>${np - full} more</b>, which is worse than just training the whole matrix`}.
+    That break-even sits at r = d·k/(d+k) = <b>4</b> here, which is why a toy makes LoRA look unimpressive.
+    <br><br>The arithmetic only pays off when the matrix is big. At a realistic
+    <code>4096×4096</code> layer, full fine-tuning trains <b>${bigFull.toLocaleString()}</b> weights while a
+    rank-${r} adapter trains <b>${bigL.toLocaleString()}</b> — <b>${(100 * bigL / bigFull).toFixed(2)}%</b> of them.
+    Break-even there is rank <b>2048</b>, and nobody ever goes near it: real adapters use rank 8 to 64.`;
+
+  drawLoss(); drawSpec();
+}
+
+/* ---------------- wiring ---------------- */
+function fullReset(rebuild) {
+  if (rebuild) buildWorld();
+  resetAdapter(); layout(); render();
+}
+$('i-r').oninput = e => { r = +e.target.value; $('l-r').textContent = r; $('l-sc').textContent = (alpha / r).toFixed(2); fullReset(false); };
+$('i-tr').oninput = e => { taskRank = +e.target.value; $('l-tr').textContent = taskRank; fullReset(true); };
+$('i-a').oninput = e => { alpha = +e.target.value; $('l-a').textContent = alpha; $('l-sc').textContent = (alpha / r).toFixed(2); render(); };
+$('i-lr').oninput = e => { lr = +e.target.value / 500; $('l-lr').textContent = lr.toFixed(3); render(); };
+$('b-play').onclick = () => {
+  if (diverged) return;
+  playing = !playing;
+  $('b-play').textContent = playing ? '❚❚ Pause' : '▶ Train';
+  if (playing) loop();
+  render();
+};
+$('b-step').onclick = () => { if (!diverged) { for (let i = 0; i < 20; i++) trainStep(); render(); } };
+$('b-reset').onclick = () => { playing = false; $('b-play').textContent = '▶ Train'; fullReset(false); };
+$('b-seed').onclick = () => { seed = (Math.random() * 1e9) | 0; playing = false; $('b-play').textContent = '▶ Train'; fullReset(true); };
+function loop() {
+  if (!playing) return;
+  for (let i = 0; i < 3; i++) if (!diverged) trainStep();
+  if (diverged) $('b-play').textContent = '▶ Train';
+  render();
+  requestAnimationFrame(loop);
+}
+addEventListener('resize', () => { sizeCanvas(); drawLoss(); });
+sizeCanvas();
+fullReset(true);
+</script>
+</body>
+</html>
