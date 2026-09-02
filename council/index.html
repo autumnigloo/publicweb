@@ -193,6 +193,7 @@
   <div class="askrow">
     <button class="primary" id="b-ask">Ask the council</button>
     <button id="b-stop" class="hide">Stop</button>
+    <button id="b-clear">Clear</button>
     <div class="spacer"></div>
     <div class="est" id="est"></div>
   </div>
@@ -816,6 +817,16 @@ for (const m of ['m-set', 'm-add'])
 
 $('b-ask').onclick = run;
 $('b-stop').onclick = () => { if (abort) abort.abort(); };
+$('b-clear').onclick = () => {
+  $('q').value = '';
+  store.set(SK.q, '');           // otherwise the old question returns on reload
+  $('toperr').className = 'err-box hide';
+  syncClear();
+  $('q').focus();
+};
+// Nothing to clear is a disabled button, not a no-op one.
+function syncClear() { $('b-clear').disabled = !$('q').value.trim(); }
+$('q').addEventListener('input', syncClear);
 $('q').addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); run(); }
 });
@@ -825,6 +836,7 @@ loadModels();
 renderChips();
 fillSumSelect();
 $('q').value = store.get(SK.q, '');
+syncClear();
 updateEst();
 refreshCatalog();
 if ('serviceWorker' in navigator)
