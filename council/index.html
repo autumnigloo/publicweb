@@ -588,6 +588,7 @@ async function run() {
   $('b-ask').disabled = false; $('b-ask').textContent = 'Ask the council';
   $('b-stop').classList.add('hide');
   renderOut();
+  if (pendingReload) location.reload();   // update arrived mid-run; take it now
 }
 function showErr(m) { const e = $('toperr'); e.textContent = m; e.className = 'err-box'; }
 
@@ -843,8 +844,37 @@ $('q').value = store.get(SK.q, '');
 syncClear();
 updateEst();
 refreshCatalog();
-if ('serviceWorker' in navigator)
-  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+/* Service worker + auto-update.
+   A cache-version bump alone does not refresh a running page: the new worker
+   takes control, but the document you are looking at keeps its old HTML and
+   its old model list until something reloads it. A standalone PWA resumed from
+   the home screen often never navigates, so that reload has to be explicit. */
+let pendingReload = false;
+function reloadForUpdate() {
+  if (running) { pendingReload = true; return; }  // never yank a run out from under the user
+  location.reload();
+}
+if ('serviceWorker' in navigator) {
+  addEventListener('load', async () => {
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      // On a first install there is nothing stale on screen, and reloading
+      // there is how you get an endless reload loop.
+      if (!hadController || reloaded) return;
+      reloaded = true;
+      reloadForUpdate();
+    });
+    try {
+      const reg = await navigator.serviceWorker.register('sw.js');
+      reg.update().catch(() => {});
+      // Resuming a backgrounded PWA is not a navigation, so check on focus too.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    } catch {}
+  });
+}
 </script>
 </body>
 </html>
