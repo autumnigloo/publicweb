@@ -61,11 +61,24 @@ The second cache-first line is the whole point: the new files had already been
 downloaded and cached, and the user still saw the old build. That is what "I
 bumped the version but it didn't update" actually looks like.
 
-`council/` is the reference implementation — copy its `sw.js` fetch handler and
-its registration block. As of 2026-09-02 the other nine PWAs here (`arabic`,
-`audio-transcribe`, `chat`, `death-jester`, `putzplan`, `share`, `url-opener`,
-`utilities`, `voice-blocks`) are all still cache-first with no reload hook and
-have this bug.
+All ten PWAs here (`arabic`, `audio-transcribe`, `chat`, `council`,
+`death-jester`, `putzplan`, `share`, `url-opener`, `utilities`, `voice-blocks`)
+were converted to this pattern on 2026-09-02. Copy any of their `sw.js` fetch
+handlers and registration blocks when adding a new one. `council/` additionally
+consults its own in-flight flag before reloading; the rest use the generic rule
+above (reload at once if the page just loaded or is hidden, otherwise wait until
+it is next hidden), which is enough to protect a recording or an upload.
+
+Two traps found while doing this, both silent:
+
+- **`cache.addAll()` rejects atomically.** One missing file in the asset list
+  fails the whole install, so the worker never activates and the app simply has
+  no offline support — with no error anywhere. Check every path in the list
+  exists before shipping.
+- **`chat/index.html` contains deliberate NUL bytes** (sentinel markers in its
+  markdown renderer). `grep` treats the file as binary and silently reports
+  nothing, which is how it was first mistaken for having no service worker at
+  all. Use `python3` rather than `grep` when auditing that file.
 
 Finally: a fix cannot reach an already-installed old worker retroactively. The
 first upgrade past a cache-first worker still takes the old multi-open path. Tell
