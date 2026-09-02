@@ -1,4 +1,4 @@
-const CACHE = 'mc-v3';
+const CACHE = 'mc-v4';
 const FILES = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
