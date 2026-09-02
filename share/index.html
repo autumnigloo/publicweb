@@ -406,8 +406,32 @@
       toast._t = setTimeout(() => toast.classList.remove('show'), variant === 'info' ? 2800 : 1800);
     }
 
+    /* A cache-version bump alone never refreshes a page already on screen, so
+       reload once a new worker takes over. The update is applied immediately when
+       the page has just loaded or is hidden, and otherwise deferred until the page
+       is next hidden -- so a reload can never interrupt work in progress. */
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js');
+      addEventListener('load', async () => {
+        const t0 = Date.now();
+        const hadController = !!navigator.serviceWorker.controller;
+        let applied = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!hadController || applied) return;   // first install: nothing stale to replace
+          applied = true;
+          if (Date.now() - t0 < 10000 || document.visibilityState === 'hidden') location.reload();
+          else document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') location.reload();
+          }, { once: true });
+        });
+        try {
+          const reg = await navigator.serviceWorker.register('./sw.js');
+          reg.update().catch(() => {});
+          // Resuming a backgrounded PWA is not a navigation, so check on focus too.
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') reg.update().catch(() => {});
+          });
+        } catch {}
+      });
     }
   </script>
 </body>
