@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5">
+<meta name="theme-color" content="#0f0f13">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Council</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f13; --surface: #1a1a22; --s2: #14141b; --s3: #22222d;
+    --border: #2a2a38; --border2: #383848;
+    --text: #e6e6ee; --muted: #8a8a9a; --dim: #5f5f70;
+    --accent: #3987e5; --accent2: #d95926;
+    --good: #0ca30c; --warn: #fab219; --crit: #d03b3b;
+    --tap: 44px;
+  }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--bg); color: var(--text); line-height: 1.5;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+             max(20px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    max-width: 900px; margin: 0 auto;
+    overscroll-behavior-y: contain;
+  }
+  h1 { font-size: 1.15rem; font-weight: 600; letter-spacing: .04em; }
+
+  /* ── layout ── */
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  header .grow { flex: 1; min-width: 0; }
+  header p { color: var(--muted); font-size: .75rem; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 13px; padding: 12px; margin-top: 11px;
+  }
+  .card > h2 {
+    font-size: .67rem; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; margin-bottom: 9px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .card > h2 .sub { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--dim); }
+
+  button, .btn {
+    background: var(--s2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 9px; font: inherit; font-size: .82rem; cursor: pointer;
+    padding: 9px 14px; min-height: var(--tap);
+    transition: background .15s, border-color .15s; -webkit-tap-highlight-color: transparent;
+  }
+  button:hover:not(:disabled) { background: var(--s3); border-color: var(--border2); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: #1c3f6b; border-color: #2f6199; color: #dce9fb; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #24507f; }
+  button.icon { min-width: var(--tap); padding: 9px 11px; font-size: 1.05rem; }
+
+  textarea, input[type=text], input[type=password], select {
+    width: 100%; background: var(--s2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 11px 12px; font: inherit; font-size: 1rem; /* 16px stops iOS zoom-on-focus */
+  }
+  textarea { resize: vertical; min-height: 92px; line-height: 1.5; }
+  textarea:focus, input:focus, select:focus { outline: none; border-color: #3f6ea8; }
+  label.fld { display: block; font-size: .72rem; color: var(--muted); margin: 10px 0 5px; }
+
+  /* ── model chips ── */
+  #chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip {
+    display: flex; align-items: center; gap: 8px; position: relative;
+    background: var(--s2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 7px 11px; cursor: pointer; min-height: var(--tap);
+    -webkit-tap-highlight-color: transparent; transition: border-color .15s, background .15s;
+  }
+  .chip:hover { border-color: var(--border2); }
+  .chip.on { border-color: #2f6199; background: #16273c; }
+  .chip .tick {
+    width: 17px; height: 17px; border-radius: 5px; flex-shrink: 0;
+    border: 1.5px solid var(--dim); display: grid; place-items: center;
+    font-size: .68rem; color: #fff; line-height: 1;
+  }
+  .chip.on .tick { background: var(--accent); border-color: var(--accent); }
+  .chip .nm { font-size: .78rem; font-weight: 600; white-space: nowrap; }
+  .chip .px { font-size: .64rem; color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .chip .rm {
+    border: none; background: none; color: var(--dim); font-size: 1rem;
+    padding: 0 0 0 3px; min-height: 0; min-width: 0; cursor: pointer;
+  }
+  .chip .rm:hover { color: var(--crit); background: none; }
+
+  /* ── stat tiles ── */
+  #agg { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; }
+  .stat { background: var(--s2); border: 1px solid var(--border); border-radius: 11px; padding: 9px 11px; }
+  .stat .lab { font-size: .62rem; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  .stat .val { font-size: 1.3rem; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; word-break: break-word; }
+  .stat .note { font-size: .66rem; color: var(--dim); margin-top: 1px; }
+  .stat.hero .val { color: var(--accent); font-size: 1.55rem; }
+
+  /* ── forest plot ── */
+  .fp-row { display: grid; grid-template-columns: minmax(74px, 27%) 1fr; gap: 9px; align-items: center; padding: 5px 0; }
+  .fp-name { font-size: .72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fp-track { position: relative; height: 26px; }
+  .fp-track::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 50%;
+    height: 1px; background: #24242f;
+  }
+  .fp-int { position: absolute; top: 50%; transform: translateY(-50%); height: 5px; border-radius: 3px; background: #27466d; }
+  .fp-dot {
+    position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%;
+    transform: translate(-50%, -50%); background: var(--accent);
+    border: 2px solid var(--bg); cursor: pointer;
+  }
+  .fp-med { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px dashed var(--muted); }
+  .fp-axis { position: relative; height: 17px; font-size: .62rem; color: var(--dim); }
+  .fp-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .fp-axis span.e0 { transform: none; left: 0; }
+  .fp-axis span.e1 { transform: translateX(-100%); }
+
+  /* ── result cards ── */
+  .res { border: 1px solid var(--border); border-radius: 11px; padding: 10px 11px; margin-top: 8px; background: var(--s2); }
+  .res.err { border-color: #5a2626; background: #241618; }
+  .res-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .res-h .nm { font-size: .82rem; font-weight: 600; }
+  .res-h .meta { font-size: .66rem; color: var(--dim); margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--dim); }
+  .dot.ok { background: var(--good); } .dot.bad { background: var(--crit); }
+  .dot.run { background: var(--warn); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+  .res-e { font-size: 1.02rem; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .res-e .ci { font-size: .72rem; font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .res-r { font-size: .78rem; color: var(--muted); margin-top: 5px; line-height: 1.55; }
+  .res-err { font-size: .76rem; color: #f0b8b8; margin-top: 4px; word-break: break-word; }
+
+  .summary { font-size: .85rem; line-height: 1.65; white-space: pre-wrap; }
+  .warn-box {
+    font-size: .75rem; padding: 8px 11px; border-radius: 9px; margin-top: 9px;
+    background: #3a2c10; border: 1px solid #6a5320; color: #f3d79a;
+  }
+  .err-box {
+    font-size: .78rem; padding: 9px 11px; border-radius: 9px; margin-top: 9px;
+    background: #3a1616; border: 1px solid #6a2a2a; color: #f0b8b8;
+  }
+  .hide { display: none !important; }
+  .note { font-size: .74rem; color: var(--muted); line-height: 1.6; }
+  .note b { color: var(--text); }
+  code { background: var(--s3); padding: 1px 5px; border-radius: 4px; font-family: ui-monospace, Menlo, monospace; font-size: .88em; }
+
+  /* ── modal ── */
+  .modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 100;
+    display: grid; place-items: center; padding: 14px;
+  }
+  .modal[hidden] { display: none; }
+  .modal-in {
+    background: var(--surface); border: 1px solid var(--border2); border-radius: 15px;
+    padding: 15px; width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto;
+  }
+  .modal-h { display: flex; align-items: center; margin-bottom: 4px; }
+  .modal-h span { font-weight: 600; flex: 1; }
+
+  #tip {
+    position: fixed; z-index: 200; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: #05050a; border: 1px solid #3a3a4c; border-radius: 7px; padding: 6px 9px;
+    font-size: .72rem; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.6);
+    font-variant-numeric: tabular-nums;
+  }
+  #tip .k { color: var(--muted); }
+
+  .askrow { display: flex; gap: 8px; align-items: center; margin-top: 9px; flex-wrap: wrap; }
+  .askrow .spacer { flex: 1; }
+  .askrow .est { font-size: .7rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+  @media (max-width: 430px) {
+    .fp-row { grid-template-columns: minmax(58px, 34%) 1fr; }
+    .stat .val { font-size: 1.12rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="grow">
+    <h1>Council</h1>
+    <p>Ask once, get numeric estimates from several models, aggregated.</p>
+  </div>
+  <button class="icon" id="b-set" title="Settings" aria-label="Settings">⚙</button>
+</header>
+
+<div class="card">
+  <h2>Question <span class="sub">ask for something with a number as its answer</span></h2>
+  <textarea id="q" placeholder="e.g. How many households in Germany will have a heat pump installed by the end of 2030?"></textarea>
+  <div class="askrow">
+    <button class="primary" id="b-ask">Ask the council</button>
+    <button id="b-stop" class="hide">Stop</button>
+    <div class="spacer"></div>
+    <div class="est" id="est"></div>
+  </div>
+  <div id="toperr" class="err-box hide"></div>
+</div>
+
+<div class="card">
+  <h2>
+    Models
+    <span class="sub" id="selcount"></span>
+    <span style="margin-left:auto"><button id="b-add" style="padding:5px 10px;min-height:0;font-size:.72rem">+ Add model</button></span>
+  </h2>
+  <div id="chips"></div>
+</div>
+
+<div id="out"></div>
+
+<!-- ── settings ── -->
+<div class="modal" id="m-set" hidden>
+  <div class="modal-in">
+    <div class="modal-h"><span>Settings</span><button class="icon" id="b-set-x" aria-label="Close">✕</button></div>
+    <label class="fld" for="key">OpenRouter API key</label>
+    <input type="password" id="key" placeholder="sk-or-v1-…" autocomplete="off" spellcheck="false">
+    <div class="note" style="margin-top:6px">
+      Stored only in this device's <code>localStorage</code>. It is sent straight from your browser to
+      openrouter.ai and nowhere else — this page has no backend. Get one at
+      <b>openrouter.ai/keys</b>.
+    </div>
+    <label class="fld" for="sum-model">Summarising model</label>
+    <select id="sum-model"></select>
+    <div class="note" style="margin-top:6px">Writes the synthesis paragraph after the panel answers. One extra call.</div>
+    <label class="fld"><input type="checkbox" id="do-sum" style="width:auto;margin-right:7px">Write a synthesis paragraph</label>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="primary" id="b-set-save" style="flex:1">Save</button>
+      <button id="b-reset-models">Reset model list</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── add model ── -->
+<div class="modal" id="m-add" hidden>
+  <div class="modal-in">
+    <div class="modal-h"><span>Add a model</span><button class="icon" id="b-add-x" aria-label="Close">✕</button></div>
+    <label class="fld" for="add-id">OpenRouter model ID</label>
+    <input type="text" id="add-id" list="all-models" placeholder="vendor/model-name" autocomplete="off" spellcheck="false">
+    <datalist id="all-models"></datalist>
+    <div class="note" id="add-note" style="margin-top:7px">
+      Type to search the live catalogue from openrouter.ai.
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="primary" id="b-add-go" style="flex:1">Add</button>
+    </div>
+  </div>
+</div>
+
+<div id="tip"></div>
+
+<script>
+"use strict";
+
+/* ══════════════ constants & state ══════════════ */
+const SK = { key: 'mc-key', sel: 'mc-sel', custom: 'mc-custom', sum: 'mc-sum', dosum: 'mc-dosum', q: 'mc-q' };
+const API = 'https://openrouter.ai/api/v1';
+
+/* Catalogue snapshot taken from openrouter.ai/api/v1/models. Prices are USD per
+   million tokens and are refreshed from the live endpoint at startup; this copy
+   only exists so the app still works offline / when the fetch fails. */
+const CATALOG = [
+  { id: 'google/gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', lab: 'Google',    inp: 0.25, out: 1.50, on: true },
+  { id: 'openai/gpt-5.6-luna',          name: 'GPT-5.6 Luna',          lab: 'OpenAI',    inp: 0.20, out: 1.20, on: true },
+  { id: 'anthropic/claude-haiku-4.5',   name: 'Claude Haiku 4.5',      lab: 'Anthropic', inp: 1.00, out: 5.00, on: true },
+  { id: 'deepseek/deepseek-v4-flash',   name: 'DeepSeek V4 Flash',     lab: 'DeepSeek',  inp: 0.09, out: 0.17, on: true },
+  { id: 'qwen/qwen3.8-flash',           name: 'Qwen3.8 Flash',         lab: 'Qwen',      inp: 0.15, out: 0.47, on: false },
+  { id: 'z-ai/glm-5.3-flash',           name: 'GLM 5.3 Flash',         lab: 'Z.ai',      inp: 0.07, out: 0.25, on: false },
+  { id: 'mistralai/mistral-small-2603', name: 'Mistral Small 4',       lab: 'Mistral',   inp: 0.15, out: 0.60, on: false },
+  { id: 'moonshotai/kimi-k2.5',         name: 'Kimi K2.5',             lab: 'Moonshot',  inp: 0.45, out: 2.25, on: false },
+  { id: 'x-ai/grok-4.6',                name: 'Grok 4.6',              lab: 'xAI',       inp: 2.00, out: 6.00, on: false },
+  { id: 'anthropic/claude-sonnet-5',    name: 'Claude Sonnet 5',       lab: 'Anthropic', inp: 2.00, out: 10.00, on: false },
+];
+
+const $ = id => document.getElementById(id);
+const store = {
+  get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+let models = [];          // full pool: catalogue + user-added
+let selected = new Set(); // selected ids
+let live = null;          // live catalogue map, once fetched
+let running = false, abort = null;
+let lastRun = null;
+
+/* ══════════════ model pool ══════════════ */
+function loadModels() {
+  const custom = store.get(SK.custom, []);
+  models = CATALOG.concat(custom.filter(c => !CATALOG.some(m => m.id === c.id)));
+  const sel = store.get(SK.sel, null);
+  selected = new Set(sel || CATALOG.filter(m => m.on).map(m => m.id));
+  // never let the selection reference a model that is no longer in the pool
+  for (const id of [...selected]) if (!models.some(m => m.id === id)) selected.delete(id);
+}
+const saveSel = () => store.set(SK.sel, [...selected]);
+const modelById = id => models.find(m => m.id === id);
+const fmtPrice = m => `$${m.inp}/$${m.out} per M`;
+
+function renderChips() {
+  const el = $('chips');
+  el.innerHTML = '';
+  for (const m of models) {
+    const on = selected.has(m.id);
+    const c = document.createElement('div');
+    c.className = 'chip' + (on ? ' on' : '');
+    c.setAttribute('role', 'checkbox');
+    c.setAttribute('aria-checked', String(on));
+    c.tabIndex = 0;
+    c.innerHTML = `<span class="tick">${on ? '✓' : ''}</span>
+      <span><span class="nm">${esc(m.name)}</span>
+      <span class="px" style="display:block">${esc(m.lab)} · ${fmtPrice(m)}</span></span>`;
+    const toggle = () => {
+      selected.has(m.id) ? selected.delete(m.id) : selected.add(m.id);
+      saveSel(); renderChips(); updateEst();
+    };
+    c.onclick = e => { if (!e.target.closest('.rm')) toggle(); };
+    c.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); } };
+    if (m.custom) {
+      const rm = document.createElement('button');
+      rm.className = 'rm'; rm.textContent = '✕'; rm.title = 'Remove';
+      rm.setAttribute('aria-label', `Remove ${m.name}`);
+      rm.onclick = e => {
+        e.stopPropagation();
+        store.set(SK.custom, store.get(SK.custom, []).filter(x => x.id !== m.id));
+        selected.delete(m.id); saveSel(); loadModels(); renderChips(); fillSumSelect(); updateEst();
+      };
+      c.appendChild(rm);
+    }
+    el.appendChild(c);
+  }
+  $('selcount').textContent = `${selected.size} of ${models.length} selected`;
+}
+
+/* ══════════════ live catalogue ══════════════ */
+async function refreshCatalog() {
+  try {
+    const r = await fetch(`${API}/models`, { headers: { 'Accept': 'application/json' } });
+    if (!r.ok) return;
+    const data = (await r.json()).data || [];
+    live = new Map();
+    for (const m of data) {
+      const inp = parseFloat(m.pricing?.prompt) * 1e6, out = parseFloat(m.pricing?.completion) * 1e6;
+      if (!isFinite(inp) || !isFinite(out)) continue;
+      live.set(m.id, { id: m.id, name: m.name, inp: round4(inp), out: round4(out), ctx: m.context_length });
+    }
+    // adopt live prices so the cost estimate never drifts from reality
+    let changed = false;
+    for (const m of models) {
+      const l = live.get(m.id);
+      if (l && (l.inp !== m.inp || l.out !== m.out)) { m.inp = l.inp; m.out = l.out; changed = true; }
+    }
+    const dl = $('all-models');
+    dl.innerHTML = '';
+    for (const id of [...live.keys()].sort()) {
+      const o = document.createElement('option'); o.value = id; dl.appendChild(o);
+    }
+    $('add-note').textContent = `${live.size} models available from openrouter.ai.`;
+    if (changed) renderChips();
+    updateEst();
+  } catch { /* offline: the bundled snapshot stands in */ }
+}
+const round4 = v => Math.round(v * 1e4) / 1e4;
+
+/* ══════════════ prompting ══════════════ */
+const SYS = `You are one member of a panel of independent forecasters. The user asks a question whose answer is a NUMBER. Give your own honest estimate.
+
+Rules:
+- Always commit to a number. If the question is deeply uncertain, still give your best guess and widen your interval instead of refusing.
+- "estimate": your single best point estimate, as a plain number. No commas, no units, no ranges inside this field.
+- "low" and "high": the bounds of your 80% credible interval, with low <= estimate <= high.
+- "unit": what the number counts, as short as possible — e.g. "USD", "%", "people", "years", "km". If the question asks for a probability or a share, use "%" with a number from 0 to 100.
+- "confidence": 0 to 1, how much you trust your own estimate.
+- "reasoning": at most 3 sentences. Name the key drivers and the biggest source of uncertainty. No preamble, no restating the question.
+
+Answer only with the JSON object.`;
+
+const SCHEMA = {
+  type: 'object',
+  properties: {
+    reasoning:  { type: 'string' },
+    estimate:   { type: 'number' },
+    low:        { type: 'number' },
+    high:       { type: 'number' },
+    unit:       { type: 'string' },
+    confidence: { type: 'number' },
+  },
+  required: ['reasoning', 'estimate', 'low', 'high', 'unit', 'confidence'],
+  additionalProperties: false,
+};
+
+function extractJSON(txt) {
+  if (!txt) throw new Error('empty response');
+  const fence = txt.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) { try { return JSON.parse(fence[1]); } catch {} }
+  try { return JSON.parse(txt); } catch {}
+  // last resort: the outermost {...}
+  const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
+  if (a >= 0 && b > a) return JSON.parse(txt.slice(a, b + 1));
+  throw new Error('no JSON in response');
+}
+
+function orHeaders() {
+  return {
+    Authorization: `Bearer ${apiKey()}`,
+    'Content-Type': 'application/json',
+    'HTTP-Referer': location.origin,
+    'X-Title': 'Council',
+  };
+}
+
+async function askOne(model, question, signal) {
+  const t0 = performance.now();
+  const send = withSchema => fetch(`${API}/chat/completions`, {
+    method: 'POST', signal, headers: orHeaders(),
+    body: JSON.stringify({
+      model: model.id,
+      messages: [{ role: 'system', content: SYS }, { role: 'user', content: question }],
+      ...(withSchema ? { response_format: { type: 'json_schema', json_schema: { name: 'estimate', strict: true, schema: SCHEMA } } } : {}),
+      max_tokens: 1200,
+    }),
+  });
+
+  let r = await send(true);
+  let body = await r.json().catch(() => null);
+  // Not every model on OpenRouter accepts a JSON schema. Rather than fail such a
+  // model outright, retry once in plain mode and lean on extractJSON.
+  if (!r.ok && /json|schema|response_format|structured/i.test(body?.error?.message || '')) {
+    r = await send(false);
+    body = await r.json().catch(() => null);
+  }
+  if (!r.ok) throw new Error(body?.error?.message || `HTTP ${r.status}`);
+  if (body?.error) throw new Error(body.error.message || 'provider error');
+  const parsed = extractJSON(body?.choices?.[0]?.message?.content ?? '');
+  const u = body.usage || {};
+  return {
+    ...parsed,
+    ms: Math.round(performance.now() - t0),
+    tokIn: u.prompt_tokens ?? 0, tokOut: u.completion_tokens ?? 0,
+    cost: typeof u.cost === 'number' ? u.cost : costOf(model, u.prompt_tokens ?? 0, u.completion_tokens ?? 0),
+    costExact: typeof u.cost === 'number',
+  };
+}
+const costOf = (m, i, o) => (i / 1e6) * m.inp + (o / 1e6) * m.out;
+
+async function summarise(model, question, rows, signal) {
+  const lines = rows.map(r =>
+    `${r.model.name}: ${fmtNum(r.estimate)} ${r.unit} (80% CI ${fmtNum(r.low)}–${fmtNum(r.high)}). ${r.reasoning}`
+  ).join('\n\n');
+  const r = await fetch(`${API}/chat/completions`, {
+    method: 'POST', signal, headers: orHeaders(),
+    body: JSON.stringify({
+      model: model.id,
+      messages: [
+        { role: 'system', content: 'You summarise a panel of forecasters for a reader who has already seen the numbers. In one short paragraph (3-5 sentences): say where the panel agrees, name the specific disagreement that matters most and which models are on each side, and end with the single biggest source of uncertainty. Do not restate every number. No headings, no bullet points, no preamble.' },
+        { role: 'user', content: `Question: ${question}\n\nPanel answers:\n\n${lines}` },
+      ],
+      max_tokens: 500,
+    }),
+  });
+  const body = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(body?.error?.message || `HTTP ${r.status}`);
+  const u = body.usage || {};
+  return {
+    text: (body?.choices?.[0]?.message?.content || '').trim(),
+    cost: typeof u.cost === 'number' ? u.cost : costOf(model, u.prompt_tokens ?? 0, u.completion_tokens ?? 0),
+  };
+}
+
+/* ══════════════ aggregation ══════════════ */
+function normUnit(u) {
+  let s = String(u || '').trim().toLowerCase().replace(/[.\s]+$/, '');
+  if (/^(%|percent|pct|percentage|percentage points?)$/.test(s)) return '%';
+  if (/^(usd|\$|dollars?|us\$|us dollars?)$/.test(s)) return 'USD';
+  if (/^(eur|€|euros?)$/.test(s)) return 'EUR';
+  if (/^(years?|yr|yrs)$/.test(s)) return 'years';
+  if (/^(people|persons?|humans?|individuals?)$/.test(s)) return 'people';
+  return s;
+}
+const median = a => {
+  if (!a.length) return NaN;
+  const s = [...a].sort((x, y) => x - y), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+
+function aggregate(rows) {
+  const counts = new Map();
+  for (const r of rows) counts.set(r.unitN, (counts.get(r.unitN) || 0) + 1);
+  let domUnit = null, best = -1;
+  for (const [u, c] of counts) if (c > best) { best = c; domUnit = u; }
+  const inUnit = rows.filter(r => r.unitN === domUnit);
+  const odd = rows.filter(r => r.unitN !== domUnit);
+  const est = inUnit.map(r => r.estimate);
+  return {
+    domUnit, inUnit, odd,
+    median: median(est), mean: mean(est),
+    lo: median(inUnit.map(r => r.low)), hi: median(inUnit.map(r => r.high)),
+    min: Math.min(...est), max: Math.max(...est),
+    conf: mean(inUnit.map(r => typeof r.confidence === 'number' ? r.confidence : NaN).filter(isFinite)),
+  };
+}
+
+/* ══════════════ formatting ══════════════ */
+function fmtNum(v) {
+  if (!isFinite(v)) return '—';
+  const a = Math.abs(v);
+  if (a !== 0 && (a >= 1e15 || a < 1e-4)) return v.toExponential(2);
+  if (a >= 1e4) return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 }).format(v);
+  if (Number.isInteger(v)) return String(v);
+  return new Intl.NumberFormat('en', { maximumSignificantDigits: 4 }).format(v);
+}
+const fmtFull = v => isFinite(v) ? new Intl.NumberFormat('en', { maximumFractionDigits: 6 }).format(v) : '—';
+const fmtCost = c => c == null || !isFinite(c) ? '—' : c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(3)}`;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* ══════════════ run ══════════════ */
+const apiKey = () => (store.get(SK.key, '') || '').trim();
+
+function updateEst() {
+  const n = selected.size;
+  if (!n) { $('est').textContent = ''; return; }
+  // ~1.5k prompt tokens in, ~500 completion, per model
+  let c = 0;
+  for (const id of selected) { const m = modelById(id); if (m) c += costOf(m, 1500, 500); }
+  if (store.get(SK.dosum, true)) {
+    const s = modelById(store.get(SK.sum, CATALOG[0].id));
+    if (s) c += costOf(s, 300 * n + 400, 250);
+  }
+  $('est').textContent = `${n} model${n > 1 ? 's' : ''} · ~${fmtCost(c)} per question`;
+}
+
+async function run() {
+  if (running) return;
+  const question = $('q').value.trim();
+  const errBox = $('toperr');
+  errBox.className = 'err-box hide';
+  if (!question) { showErr('Type a question first.'); return; }
+  if (!apiKey()) { showErr('No OpenRouter API key yet — open Settings (⚙) and paste one.'); return; }
+  if (!selected.size) { showErr('Select at least one model.'); return; }
+  store.set(SK.q, question);
+
+  running = true; abort = new AbortController();
+  $('b-ask').disabled = true; $('b-ask').textContent = 'Asking…';
+  $('b-stop').classList.remove('hide');
+
+  const chosen = models.filter(m => selected.has(m.id));
+  const rows = chosen.map(m => ({ model: m, state: 'run' }));
+  lastRun = { question, rows, summary: null, sumCost: 0, t0: Date.now() };
+  renderOut();
+
+  await Promise.all(rows.map(async row => {
+    try {
+      const r = await askOne(row.model, question, abort.signal);
+      if (!isFinite(r.estimate)) throw new Error('model did not return a number');
+      // a model may return the interval inverted; fix rather than discard
+      let { low, high } = r;
+      if (isFinite(low) && isFinite(high) && low > high) { const t = low; low = high; high = t; }
+      Object.assign(row, r, { low, high, state: 'ok', unitN: normUnit(r.unit) });
+    } catch (e) {
+      row.state = abort.signal.aborted ? 'stop' : 'bad';
+      row.err = e.name === 'AbortError' ? 'stopped' : (e.message || String(e));
+    }
+    renderOut();
+  }));
+
+  const ok = rows.filter(r => r.state === 'ok');
+  if (ok.length >= 2 && store.get(SK.dosum, true) && !abort.signal.aborted) {
+    const sm = modelById(store.get(SK.sum, CATALOG[0].id)) || chosen[0];
+    lastRun.summaryState = 'run'; renderOut();
+    try {
+      const s = await summarise(sm, question, ok, abort.signal);
+      lastRun.summary = s.text; lastRun.sumCost = s.cost; lastRun.sumModel = sm;
+      lastRun.summaryState = 'ok';
+    } catch (e) {
+      lastRun.summaryState = 'bad';
+      lastRun.summaryErr = e.name === 'AbortError' ? 'stopped' : (e.message || String(e));
+    }
+  }
+
+  running = false; abort = null;
+  $('b-ask').disabled = false; $('b-ask').textContent = 'Ask the council';
+  $('b-stop').classList.add('hide');
+  renderOut();
+}
+function showErr(m) { const e = $('toperr'); e.textContent = m; e.className = 'err-box'; }
+
+/* ══════════════ render results ══════════════ */
+function renderOut() {
+  const out = $('out');
+  if (!lastRun) { out.innerHTML = ''; return; }
+  const { rows } = lastRun;
+  const ok = rows.filter(r => r.state === 'ok');
+  const ag = ok.length ? aggregate(ok) : null;
+  const totalCost = rows.reduce((s, r) => s + (r.cost || 0), 0) + (lastRun.sumCost || 0);
+  const anyExact = rows.some(r => r.costExact);
+  out.innerHTML = '';
+
+  /* aggregate tiles */
+  if (ag && ag.inUnit.length) {
+    const c = card('Aggregate', `${ag.inUnit.length} of ${rows.length} model${rows.length > 1 ? 's' : ''} answered in ${esc(ag.domUnit || '—')}`);
+    const g = document.createElement('div'); g.id = 'agg';
+    g.innerHTML = `
+      ${tile('Median estimate', `${fmtNum(ag.median)}`, `${esc(ag.domUnit)} · the headline number`, 'hero')}
+      ${tile('Mean', fmtNum(ag.mean), 'sensitive to outliers')}
+      ${tile('Panel 80% range', `${fmtNum(ag.lo)}–${fmtNum(ag.hi)}`, 'median of the low and high bounds')}
+      ${tile('Spread of estimates', `${fmtNum(ag.min)}–${fmtNum(ag.max)}`, isFinite(ag.conf) ? `mean self-confidence ${(ag.conf * 100).toFixed(0)}%` : 'lowest to highest')}
+    `;
+    c.appendChild(g);
+    if (ag.odd.length) {
+      const w = document.createElement('div');
+      w.className = 'warn-box';
+      w.innerHTML = `<b>Units disagree.</b> ${ag.odd.map(r => `${esc(r.model.name)} answered in “${esc(r.unit)}”`).join(', ')},
+        while the rest used “${esc(ag.domUnit)}”. Those are excluded from the average — averaging across
+        different units would be meaningless. Rephrase the question with an explicit unit to fix this.`;
+      c.appendChild(w);
+    }
+    if (ok.length >= 2) c.appendChild(forest(ok, ag));
+    out.appendChild(c);
+  }
+
+  /* synthesis */
+  if (lastRun.summaryState) {
+    const c = card('Synthesis', lastRun.sumModel ? `by ${esc(lastRun.sumModel.name)}` : '');
+    const d = document.createElement('div');
+    if (lastRun.summaryState === 'run') { d.className = 'note'; d.textContent = 'Summarising…'; }
+    else if (lastRun.summaryState === 'bad') { d.className = 'res-err'; d.textContent = `Summary failed: ${lastRun.summaryErr}`; }
+    else { d.className = 'summary'; d.textContent = lastRun.summary || '(empty)'; }
+    c.appendChild(d);
+    out.appendChild(c);
+  }
+
+  /* per-model answers */
+  const c2 = card('Answers', `sorted by estimate`);
+  const sorted = [...rows].sort((a, b) => {
+    if (a.state === 'ok' && b.state === 'ok') return a.estimate - b.estimate;
+    return a.state === 'ok' ? -1 : b.state === 'ok' ? 1 : 0;
+  });
+  for (const r of sorted) {
+    const d = document.createElement('div');
+    d.className = 'res' + (r.state === 'bad' ? ' err' : '');
+    const dot = r.state === 'ok' ? 'ok' : r.state === 'bad' ? 'bad' : r.state === 'run' ? 'run' : '';
+    let meta = '';
+    if (r.state === 'ok') meta = `${fmtCost(r.cost)} · ${r.tokIn}+${r.tokOut} tok · ${(r.ms / 1000).toFixed(1)}s`;
+    else if (r.state === 'run') meta = 'waiting…';
+    d.innerHTML =
+      `<div class="res-h"><span class="dot ${dot}"></span><span class="nm">${esc(r.model.name)}</span>
+       <span class="px" style="font-size:.64rem;color:var(--dim)">${esc(r.model.lab || '')}</span>
+       <span class="meta">${esc(meta)}</span></div>` +
+      (r.state === 'ok'
+        ? `<div class="res-e">${esc(fmtNum(r.estimate))} <span style="font-size:.8rem;color:var(--muted)" title="${esc(r.unit)}">${esc(r.unitN || r.unit)}</span>
+             <span class="ci">80% CI ${esc(fmtNum(r.low))} – ${esc(fmtNum(r.high))}${isFinite(r.confidence) ? ` · conf ${(r.confidence * 100).toFixed(0)}%` : ''}</span></div>
+           <div class="res-r">${esc(r.reasoning || '')}</div>`
+        : r.state === 'bad' ? `<div class="res-err">${esc(r.err || 'failed')}</div>` : '');
+    c2.appendChild(d);
+  }
+  out.appendChild(c2);
+
+  /* cost */
+  const c3 = card('Cost', anyExact ? 'billed by OpenRouter' : 'estimated from token counts and list prices');
+  const n = document.createElement('div');
+  n.className = 'note';
+  const per = rows.filter(r => r.cost).map(r => `${esc(r.model.name)} ${fmtCost(r.cost)}`).join(' · ');
+  n.innerHTML = `<div style="font-size:1.5rem;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">${fmtCost(totalCost)}</div>
+    <div style="margin-top:5px">${per}${lastRun.sumCost ? ` · synthesis ${fmtCost(lastRun.sumCost)}` : ''}</div>
+    ${anyExact ? '' : '<div style="margin-top:5px;color:var(--dim)">OpenRouter did not return a billed cost for this run, so this is computed from the token counts and the catalogue prices — treat it as close, not exact.</div>'}`;
+  c3.appendChild(n);
+  out.appendChild(c3);
+}
+
+function card(title, sub) {
+  const c = document.createElement('div');
+  c.className = 'card';
+  c.innerHTML = `<h2>${esc(title)}${sub ? ` <span class="sub">${sub}</span>` : ''}</h2>`;
+  return c;
+}
+const tile = (lab, val, note, cls = '') =>
+  `<div class="stat ${cls}"><div class="lab">${esc(lab)}</div><div class="val">${esc(val)}</div><div class="note">${note}</div></div>`;
+
+/* forest plot: one row per model, point estimate + 80% interval on a shared axis */
+function forest(rows, ag) {
+  const wrap = document.createElement('div');
+  wrap.style.marginTop = '12px';
+  const pts = rows.filter(r => r.unitN === ag.domUnit);
+  const lows = pts.map(r => isFinite(r.low) ? r.low : r.estimate);
+  const highs = pts.map(r => isFinite(r.high) ? r.high : r.estimate);
+  let lo = Math.min(...lows, ...pts.map(r => r.estimate));
+  let hi = Math.max(...highs, ...pts.map(r => r.estimate));
+  if (!isFinite(lo) || !isFinite(hi)) return wrap;
+  // orders of magnitude apart and strictly positive → log axis, else linear
+  const logOK = lo > 0 && hi / lo >= 100;
+  const T = v => logOK ? Math.log10(v) : v;
+  let a = T(lo), b = T(hi);
+  if (!(b > a)) { const pad = Math.abs(a || 1) * 0.1 || 1; a -= pad; b += pad; }
+  const pos = v => {
+    const t = (T(Math.min(Math.max(v, lo), hi)) - a) / (b - a);
+    return Math.max(0, Math.min(1, t)) * 100;
+  };
+
+  for (const r of [...pts].sort((x, y) => x.estimate - y.estimate)) {
+    const row = document.createElement('div');
+    row.className = 'fp-row';
+    const l = isFinite(r.low) ? r.low : r.estimate, h = isFinite(r.high) ? r.high : r.estimate;
+    const p0 = pos(l), p1 = pos(h), pe = pos(r.estimate);
+    // The median line is positioned in percent, so it needs no measured layout —
+    // emit it inline rather than deferring to a frame callback.
+    row.innerHTML = `<div class="fp-name" title="${esc(r.model.name)}">${esc(r.model.name)}</div>
+      <div class="fp-track">
+        <div class="fp-int" style="left:${p0}%;width:${Math.max(0, p1 - p0)}%"></div>
+        <div class="fp-med" style="left:${pos(ag.median)}%"></div>
+        <div class="fp-dot" style="left:${pe}%"></div>
+      </div>`;
+    const dot = row.querySelector('.fp-dot');
+    const tipTxt = `<span class="k">${esc(r.model.name)}</span><br>${esc(fmtFull(r.estimate))} ${esc(r.unit)}<br><span class="k">80% CI</span> ${esc(fmtFull(l))} – ${esc(fmtFull(h))}`;
+    bindTip(dot, tipTxt);
+    wrap.appendChild(row);
+  }
+  const axisRow = document.createElement('div');
+  axisRow.className = 'fp-row';
+  axisRow.style.padding = '0';
+  axisRow.appendChild(document.createElement('div'));   // empty label cell keeps the axis aligned
+  const axis = document.createElement('div');
+  axis.className = 'fp-axis';
+  const ticks = logOK
+    ? [lo, Math.pow(10, (a + b) / 2), hi]
+    : [lo, (lo + hi) / 2, hi];
+  axis.innerHTML = ticks.map((t, i) =>
+    `<span class="${i === 0 ? 'e0' : i === ticks.length - 1 ? 'e1' : ''}" style="left:${pos(t)}%">${esc(fmtNum(t))}</span>`).join('');
+  axisRow.appendChild(axis);
+  wrap.appendChild(axisRow);
+
+  const cap = document.createElement('div');
+  cap.className = 'note';
+  cap.style.marginTop = '4px';
+  cap.innerHTML = `Point estimate with 80% interval, per model${logOK ? ', on a <b>logarithmic</b> axis (the estimates span more than two orders of magnitude)' : ''}. Dashed line marks the panel median.`;
+  wrap.appendChild(cap);
+  return wrap;
+}
+
+/* ══════════════ tooltip ══════════════ */
+const tip = $('tip');
+function placeTip(x, y) {
+  const r = tip.getBoundingClientRect();
+  let nx = x + 14, ny = y + 14;
+  if (nx + r.width > innerWidth - 8) nx = x - r.width - 14;
+  if (ny + r.height > innerHeight - 8) ny = y - r.height - 14;
+  tip.style.left = Math.max(6, nx) + 'px'; tip.style.top = Math.max(6, ny) + 'px';
+}
+function bindTip(el, html) {
+  const show = e => {
+    const t = e.touches ? e.touches[0] : e;
+    tip.innerHTML = html; tip.style.opacity = 1; placeTip(t.clientX, t.clientY);
+  };
+  el.addEventListener('mouseenter', show);
+  el.addEventListener('mousemove', show);
+  el.addEventListener('mouseleave', () => tip.style.opacity = 0);
+  el.addEventListener('touchstart', e => { show(e); }, { passive: true });
+  el.addEventListener('touchend', () => setTimeout(() => tip.style.opacity = 0, 1800), { passive: true });
+}
+document.addEventListener('click', e => { if (!e.target.closest('.fp-dot')) tip.style.opacity = 0; });
+
+/* ══════════════ settings ══════════════ */
+function fillSumSelect() {
+  const s = $('sum-model');
+  const cur = store.get(SK.sum, CATALOG[0].id);
+  s.innerHTML = '';
+  for (const m of models) {
+    const o = document.createElement('option');
+    o.value = m.id; o.textContent = `${m.name} — ${fmtPrice(m)}`;
+    if (m.id === cur) o.selected = true;
+    s.appendChild(o);
+  }
+}
+$('b-set').onclick = () => {
+  $('key').value = store.get(SK.key, '');
+  $('do-sum').checked = store.get(SK.dosum, true);
+  fillSumSelect();
+  $('m-set').hidden = false;
+};
+const closeSet = () => { $('m-set').hidden = true; };
+$('b-set-x').onclick = closeSet;
+$('b-set-save').onclick = () => {
+  store.set(SK.key, $('key').value.trim());
+  store.set(SK.sum, $('sum-model').value);
+  store.set(SK.dosum, $('do-sum').checked);
+  updateEst(); closeSet();
+};
+$('b-reset-models').onclick = () => {
+  localStorage.removeItem(SK.custom); localStorage.removeItem(SK.sel);
+  loadModels(); renderChips(); fillSumSelect(); updateEst(); closeSet();
+};
+
+$('b-add').onclick = () => { $('add-id').value = ''; $('m-add').hidden = false; setTimeout(() => $('add-id').focus(), 50); };
+$('b-add-x').onclick = () => { $('m-add').hidden = true; };
+$('b-add-go').onclick = () => {
+  const id = $('add-id').value.trim();
+  const note = $('add-note');
+  if (!id) return;
+  if (models.some(m => m.id === id)) { note.innerHTML = `<b style="color:var(--warn)">Already in your list.</b>`; return; }
+  const l = live?.get(id);
+  if (!l) {
+    note.innerHTML = live
+      ? `<b style="color:var(--crit)">No model with that exact ID on OpenRouter.</b> IDs look like <code>vendor/model-name</code>.`
+      : `<b style="color:var(--crit)">Catalogue unavailable</b> — can't verify that ID while offline.`;
+    return;
+  }
+  const m = { id: l.id, name: l.name.replace(/^.*?: /, ''), lab: id.split('/')[0], inp: l.inp, out: l.out, custom: true };
+  store.set(SK.custom, store.get(SK.custom, []).concat([m]));
+  loadModels(); selected.add(id); saveSel(); renderChips(); fillSumSelect(); updateEst();
+  $('m-add').hidden = true;
+};
+$('add-id').addEventListener('keydown', e => { if (e.key === 'Enter') $('b-add-go').click(); });
+for (const m of ['m-set', 'm-add'])
+  $(m).addEventListener('click', e => { if (e.target.id === m) $(m).hidden = true; });
+
+$('b-ask').onclick = run;
+$('b-stop').onclick = () => { if (abort) abort.abort(); };
+$('q').addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+});
+
+/* ══════════════ boot ══════════════ */
+loadModels();
+renderChips();
+fillSumSelect();
+$('q').value = store.get(SK.q, '');
+updateEst();
+refreshCatalog();
+if ('serviceWorker' in navigator)
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+</script>
+</body>
+</html>
