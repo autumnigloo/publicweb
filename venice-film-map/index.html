@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Venice on Location</title>
+<meta name="description" content="An interactive map of Venice filming locations from fifteen films, 1955-2019, marking the places where the film cheats.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;0,6..96,600;1,6..96,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+/* ---------------------------------------------------------------- tokens
+   Light is the base set. Dark redefines only the token values, once for the
+   OS setting and once for the toggle's stamp, so an explicit choice wins in
+   both directions. Nothing below this block hard-codes a colour. */
+:root {
+  color-scheme: light;
+  --land:        #e9e8e1;   /* shown while tiles load, and behind the map */
+  --panel:       #f3f2ed;
+  --panel-2:     #e6e5dd;
+  --ink:         #18211f;
+  --ink-2:       #5b6763;
+  --ink-3:       #8b948f;
+  --rule:        #d3d3ca;
+  --gold:        #8d6b0f;   /* the Leone d'Oro, stepped down for a light ground */
+  --gold-mark:   #a67a12;   /* the same gold as a map mark, not as text */
+  --gold-soft:   #f0e3c0;
+  --pin:         #222e2b;
+  --pin-halo:    #fbfaf6;   /* pins sit on live tiles now, so they need a halo */
+  --shadow:      0 2px 10px rgba(24,33,31,.13), 0 12px 34px rgba(24,33,31,.10);
+  --sheet:       #fbfaf6;
+  /* settle OpenStreetMap's standard style into the stone-and-lagoon palette */
+  --tile-filter: saturate(.5) sepia(.18) brightness(1.06) contrast(.88);
+
+  --f-display: "Bodoni Moda", Didot, "Times New Roman", serif;
+  --f-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --land:      #273230;
+    --panel:     #171d1b;
+    --panel-2:   #202826;
+    --ink:       #ecebe3;
+    --ink-2:     #9aa5a0;
+    --ink-3:     #6d7a75;
+    --rule:      #2c3532;
+    --gold:      #dfb44a;
+    --gold-mark: #dfb44a;
+    --gold-soft: #3a2f14;
+    --pin:       #f0efe6;
+    --pin-halo:  #101615;
+    --shadow:    0 2px 10px rgba(0,0,0,.5), 0 14px 40px rgba(0,0,0,.42);
+    --sheet:     #1b2220;
+    --tile-filter: invert(1) hue-rotate(180deg) saturate(.3) brightness(.78) contrast(.95);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --land:      #273230;
+  --panel:     #171d1b;
+  --panel-2:   #202826;
+  --ink:       #ecebe3;
+  --ink-2:     #9aa5a0;
+  --ink-3:     #6d7a75;
+  --rule:      #2c3532;
+  --gold:      #dfb44a;
+  --gold-mark: #dfb44a;
+  --gold-soft: #3a2f14;
+  --pin:       #f0efe6;
+  --pin-halo:  #101615;
+  --shadow:    0 2px 10px rgba(0,0,0,.5), 0 14px 40px rgba(0,0,0,.42);
+  --sheet:     #1b2220;
+  --tile-filter: invert(1) hue-rotate(180deg) saturate(.3) brightness(.78) contrast(.95);
+}
+
+/* ---------------------------------------------------------------- frame */
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--f-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.app {
+  display: grid;
+  grid-template-columns: minmax(330px, 380px) 1fr;
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* ---------------------------------------------------------------- rail */
+.rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--rule);
+}
+.rail-head { position: relative; padding: 26px 24px 18px; border-bottom: 1px solid var(--rule); }
+.eyebrow {
+  margin: 0 0 10px;
+  padding-right: 40px;        /* clear of the theme toggle */
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+h1 {
+  margin: 0;
+  font-family: var(--f-display);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: 34px;
+  line-height: 1.02;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+}
+.lede {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  line-height: 1.62;
+  color: var(--ink-2);
+  max-width: 42ch;
+}
+.theme {
+  position: absolute; top: 22px; right: 18px;
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  background: none; border: 1px solid var(--rule); border-radius: 50%;
+  color: var(--ink-3); cursor: pointer;
+  font: 400 13px/1 var(--f-sans);
+}
+.theme:hover { color: var(--gold); border-color: var(--gold-mark); }
+
+.modes { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+.mode {
+  font: 500 12px/1 var(--f-sans);
+  letter-spacing: .01em;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 8px 13px;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.mode:hover { border-color: var(--ink-3); color: var(--ink); }
+.mode.is-on {
+  background: var(--gold-soft);
+  border-color: var(--gold-mark);
+  color: var(--gold);
+}
+:is(.mode, .film, .loc, .pop-gm, .detail-back, .theme, .zoomer button):focus-visible {
+  outline: 2px solid var(--gold-mark);
+  outline-offset: 2px;
+}
+
+.rail-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+
+.films { list-style: none; margin: 0; padding: 6px 0 20px; }
+.film {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 11px 24px;
+  background: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  color: inherit;
+  transition: background .13s;
+}
+.film:hover { background: var(--panel-2); }
+.film.is-on { background: var(--panel-2); border-left-color: var(--gold-mark); }
+.film-year { font: 400 11.5px/1 var(--f-mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.film.is-on .film-year { color: var(--gold); }
+.film-title {
+  font-family: var(--f-display);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.22;
+  letter-spacing: -.005em;
+}
+.film-n { font: 400 11px/1 var(--f-mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* -------- selected-film detail */
+.detail { padding: 4px 24px 26px; }
+.detail-back {
+  font: 500 11px/1 var(--f-mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  background: none; border: 0; padding: 0 0 16px; cursor: pointer;
+}
+.detail-back:hover { color: var(--gold); }
+.detail h2 {
+  margin: 0;
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 25px;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.detail-cred { margin: 7px 0 0; font: 400 11.5px/1.5 var(--f-mono); color: var(--ink-3); }
+.detail-note {
+  margin: 14px 0 0;
+  font-size: 13.5px;
+  line-height: 1.62;
+  color: var(--ink-2);
+  padding-left: 13px;
+  border-left: 2px solid var(--rule);
+}
+.locs { list-style: none; margin: 22px 0 0; padding: 0; }
+.locs-h {
+  font: 500 10.5px/1 var(--f-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule);
+}
+.loc {
+  display: block; width: 100%; text-align: left;
+  background: none; border: 0; border-bottom: 1px solid var(--rule);
+  padding: 12px 0; cursor: pointer; color: inherit;
+}
+.loc:hover .loc-name { color: var(--gold); }
+.loc-name { font-size: 14px; font-weight: 500; transition: color .13s; }
+.loc-sub { display: block; margin-top: 3px; font: 400 11px/1.45 var(--f-mono); color: var(--ink-3); }
+.loc-flag {
+  display: inline-block; margin-left: 7px; padding: 1px 6px;
+  font: 500 9.5px/1.5 var(--f-mono); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--gold); background: var(--gold-soft); border-radius: 3px;
+  vertical-align: 1px;
+}
+
+.rail-foot {
+  padding: 14px 24px 16px;
+  border-top: 1px solid var(--rule);
+  font: 400 10.5px/1.6 var(--f-mono);
+  color: var(--ink-3);
+}
+.rail-foot a { color: var(--ink-2); }
+
+/* ---------------------------------------------------------------- map */
+.map-wrap { position: relative; min-width: 0; }
+#map { position: absolute; inset: 0; background: var(--land); font-family: var(--f-sans); }
+.leaflet-container { background: var(--land); outline: none; }
+/* tiles only - markers, popups and controls keep their own colours */
+.leaflet-tile-pane { filter: var(--tile-filter); }
+
+.legend {
+  position: absolute; left: 16px; bottom: 16px; z-index: 500;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  backdrop-filter: blur(7px);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 11px 13px;
+  font: 400 10.5px/1.5 var(--f-mono);
+  color: var(--ink-2);
+  max-width: 236px;
+  pointer-events: none;
+}
+.legend b { display: block; margin-bottom: 7px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.legend-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+.legend-dot { flex: none; border-radius: 50%; background: var(--pin); border: 1.5px solid var(--pin-halo); }
+.legend-dot.d1 { width: 8px; height: 8px; }
+.legend-dot.d2 { width: 15px; height: 15px; }
+.legend-dot.hollow { background: var(--pin-halo); border: 2px solid var(--gold-mark); width: 12px; height: 12px; }
+
+.zoomer { position: absolute; right: 16px; bottom: 46px; z-index: 500; display: flex; flex-direction: column; gap: 1px; }
+.zoomer button {
+  width: 34px; height: 34px;
+  font: 400 17px/1 var(--f-sans);
+  color: var(--ink-2);
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+}
+.zoomer button:first-child { border-radius: 3px 3px 0 0; }
+.zoomer button:last-child { border-radius: 0 0 3px 3px; border-top: 0; }
+.zoomer button:hover { color: var(--gold); }
+
+/* -------- leaflet overrides */
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--panel) 90%, transparent) !important;
+  color: var(--ink-3) !important;
+  font: 400 10px/1.5 var(--f-mono) !important;
+  padding: 3px 7px !important;
+  border-left: 1px solid var(--rule);
+  border-top: 1px solid var(--rule);
+  border-radius: 3px 0 0 0;
+}
+.leaflet-control-attribution a { color: var(--ink-2) !important; }
+.leaflet-popup-content-wrapper {
+  background: var(--sheet); color: var(--ink);
+  border-radius: 4px; border: 1px solid var(--rule);
+  box-shadow: var(--shadow); padding: 0;
+}
+.leaflet-popup-content { margin: 0; width: 306px !important; line-height: inherit; }
+.leaflet-popup-tip { background: var(--sheet); border: 1px solid var(--rule); box-shadow: none; }
+.leaflet-popup-close-button { color: var(--ink-3) !important; width: 26px !important; height: 26px !important; font: 400 18px/26px var(--f-sans) !important; }
+.leaflet-popup-close-button:hover { color: var(--ink) !important; background: none !important; }
+.leaflet-tooltip {
+  background: var(--ink); color: var(--panel);
+  border: 0; border-radius: 3px; box-shadow: none;
+  padding: 4px 8px;
+  font: 500 11.5px/1.3 var(--f-sans);
+  white-space: nowrap;
+}
+.leaflet-tooltip:before { display: none; }
+
+.pop { padding: 16px 17px 15px; }
+.pop-place { margin: 0; font-family: var(--f-display); font-weight: 600; font-size: 20px; line-height: 1.14; text-wrap: balance; }
+.pop-meta { margin: 7px 0 0; font: 400 10.5px/1.5 var(--f-mono); letter-spacing: .02em; color: var(--ink-3); }
+.pop-films { list-style: none; margin: 14px 0 0; padding: 0; }
+.pop-films > li { padding-top: 13px; border-top: 1px solid var(--rule); }
+.pop-films > li + li { margin-top: 13px; }
+.pf-head { display: flex; align-items: baseline; gap: 8px; }
+.pf-title { font-family: var(--f-display); font-weight: 600; font-size: 15.5px; line-height: 1.2; }
+.pf-year { font: 400 11px/1 var(--f-mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.pf-scene { margin: 6px 0 0; font-size: 13px; line-height: 1.58; color: var(--ink-2); }
+.pf-cheat {
+  margin: 9px 0 0; padding: 9px 11px;
+  background: var(--gold-soft); border-radius: 3px;
+  font-size: 12.5px; line-height: 1.55; color: var(--ink);
+}
+.pf-cheat b {
+  display: block; margin-bottom: 3px;
+  font: 500 9.5px/1 var(--f-mono); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--gold);
+}
+.pop-gm {
+  display: inline-block; margin-top: 15px;
+  font: 500 11px/1 var(--f-mono); letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-2); text-decoration: none;
+  border-bottom: 1px solid var(--rule); padding-bottom: 3px;
+}
+.pop-gm:hover { color: var(--gold); border-color: var(--gold-mark); }
+
+/* ---------------------------------------------------------------- narrow */
+@media (max-width: 860px) {
+  /* map on top, then the rail flowing at its natural height below it */
+  .app { grid-template-columns: 1fr; grid-template-rows: 54vh auto; height: auto; min-height: 100dvh; }
+  .map-wrap { grid-row: 1; }
+  .rail { grid-row: 2; display: block; border-right: 0; border-top: 1px solid var(--rule); }
+  .rail-body { overflow: visible; }
+  h1 { font-size: 30px; }
+  .legend { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="rail">
+    <header class="rail-head">
+      <button class="theme" id="theme" type="button" aria-label="Switch between light and dark">◐</button>
+      <p class="eyebrow" id="eyebrow"></p>
+      <h1>Venice on Location</h1>
+      <p class="lede">Where the films were actually standing. Venice has been
+        photographed more than almost any city on earth &mdash; and routinely
+        rearranged, so that a hotel entrance is half a mile from its own lobby.
+        Both versions are mapped here.</p>
+      <div class="modes">
+        <button class="mode is-on" id="m-all" type="button">All films</button>
+        <button class="mode" id="m-cheat" type="button">Where the film cheats</button>
+      </div>
+    </header>
+    <div class="rail-body">
+      <ol class="films" id="films"></ol>
+      <section class="detail" id="detail" hidden></section>
+    </div>
+    <footer class="rail-foot">
+      Map tiles and data &copy;
+      <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
+      contributors, ODbL. Locations checked against published location guides.
+    </footer>
+  </aside>
+
+  <main class="map-wrap">
+    <div id="map"></div>
+    <div class="legend">
+      <b>Reading the map</b>
+      <div class="legend-row"><span class="legend-dot d1"></span> one film</div>
+      <div class="legend-row"><span class="legend-dot d2"></span> several films</div>
+      <div class="legend-row"><span class="legend-dot hollow"></span> the film cheats here</div>
+    </div>
+    <div class="zoomer">
+      <button type="button" id="z-in" aria-label="Zoom in">+</button>
+      <button type="button" id="z-out" aria-label="Zoom out">&minus;</button>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const DATA = {"films":[{"id":"summertime","title":"Summertime","year":1955,"director":"David Lean","note":"Lean shot almost the whole picture on location, rare for 1955. Venice is the co-star, not a backdrop."},{"id":"frwl","title":"From Russia with Love","year":1963,"director":"Terence Young","note":"Bond's first visit. The unit spent about a day here; the closing gondola ride is rear projection shot at Pinewood."},{"id":"death","title":"Death in Venice","year":1971,"director":"Luchino Visconti","note":"Shot at the Hotel des Bains and through the city; some interiors were rebuilt at Cinecittà in Rome."},{"id":"dontlook","title":"Don't Look Now","year":1973,"director":"Nicolas Roeg","note":"Seven winter weeks in Venice in early 1973, using an out-of-season city almost empty of tourists."},{"id":"moonraker","title":"Moonraker","year":1979,"director":"Lewis Gilbert","note":"Home of the gondola that turns into a hovercraft and drives across St Mark's Square."},{"id":"romance","title":"A Little Romance","year":1979,"director":"George Roy Hill","note":"The film that sold the world the legend of kissing under the Bridge of Sighs at sunset."},{"id":"indy","title":"Indiana Jones and the Last Crusade","year":1989,"director":"Steven Spielberg","note":"The 20-minute Venice sequence comes from a single day of location shooting, 8 August 1988. Nearly everything else was built in England."},{"id":"ripley","title":"The Talented Mr. Ripley","year":1999,"director":"Anthony Minghella","note":"Venice arrives in the last act, as the place Ripley finally has the life he stole."},{"id":"italianjob","title":"The Italian Job","year":2003,"director":"F. Gary Gray","note":"Opens with the gold heist and a boat chase that runs the Grand Canal and out to the causeway."},{"id":"merchant","title":"The Merchant of Venice","year":2004,"director":"Michael Radford","note":"Shot on the canals and in the palaces themselves, with the Veneto mainland standing in for Belmont's countryside."},{"id":"casanova","title":"Casanova","year":2005,"director":"Lasse Hallström","note":"An eighteenth-century Venice assembled from real palazzi, plus Palladio's Teatro Olimpico over in Vicenza."},{"id":"casino","title":"Casino Royale","year":2006,"director":"Martin Campbell","note":"Bond sails in, and a palazzo falls into the Grand Canal — the fall itself built on the 007 Stage at Pinewood."},{"id":"tourist","title":"The Tourist","year":2010,"director":"Florian Henckel von Donnersmarck","note":"A film that rearranges Venice freely: its hotel is two buildings, and its window sees a bridge it could not see."},{"id":"inferno","title":"Inferno","year":2016,"director":"Ron Howard","note":"Howard insisted on shooting the climax for real, including inside the basilica's flooded crypt."},{"id":"spider","title":"Spider-Man: Far From Home","year":2019,"director":"Jon Watts","note":"Filmed here in 2018, though the wrecked Rialto was rebuilt on the backlot at Leavesden."}],"types":{"church":"Church","palace":"Palace & scuola","hotel":"Hotel & café","campo":"Square & street","water":"Canal, bridge & quay","lido":"Island & Lido"},"locations":[{"id":"san-barnaba-church","name":"Chiesa di San Barnaba","sestiere":"Dorsoduro","type":"church","lat":45.43307,"lon":12.32546,"appearances":[{"film":"indy","scene":"The library where Indy works out that the tomb of Sir Richard lies beneath the floor. The church front is the library front.","cheat":"Only the exterior. The library interior is the Scuola Grande di San Rocco, and the catacombs below it were built at Elstree."}]},{"id":"campo-san-barnaba","name":"Campo San Barnaba","sestiere":"Dorsoduro","type":"campo","lat":45.43307,"lon":12.32498,"appearances":[{"film":"summertime","scene":"Signor Di Rossi's antique shop stands on this square, and beside it Jane steps backwards off the fondamenta into the Rio de San Barnaba while working her camera.","cheat":"Hepburn went into the canal for real, repeatedly. She blamed a lifelong eye infection on the water."},{"film":"indy","scene":"Indy and Elsa surface from the catacombs through a manhole in the middle of the square, straight into a startled wedding party.","cheat":"The manhole was a rig placed on the square; what they climb out of is a set."},{"film":"italianjob","scene":"The crew moves through the campo in the run-up to the heist."}]},{"id":"san-rocco","name":"Scuola Grande di San Rocco","sestiere":"San Polo","type":"palace","lat":45.43654,"lon":12.32527,"appearances":[{"film":"indy","scene":"The library interior — the reading room where Indy reads the numbers off the stained glass and starts drilling through the floor.","cheat":"Its exterior in the film is the Chiesa di San Barnaba, half a mile away across the Grand Canal."},{"film":"casanova","scene":"One of the grand interiors dressed for the eighteenth-century city."}]},{"id":"campo-san-rocco","name":"Campo San Rocco","sestiere":"San Polo","type":"campo","lat":45.43672,"lon":12.32559,"appearances":[{"film":"spider","scene":"One of the squares used during the Water Elemental's run through the city."}]},{"id":"pisani-moretta","name":"Palazzo Pisani Moretta","sestiere":"San Polo","type":"palace","lat":45.43601,"lon":12.32927,"appearances":[{"film":"tourist","scene":"The pink Gothic palace with the pier that Frank and Elise arrive at, and the rooms they stay in.","cheat":"They are supposed to be at the Hotel Danieli, which is a mile east along the waterfront. The room's view of the Rialto Bridge does not exist from either building."},{"film":"italianjob","scene":"The palazzo the gold is taken from, with the safe dropped through the floor into the canal below."}]},{"id":"grand-canal","name":"Volta del Canal","sestiere":"Grand Canal","type":"water","lat":45.4348,"lon":12.3268,"appearances":[{"film":"indy","scene":"The end of the speedboat chase runs along the Grand Canal in the south-west of San Marco.","cheat":"The rest of the chase — the boats, the harbour, the propellers — is Tilbury Docks in Essex, where a stretch of Venetian waterfront was built on the quay."},{"film":"italianjob","scene":"The escape after the heist, down the Grand Canal and out towards the Ponte della Libertà."},{"film":"tourist","scene":"The water-taxi chase along the canal."},{"film":"spider","scene":"The action staged among the gondolas and palace fronts."}]},{"id":"accademia","name":"Ponte dell'Accademia","sestiere":"Dorsoduro","type":"water","lat":45.43135,"lon":12.32879,"appearances":[{"film":"casino","scene":"Bond's sailboat comes up the Grand Canal from here towards the Rialto."},{"film":"italianjob","scene":"A landmark of the post-heist boat chase."}]},{"id":"campiello-remer","name":"Campiello del Remer","sestiere":"Cannaregio","type":"campo","lat":45.43941,"lon":12.33626,"appearances":[{"film":"casino","scene":"The sinking house. The palazzo whose foundations give way and take Vesper down with it stands on the canal here, just north of the Rialto and opposite the market.","cheat":"The building you can see is the Palazzo Lion Morosini, now a B&B, and it is in no danger. The grander façade was added digitally, and the collapse was a model and a full set on the 007 Stage at Pinewood."}]},{"id":"rialto","name":"Ponte di Rialto","sestiere":"San Polo","type":"water","lat":45.43807,"lon":12.33565,"appearances":[{"film":"merchant","scene":"The bridge and the exchange around it, where the bond between Antonio and Shylock is struck."},{"film":"spider","scene":"Peter's run across the bridge during the attack.","cheat":"The destruction was not shot here. A large section of the Rialto and its canal front was rebuilt on the backlot at Leavesden, in Hertfordshire."}]},{"id":"mercato-rialto","name":"Mercato di Rialto","sestiere":"San Polo","type":"campo","lat":45.43964,"lon":12.33452,"appearances":[{"film":"casino","scene":"The sail up the canal ends at the fish market, opposite the house that is about to fall down."}]},{"id":"piazza-san-marco","name":"Piazza San Marco","sestiere":"San Marco","type":"campo","lat":45.43426,"lon":12.33867,"appearances":[{"film":"moonraker","scene":"Bond drives his gondola across the piazza on a hovercraft skirt, past a double-taking pigeon and a man dropping his drink.","cheat":"The gondola had to leave the water six times before the shot worked; it kept tipping Roger Moore into the canal."},{"film":"summertime","scene":"Jane's Venice of tables, orchestras and other people's company."},{"film":"death","scene":"Aschenbach crosses the square as the city quietly conceals its cholera outbreak."},{"film":"spider","scene":"The school party arrives in the square and is caught in the first attack."},{"film":"inferno","scene":"Langdon and Sienna cross the square on the way to the basilica."},{"film":"casanova","scene":"The square dressed as it was in the eighteenth century."},{"film":"tourist","scene":"The long atmospheric passes over the square."}]},{"id":"basilica","name":"Basilica di San Marco","sestiere":"San Marco","type":"church","lat":45.43455,"lon":12.33982,"appearances":[{"film":"inferno","scene":"The horses, the tomb of Enrico Dandolo, and the climax down in the flooded crypt — a real space that is rarely open."},{"film":"ripley","scene":"Part of Ripley's Venice, the city he has finally bought his way into."}]},{"id":"palazzo-ducale","name":"Palazzo Ducale","sestiere":"San Marco","type":"palace","lat":45.43421,"lon":12.34059,"appearances":[{"film":"merchant","scene":"The balcony of the Doge's Palace, and the machinery of Venetian law that decides Shylock's case."},{"film":"casanova","scene":"The seat of the Inquisition that is forever about to catch up with him."}]},{"id":"ponte-sospiri","name":"Ponte dei Sospiri","sestiere":"San Marco","type":"water","lat":45.43406,"lon":12.34086,"appearances":[{"film":"romance","scene":"Daniel and Lauren's whole plan: kiss in a gondola under this bridge at sunset as the bells ring, and love lasts forever. The legend is essentially the film's invention."},{"film":"frwl","scene":"The last shot of the film, Bond and Tatiana drifting under the bridge.","cheat":"Connery and Bianchi never got in the boat. They played it against back projection at Pinewood in July 1963."}]},{"id":"leoncini","name":"Piazzetta dei Leoncini","sestiere":"San Marco","type":"campo","lat":45.4348,"lon":12.3393,"appearances":[{"film":"moonraker","scene":"The Venini glassworks, where Bond finds the laboratory and the fight ends through several thousand pounds of vitrine.","cheat":"The real Venini shop stood here until it closed in 2020. The museum interior was a set at Boulogne Studios outside Paris."}]},{"id":"florian","name":"Caffè Florian","sestiere":"San Marco","type":"hotel","lat":45.4336,"lon":12.33828,"appearances":[{"film":"ripley","scene":"The café where Ripley sits inside the life he has taken."},{"film":"summertime","scene":"The tables where Jane is most conspicuously alone."}]},{"id":"torre-orologio","name":"Torre dell'Orologio","sestiere":"San Marco","type":"palace","lat":45.43474,"lon":12.33895,"appearances":[{"film":"death","scene":"The clock tower, and time running out on Aschenbach."}]},{"id":"fenice","name":"Teatro La Fenice","sestiere":"San Marco","type":"palace","lat":45.43371,"lon":12.33386,"appearances":[{"film":"death","scene":"The calli behind the opera house, where Aschenbach follows Tadzio and his family through a city he will not leave."}]},{"id":"calegheri","name":"Campiello dei Calegheri","sestiere":"San Marco","type":"campo","lat":45.43331,"lon":12.33253,"appearances":[{"film":"death","scene":"One of the small squares west of La Fenice used for the pursuit through the back streets."}]},{"id":"hotel-fenice","name":"Hotel La Fenice et des Artistes","sestiere":"San Marco","type":"hotel","lat":45.43392,"lon":12.33337,"appearances":[{"film":"dontlook","scene":"Where the two sisters move to after leaving their pensione — and where Laura goes looking for them."}]},{"id":"bauer","name":"Bauer Palazzo, Campo San Moisè","sestiere":"San Marco","type":"hotel","lat":45.43286,"lon":12.33584,"appearances":[{"film":"dontlook","scene":"The inside of the Baxters' hotel — the lobby, the corridors, the room.","cheat":"The outside of that same hotel is the Gabrielli, twenty minutes' walk east along the Riva degli Schiavoni."}]},{"id":"conservatorio","name":"Palazzo Pisani — Conservatorio Benedetto Marcello","sestiere":"San Marco","type":"palace","lat":45.43236,"lon":12.3305,"appearances":[{"film":"casino","scene":"The courtyard where Vesper hands the money to Mr Gettler.","cheat":"It reads as somewhere off St Mark's Square, but it is the courtyard of the music conservatory by Campo Santo Stefano."}]},{"id":"palazzetto-pisani","name":"Palazzetto Pisani","sestiere":"San Marco","type":"palace","lat":45.43197,"lon":12.3303,"appearances":[{"film":"casanova","scene":"Interiors for several of the film's private, candlelit scenes."}]},{"id":"europa-regina","name":"Hotel Europa & Regina","sestiere":"San Marco","type":"hotel","lat":45.4313,"lon":12.3324,"appearances":[{"film":"ripley","scene":"Herbert Greenleaf's hotel, where the father comes to find out what happened to his son."}]},{"id":"danieli","name":"Hotel Danieli","sestiere":"Castello","type":"hotel","lat":45.4339,"lon":12.34206,"appearances":[{"film":"tourist","scene":"The hotel Frank and Elise are checking into, by name.","cheat":"The entrance, the pier and the rooms you see are the Palazzo Pisani Moretta on the other side of the city. The Danieli plays itself only in passing."}]},{"id":"gabrielli","name":"Hotel Gabrielli","sestiere":"Castello","type":"hotel","lat":45.43375,"lon":12.34764,"appearances":[{"film":"dontlook","scene":"The Baxters' hotel from the outside — a converted Gothic palace on the waterfront, looking out at the San Marco canal.","cheat":"Step through the door and you are in the Bauer, over by Campo San Moisè."}]},{"id":"riva-schiavoni","name":"Riva degli Schiavoni","sestiere":"Castello","type":"water","lat":45.43365,"lon":12.347,"appearances":[{"film":"moonraker","scene":"Bond picks up his gondola at the traghetto pier on the waterfront here."},{"film":"ripley","scene":"The promenade walked in the Venice sequence."}]},{"id":"santa-maria-formosa","name":"Campo Santa Maria Formosa","sestiere":"Castello","type":"campo","lat":45.4373,"lon":12.34104,"appearances":[{"film":"spider","scene":"The square where Peter tries to stop the campanile coming down on the crowd."}]},{"id":"arsenale","name":"Arsenale","sestiere":"Castello","type":"palace","lat":45.43543,"lon":12.35334,"appearances":[{"film":"spider","scene":"The gate and the canal of the old shipyard, used in the chase."}]},{"id":"via-garibaldi","name":"Rio di Sant'Anna, Via Garibaldi","sestiere":"Castello","type":"water","lat":45.43226,"lon":12.35312,"appearances":[{"film":"spider","scene":"A working, residential stretch of Castello used for the canal-level action."}]},{"id":"san-nicolo","name":"Chiesa di San Nicolò dei Mendicoli","sestiere":"Dorsoduro","type":"church","lat":45.43252,"lon":12.3159,"appearances":[{"film":"dontlook","scene":"The church John Baxter has come to Venice to restore, where he climbs the scaffolding and falls. Nothing here is faked: the church really was under restoration while Roeg was filming, and the work on screen is the work that was going on."}]},{"id":"ghetto","name":"Campo de Gheto Novo","sestiere":"Cannaregio","type":"campo","lat":45.44536,"lon":12.32684,"appearances":[{"film":"merchant","scene":"The world Shylock is locked into every night — the first ghetto, and the reason the film opens with a title card about it."}]},{"id":"van-axel","name":"Palazzo Soranzo Van Axel","sestiere":"Cannaregio","type":"palace","lat":45.43946,"lon":12.33956,"appearances":[{"film":"casanova","scene":"One of the few Venetian palaces that still has its original fifteenth-century courtyard and stair, used for interiors."}]},{"id":"fondamente-nove","name":"Fondamente Nove","sestiere":"Cannaregio","type":"water","lat":45.443,"lon":12.34063,"appearances":[{"film":"spider","scene":"The northern quay, facing the open lagoon and the cemetery island."}]},{"id":"santa-lucia","name":"Stazione di Venezia Santa Lucia","sestiere":"Cannaregio","type":"campo","lat":45.44108,"lon":12.32103,"appearances":[{"film":"tourist","scene":"Where the train from Paris puts Frank and Elise out onto the water steps."}]},{"id":"dogana","name":"Punta della Dogana","sestiere":"Dorsoduro","type":"water","lat":45.43074,"lon":12.33629,"appearances":[{"film":"casino","scene":"The point Bond's yacht comes round, out of the Bacino di San Marco and into the Grand Canal."}]},{"id":"san-giorgio","name":"San Giorgio Maggiore","sestiere":"Islands","type":"lido","lat":45.42786,"lon":12.3438,"appearances":[{"film":"merchant","scene":"Palladio's monastery on the island stands in for Belmont, Portia's house, across the water from the city of the men who need her money."}]},{"id":"des-bains","name":"Grand Hotel des Bains","sestiere":"Lido","type":"hotel","lat":45.4132,"lon":12.3747,"appearances":[{"film":"death","scene":"Aschenbach's hotel. The lobby, the dining room and the Art Nouveau reading room, which the hotel later renamed the Visconti Room.","cheat":"Some interiors were rebuilt at Cinecittà. The hotel itself closed in 2010 and has been empty ever since."}]},{"id":"lido-beach","name":"Lido beach, Lungomare Marconi","sestiere":"Lido","type":"lido","lat":45.4128,"lon":12.3764,"appearances":[{"film":"death","scene":"The striped cabins, the deckchair, and the last shot: Tadzio in the shallows, Aschenbach's dye running down his face."}]},{"id":"palazzo-cinema","name":"Palazzo del Cinema","sestiere":"Lido","type":"lido","lat":45.40588,"lon":12.36708,"appearances":[],"landmark":true}],"extra":{"palazzo-cinema":"Not a filming location — the reason for the rest. The Venice Film Festival has run from this building on the Lido since 1937, and its Golden Lion is the oldest film prize in the world."}};
+
+/* ---------------------------------------------------------------- theme */
+const THEME_KEY = "venice-on-location:theme";
+function setTheme(t) {
+  if (t) document.documentElement.setAttribute("data-theme", t);
+  else document.documentElement.removeAttribute("data-theme");
+  try { t ? localStorage.setItem(THEME_KEY, t) : localStorage.removeItem(THEME_KEY); } catch (e) {}
+}
+try { const saved = localStorage.getItem(THEME_KEY); if (saved) setTheme(saved); } catch (e) {}
+
+/* ---------------------------------------------------------------- model */
+const FILM = Object.fromEntries(DATA.films.map(f => [f.id, f]));
+const LOCS = DATA.locations.map(l => ({
+  ...l,
+  films: l.appearances.map(a => a.film),
+  cheats: l.appearances.some(a => a.cheat),
+}));
+for (const f of DATA.films) f.count = LOCS.filter(l => l.films.includes(f.id)).length;
+
+const state = { film: null, cheatOnly: false };
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---------------------------------------------------------------- map */
+const map = L.map("map", {
+  center: [45.4352, 12.3345],
+  zoom: 14,
+  minZoom: 12,
+  maxZoom: 19,
+  zoomControl: false,
+  maxBounds: [[45.36, 12.24], [45.52, 12.45]],
+  maxBoundsViscosity: 0.7,
+});
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+}).addTo(map);
+
+const renderer = L.canvas({ padding: 0.4 });
+
+/* ---------------------------------------------------------------- pins */
+const visible = l => {
+  if (l.landmark) return !state.film && !state.cheatOnly;
+  if (state.film && !l.films.includes(state.film)) return false;
+  if (state.cheatOnly && !l.cheats) return false;
+  return true;
+};
+const radiusFor = l => {
+  const base = 4.5 + Math.min(l.films.length - 1, 5) * 1.5;
+  return state.film && l.films.includes(state.film) ? base + 1.5 : base;
+};
+function styleFor(l) {
+  const on = visible(l);
+  const active = !!(state.film && l.films.includes(state.film));
+  const hollow = l.landmark || l.cheats;
+  return {
+    radius: l.landmark ? 6 : radiusFor(l),
+    fillColor: hollow ? tok("--pin-halo") : active ? tok("--gold-mark") : tok("--pin"),
+    fillOpacity: on ? 1 : 0,
+    color: hollow || active ? tok("--gold-mark") : tok("--pin-halo"),
+    weight: hollow ? (active ? 3 : 2) : active ? 2.5 : 1.8,
+    opacity: on ? 1 : 0,
+    interactive: on,
+  };
+}
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function popupHTML(l) {
+  const coord = l.lat.toFixed(4) + ", " + l.lon.toFixed(4);
+  const meta = [l.sestiere, DATA.types[l.type], coord].filter(Boolean).map(esc).join(" &middot; ");
+  const body = l.appearances.length
+    ? "<ul class='pop-films'>" + l.appearances.map(a => {
+        const f = FILM[a.film];
+        return "<li><div class='pf-head'><span class='pf-title'>" + esc(f.title) +
+          "</span><span class='pf-year'>" + f.year + "</span></div>" +
+          "<p class='pf-scene'>" + esc(a.scene) + "</p>" +
+          (a.cheat ? "<p class='pf-cheat'><b>In fact</b>" + esc(a.cheat) + "</p>" : "") +
+          "</li>";
+      }).join("") + "</ul>"
+    : "<p class='pf-scene' style='margin-top:14px'>" + esc(DATA.extra[l.id] || "") + "</p>";
+  return "<div class='pop'><p class='pop-place'>" + esc(l.name) + "</p>" +
+    "<p class='pop-meta'>" + meta + "</p>" + body +
+    "<a class='pop-gm' target='_blank' rel='noopener' href='https://www.google.com/maps/search/?api=1&query=" +
+    l.lat + "%2C" + l.lon + "'>Open in Google Maps</a></div>";
+}
+
+const markers = LOCS.map(l => {
+  const m = L.circleMarker([l.lat, l.lon], { renderer, ...styleFor(l) });
+  m.loc = l;
+  m.bindTooltip(l.name, { direction: "top", offset: [0, -8], opacity: 1 });
+  m.bindPopup(() => popupHTML(l), { maxWidth: 320, autoPanPadding: [24, 24], closeButton: true });
+  m.addTo(map);
+  return m;
+});
+
+// the Lido sits far south-east and would shrink the city to nothing, so frame the centre
+const home = L.latLngBounds(
+  LOCS.filter(l => !l.landmark && l.sestiere !== "Lido").map(l => [l.lat, l.lon])).pad(0.07);
+map.fitBounds(home, { animate: false });
+
+/* ---------------------------------------------------------------- rail */
+const $films = document.getElementById("films");
+const $detail = document.getElementById("detail");
+
+document.getElementById("eyebrow").textContent =
+  "Venice · " + Math.min(...DATA.films.map(f => f.year)) + "–" +
+  Math.max(...DATA.films.map(f => f.year)) + " · " +
+  LOCS.filter(l => !l.landmark).length + " places · " + DATA.films.length + " films";
+
+$films.innerHTML = DATA.films.map(f =>
+  "<li><button class='film' type='button' data-film='" + f.id + "'>" +
+  "<span class='film-year'>" + f.year + "</span>" +
+  "<span class='film-title'>" + esc(f.title) + "</span>" +
+  "<span class='film-n'>" + f.count + "</span></button></li>").join("");
+
+function renderDetail() {
+  if (!state.film) { $detail.hidden = true; $films.hidden = false; return; }
+  const f = FILM[state.film];
+  const mine = LOCS.filter(l => l.films.includes(f.id));
+  $films.hidden = true;
+  $detail.hidden = false;
+  $detail.innerHTML =
+    "<button class='detail-back' type='button' id='back'>&larr; All films</button>" +
+    "<h2>" + esc(f.title) + "</h2>" +
+    "<p class='detail-cred'>" + f.year + " &middot; dir. " + esc(f.director) + "</p>" +
+    "<p class='detail-note'>" + esc(f.note) + "</p>" +
+    "<ul class='locs'><li class='locs-h'>" + mine.length + " location" + (mine.length === 1 ? "" : "s") + "</li>" +
+    mine.map(l => {
+      const a = l.appearances.find(x => x.film === f.id);
+      return "<li><button class='loc' type='button' data-loc='" + l.id + "'>" +
+        "<span class='loc-name'>" + esc(l.name) +
+        (a && a.cheat ? "<span class='loc-flag'>cheats</span>" : "") + "</span>" +
+        "<span class='loc-sub'>" + esc(l.sestiere) + "</span></button></li>";
+    }).join("") + "</ul>";
+  document.getElementById("back").onclick = () => selectFilm(null);
+  $detail.querySelectorAll(".loc").forEach(b => {
+    b.onclick = () => {
+      const l = LOCS.find(x => x.id === b.dataset.loc);
+      const m = markers.find(x => x.loc.id === l.id);
+      map.setView([l.lat, l.lon], Math.max(map.getZoom(), 17), { animate: !reduceMotion });
+      m.openPopup();
+    };
+  });
+}
+
+function refresh() {
+  markers.forEach(m => m.setStyle(styleFor(m.loc)));
+  document.querySelectorAll(".film").forEach(b =>
+    b.classList.toggle("is-on", b.dataset.film === state.film));
+  document.getElementById("m-all").classList.toggle("is-on", !state.cheatOnly);
+  document.getElementById("m-cheat").classList.toggle("is-on", state.cheatOnly);
+  renderDetail();
+}
+
+function selectFilm(id) {
+  state.film = id;
+  map.closePopup();
+  refresh();
+  const shown = LOCS.filter(l => visible(l) && !l.landmark);
+  const to = id && shown.length
+    ? L.latLngBounds(shown.map(l => [l.lat, l.lon])).pad(0.28)
+    : home;
+  map.flyToBounds(to, { animate: !reduceMotion, duration: 0.7, maxZoom: 17 });
+}
+
+$films.addEventListener("click", e => {
+  const b = e.target.closest(".film");
+  if (b) selectFilm(b.dataset.film === state.film ? null : b.dataset.film);
+});
+document.getElementById("m-all").onclick = () => { state.cheatOnly = false; refresh(); };
+document.getElementById("m-cheat").onclick = () => { state.cheatOnly = !state.cheatOnly; refresh(); };
+document.getElementById("z-in").onclick = () => map.zoomIn();
+document.getElementById("z-out").onclick = () => map.zoomOut();
+document.getElementById("theme").onclick = () => {
+  const dark = getComputedStyle(document.documentElement).colorScheme.includes("dark");
+  setTheme(dark ? "light" : "dark");
+  markers.forEach(m => m.setStyle(styleFor(m.loc)));
+};
+
+/* the OS theme can change under us, so repaint the pins from the tokens when it does */
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",
+  () => markers.forEach(m => m.setStyle(styleFor(m.loc))));
+
+refresh();
+</script>
+</body>
+</html>
