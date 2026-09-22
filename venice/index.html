@@ -13,6 +13,8 @@
     -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
   }
   canvas#gl { display: block; position: fixed; inset: 0; }
+  #vig { position: fixed; inset: 0; pointer-events: none;
+         background: radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0) 55%, rgba(20,12,4,0.38) 100%); }
 
   /* ── HUD ─────────────────────────────────────────────────────────────── */
   #hud {
@@ -72,8 +74,8 @@
   .screen {
     position: fixed; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center;
-    padding: 1.5rem; color: #f2ece0; background: rgba(8,12,18,0.72);
-    backdrop-filter: blur(6px); z-index: 10;
+    padding: 1.5rem; color: #f2ece0; background: rgba(8,12,18,0.62);
+    backdrop-filter: blur(5px); z-index: 10;
   }
   .screen[hidden] { display: none; }
   h1 { font-size: clamp(2rem, 9vw, 3.4rem); font-weight: 300; letter-spacing: 0.22em;
@@ -116,6 +118,8 @@
 </head>
 <body>
 
+<div id="vig"></div>
+
 <div id="hud">
   <div class="corner tl">
     <div class="lbl">Position</div><div class="val" id="pos">1<small>/4</small></div>
@@ -138,8 +142,9 @@
 
 <div class="screen" id="start">
   <h1>Venice<b>Regatta</b></h1>
-  <p class="blurb">Three laps through the canals in a wooden speedboat. Clip a gondola and you
-  lose speed — but the tourists will remember you. Each checkpoint buys you more time.</p>
+  <p class="blurb">Three laps in a wooden speedboat: up the Grand Canal under the Rialto,
+  past the Doge's Palace and back through the back canals. Clip a gondola and you lose speed.
+  Each checkpoint buys you more time, and so does a good jump off the ramps.</p>
   <div class="keys" id="howto"></div>
   <button class="go" id="play">Start</button>
 </div>
@@ -159,33 +164,52 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ═══ RENDERER / SCENE ════════════════════════════════════════════════════════
-const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: (() => {
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', canvas: (() => {
   const c = document.createElement('canvas'); c.id = 'gl'; document.body.prepend(c); return c;
 })() });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = 1.12;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// The scene is drawn twice a frame (reflection, then the real view); the
+// shadow map only needs building once, so it is refreshed by hand.
+renderer.shadowMap.autoUpdate = false;
+
+// Quality tiers. The game starts high and steps down if frames run long, so a
+// laptop keeps the reflections sharp and an older phone keeps its frame rate.
+const QUALITY = [
+  { dpr: 1,   refl: 0.33, shadow: 1024 },
+  { dpr: 1.5, refl: 0.5,  shadow: 2048 },
+  { dpr: 2,   refl: 0.5,  shadow: 2048 },
+];
+let qi = devicePixelRatio >= 2 ? 2 : 1;
 
 const scene  = new THREE.Scene();
-const HAZE   = new THREE.Color('#d8c3a0');
-scene.fog    = new THREE.FogExp2(HAZE, 0.0042);
+const HAZE   = new THREE.Color('#dcc6a2');
+scene.fog    = new THREE.FogExp2(HAZE, 0.0036);
 
-const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.5, 1400);
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.5, 1600);
 
-const sun = new THREE.DirectionalLight('#ffe2b0', 2.2);
-sun.position.set(-160, 150, -120);
-scene.add(sun);
-// Canals are deep and narrow, so most facades face away from the sun — the
-// bounce light has to carry them or the city reads as mud.
-scene.add(new THREE.HemisphereLight('#cfe2f5', '#8a7a5e', 1.6));
-scene.add(new THREE.AmbientLight('#ffe3c0', 0.55));
+// Late-afternoon sun, low enough that the palazzi throw long shadows across the water.
+const SUN_DIR = new THREE.Vector3(-0.56, 0.5, -0.66).normalize();
+const sun = new THREE.DirectionalLight('#ffd9a6', 2.9);
+sun.castShadow = true;
+Object.assign(sun.shadow.camera, { left: -78, right: 78, top: 78, bottom: -78, near: 20, far: 760 });
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.3;
+scene.add(sun, sun.target);
+// Canals are deep and narrow, so most facades sit in shade — the bounce light
+// has to carry them or the city reads as mud.
+scene.add(new THREE.HemisphereLight('#cfe0f2', '#8f7d5e', 1.35));
+scene.add(new THREE.AmbientLight('#ffe3c0', 0.42));
 
 // ═══ PROCEDURAL TEXTURES ═════════════════════════════════════════════════════
 const cv = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[(Math.random() * a.length) | 0];
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const MAXANISO = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 
 function grain(ctx, w, h, amt, dark) {
   const d = ctx.getImageData(0, 0, w, h), p = d.data;
@@ -195,117 +219,291 @@ function grain(ctx, w, h, amt, dark) {
   }
   ctx.putImageData(d, 0, 0);
 }
-
-// One bay of an upper storey: Venetian window, sill, sometimes a balcony.
-// Painted near-white so the per-building vertex colour supplies the stucco hue.
-function drawBay(ctx, x, y, s, v) {
-  ctx.save(); ctx.translate(x, y);
-  const g = ctx.createLinearGradient(0, 0, 0, s);
-  g.addColorStop(0, '#f4eee4'); g.addColorStop(1, '#ded4c4');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
-
-  // damp streaks down the plaster
-  ctx.globalAlpha = 0.09; ctx.fillStyle = '#4a4335';
-  for (let i = 0; i < 4; i++) { const sx = rnd(0, s); ctx.fillRect(sx, rnd(0, s * 0.5), rnd(1, 4), s); }
+function tex(c, srgb = true) {
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = MAXANISO;
+  return t;
+}
+function streaks(ctx, s, n, alpha) {                  // damp running down the plaster
+  ctx.globalAlpha = alpha; ctx.fillStyle = '#4a4335';
+  for (let i = 0; i < n; i++) { const sx = rnd(0, s); ctx.fillRect(sx, rnd(0, s * 0.5), rnd(1, 4), s); }
   ctx.globalAlpha = 1;
-
-  const ww = s * (v % 2 ? 0.30 : 0.34), wh = s * 0.50;
-  const wx = (s - ww) / 2, wy = s * 0.20, arch = ww / 2;
-
-  // istrian stone surround
+}
+function archPath(ctx, x, y, w, h, gothic, pad = 0) {  // a window or door opening
+  const a = w / 2;
+  ctx.beginPath();
+  ctx.moveTo(x - pad, y + h + pad); ctx.lineTo(x - pad, y + a);
+  if (gothic) {
+    ctx.quadraticCurveTo(x - pad, y - a * 0.5 - pad, x + a, y - a * 0.8 - pad);
+    ctx.quadraticCurveTo(x + w + pad, y - a * 0.5 - pad, x + w + pad, y + a);
+  } else ctx.arc(x + a, y + a, a + pad, Math.PI, 0);
+  ctx.lineTo(x + w + pad, y + h + pad); ctx.closePath();
+}
+function glass(ctx, x, y, w, h, gothic) {
+  ctx.fillStyle = '#efe9dc'; archPath(ctx, x, y, w, h, gothic, 5); ctx.fill();   // istrian surround
+  const g = ctx.createLinearGradient(x, y, x + w, y + h);
+  g.addColorStop(0, '#3a4654'); g.addColorStop(1, '#232a33');
+  ctx.fillStyle = g; archPath(ctx, x, y, w, h, gothic); ctx.fill();
+  ctx.strokeStyle = '#5d6772'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(x + w / 2, y); ctx.lineTo(x + w / 2, y + h);
+  ctx.moveTo(x, y + h * 0.55); ctx.lineTo(x + w, y + h * 0.55); ctx.stroke();
+  ctx.globalAlpha = 0.2; ctx.fillStyle = '#d6ecff';
+  ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(x + w, y + w / 2); ctx.lineTo(x + w, y + h); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+function balcony(ctx, x, y, w) {
   ctx.fillStyle = '#efe9dc';
-  ctx.beginPath();
-  ctx.moveTo(wx - 5, wy + wh + 5); ctx.lineTo(wx - 5, wy + arch);
-  if (v < 4) {                                    // gothic ogee head
-    ctx.quadraticCurveTo(wx - 5, wy - 9, wx + ww / 2, wy - 13);
-    ctx.quadraticCurveTo(wx + ww + 5, wy - 9, wx + ww + 5, wy + arch);
-  } else {                                        // round head
-    ctx.arc(wx + ww / 2, wy + arch, arch + 5, Math.PI, 0);
-  }
-  ctx.lineTo(wx + ww + 5, wy + wh + 5); ctx.closePath(); ctx.fill();
+  ctx.fillRect(x, y, w, 4);
+  for (let i = 0; i <= Math.round(w / 6); i++) ctx.fillRect(x + 1 + i * (w - 4) / Math.round(w / 6), y + 4, 3, 11);
+  ctx.fillRect(x, y + 15, w, 4);
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(x, y + 19, w, 3);
+}
 
-  // glass
-  ctx.fillStyle = '#2e3742';
-  ctx.beginPath();
-  ctx.moveTo(wx, wy + wh); ctx.lineTo(wx, wy + arch);
-  if (v < 4) {
-    ctx.quadraticCurveTo(wx, wy - 4, wx + ww / 2, wy - 8);
-    ctx.quadraticCurveTo(wx + ww, wy - 4, wx + ww, wy + arch);
-  } else ctx.arc(wx + ww / 2, wy + arch, arch, Math.PI, 0);
-  ctx.lineTo(wx + ww, wy + wh); ctx.closePath(); ctx.fill();
-
-  // glazing bars + a glint
-  ctx.strokeStyle = '#59636f'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(wx + ww / 2, wy); ctx.lineTo(wx + ww / 2, wy + wh); ctx.stroke();
-  ctx.globalAlpha = 0.22; ctx.fillStyle = '#cfe4f5';
-  ctx.beginPath(); ctx.moveTo(wx, wy + wh); ctx.lineTo(wx + ww, wy + arch); ctx.lineTo(wx + ww, wy + wh); ctx.fill();
-  ctx.globalAlpha = 1;
-
-  if (v === 1 || v === 5) {                        // shutters thrown open
-    ctx.fillStyle = '#6d7a5a';
-    ctx.fillRect(wx - 12, wy + arch, 8, wh - arch + 4);
-    ctx.fillRect(wx + ww + 4, wy + arch, 8, wh - arch + 4);
+// One bay of an ordinary house: a Venetian window, sill, shutters, sometimes a
+// balcony or geraniums. Drawn near-white so a per-building vertex colour
+// supplies the stucco. All coordinates are in a 128-unit bay.
+function drawBay(ctx, x, y, S, v) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(S / 128, S / 128);
+  const g = ctx.createLinearGradient(0, 0, 0, 128);
+  g.addColorStop(0, '#f4eee4'); g.addColorStop(1, '#ddd2c1');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+  streaks(ctx, 128, 4, 0.08);
+  if (v === 3 || v === 7) {                                   // patch of lost plaster
+    ctx.fillStyle = '#b98a6d';
+    for (let b = 0; b < 7; b++) ctx.fillRect(rnd(4, 100), rnd(70, 110), rnd(8, 16), 5);
   }
-  ctx.fillStyle = '#efe9dc'; ctx.fillRect(wx - 9, wy + wh + 3, ww + 18, 5);   // sill
-  if (v === 2 || v === 6) {                        // little stone balcony
-    ctx.fillRect(wx - 12, wy + wh + 6, ww + 24, 4);
-    for (let i = 0; i <= 7; i++) ctx.fillRect(wx - 10 + i * (ww + 20) / 7, wy + wh + 10, 3, 11);
-    ctx.fillRect(wx - 12, wy + wh + 21, ww + 24, 4);
+  const ww = v % 2 ? 36 : 42, wh = 62, wx = (128 - ww) / 2, wy = 30;
+  if (v === 1 || v === 5) {                                   // green shutters thrown open
+    ctx.fillStyle = '#5f7152';
+    ctx.fillRect(wx - 17, wy + 8, 12, wh - 4); ctx.fillRect(wx + ww + 5, wy + 8, 12, wh - 4);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    for (let k = 0; k < 8; k++) { ctx.fillRect(wx - 17, wy + 12 + k * 7, 12, 1.5); ctx.fillRect(wx + ww + 5, wy + 12 + k * 7, 12, 1.5); }
   }
+  glass(ctx, wx, wy, ww, wh, v < 4);
+  if (v === 6) {                                              // closed shutters over the glass
+    ctx.fillStyle = '#6a7556'; archPath(ctx, wx, wy, ww, wh, false); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    for (let k = 0; k < 9; k++) ctx.fillRect(wx, wy + 22 + k * 5, ww, 1.5);
+  }
+  ctx.fillStyle = '#efe9dc'; ctx.fillRect(wx - 9, wy + wh + 3, ww + 18, 5);  // sill
+  if (v === 2 || v === 5) balcony(ctx, wx - 12, wy + wh + 6, ww + 24);
+  if (v === 3 || v === 7) {                                   // geraniums
+    ctx.fillStyle = '#5a3a26'; ctx.fillRect(wx - 6, wy + wh + 8, ww + 12, 7);
+    for (let k = 0; k < 14; k++) {
+      ctx.fillStyle = k % 3 ? '#3f6a2c' : pick(['#d8283a', '#e8506a', '#f07a2a']);
+      ctx.beginPath(); ctx.arc(wx - 4 + k * (ww + 8) / 13, wy + wh + 6 + rnd(-2, 2), 3.2, 0, 7); ctx.fill();
+    }
+  }
+  ctx.fillStyle = '#e9e2d4'; ctx.fillRect(0, 122, 128, 6);    // string course between storeys
+  ctx.fillStyle = 'rgba(0,0,0,0.14)'; ctx.fillRect(0, 121, 128, 1.5);
   ctx.restore();
 }
 
-function facadeTexture() {
-  const S = 128, c = cv(S * 4, S * 2), ctx = c.getContext('2d');
-  for (let j = 0; j < 2; j++) for (let i = 0; i < 4; i++) drawBay(ctx, i * S, j * S, S, j * 4 + i);
-  grain(ctx, c.width, c.height, 16);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  return t;
+// Grand Canal palazzi: marble-pale, with gothic polifore, renaissance biforas
+// and baroque pediments. Same 128-unit bay, a little grander.
+function drawPalazzoBay(ctx, x, y, S, v) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(S / 128, S / 128);
+  const g = ctx.createLinearGradient(0, 0, 0, 128);
+  g.addColorStop(0, '#f7f2e9'); g.addColorStop(1, '#e4d9c7');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+  streaks(ctx, 128, 3, 0.06);
+  const k = v % 4;
+  if (k === 0) {                                  // gothic quadrifora with quatrefoils
+    ctx.fillStyle = '#efe9dc'; ctx.fillRect(14, 16, 100, 86);
+    for (let i = 0; i < 4; i++) glass(ctx, 20 + i * 23, 34, 18, 58, true);
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = '#e8e1d2'; ctx.beginPath(); ctx.arc(41 + i * 23, 22, 7, 0, 7); ctx.fill();
+      ctx.fillStyle = '#39424c';
+      for (let q = 0; q < 4; q++) { ctx.beginPath(); ctx.arc(41 + i * 23 + Math.cos(q * 1.57) * 3, 22 + Math.sin(q * 1.57) * 3, 2.4, 0, 7); ctx.fill(); }
+    }
+    balcony(ctx, 12, 97, 104);
+  } else if (k === 1) {                           // tall lancet with its own balcony
+    glass(ctx, 44, 26, 40, 68, true);
+    ctx.fillStyle = '#b8563f'; ctx.beginPath(); ctx.arc(64, 12, 5, 0, 7); ctx.fill();   // porphyry roundel
+    balcony(ctx, 30, 97, 68);
+  } else if (k === 2) {                           // renaissance bifora between pilasters
+    ctx.fillStyle = '#ebe4d6'; ctx.fillRect(4, 0, 10, 128); ctx.fillRect(114, 0, 10, 128);
+    ctx.fillStyle = '#efe9dc'; archPath(ctx, 30, 22, 68, 74, false, 4); ctx.fill();
+    glass(ctx, 34, 40, 27, 56, false); glass(ctx, 67, 40, 27, 56, false);
+    ctx.fillStyle = '#39424c'; ctx.beginPath(); ctx.arc(64, 32, 6, 0, 7); ctx.fill();
+  } else {                                        // baroque window with a pediment
+    glass(ctx, 42, 32, 44, 60, false);
+    ctx.fillStyle = '#efe9dc';
+    ctx.beginPath(); ctx.moveTo(34, 24); ctx.lineTo(64, 8); ctx.lineTo(94, 24); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(34, 24, 60, 2);
+    if (v > 3) { ctx.fillStyle = '#5f7152'; ctx.fillRect(26, 36, 12, 56); ctx.fillRect(90, 36, 12, 56); }
+    balcony(ctx, 30, 97, 68);
+  }
+  ctx.fillStyle = '#ece5d7'; ctx.fillRect(0, 120, 128, 8);
+  ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(0, 119, 128, 1.5);
+  ctx.restore();
 }
 
-// Ground storey: algae waterline, brick showing through, water doors.
+function atlas(draw, S) {
+  const c = cv(S * 4, S * 2), ctx = c.getContext('2d');
+  for (let j = 0; j < 2; j++) for (let i = 0; i < 4; i++) draw(ctx, i * S, j * S, S, j * 4 + i);
+  grain(ctx, c.width, c.height, 14);
+  return tex(c);
+}
+
+// Ground storey: stone plinth, brick showing through, water doors and grilles.
 function groundTexture() {
-  const S = 128, c = cv(S * 4, S), ctx = c.getContext('2d');
+  const S = 160, c = cv(S * 4, S), ctx = c.getContext('2d');
   for (let i = 0; i < 4; i++) {
     const x = i * S;
     ctx.fillStyle = '#e2d8c6'; ctx.fillRect(x, 0, S, S);
-    ctx.fillStyle = '#9d7a63';                                   // brick under lost plaster
-    for (let b = 0; b < 26; b++) {
+    ctx.fillStyle = '#a07a62';
+    for (let b = 0; b < 30; b++) {
       if (Math.random() < 0.55) continue;
-      ctx.fillRect(x + rnd(0, S - 18), rnd(S * 0.3, S * 0.85), rnd(10, 20), 6);
+      ctx.fillRect(x + rnd(0, S - 22), rnd(S * 0.3, S * 0.8), rnd(12, 24), 7);
     }
-    if (i % 2 === 0) {                                           // arched water door
-      const dw = S * 0.44, dx = x + (S - dw) / 2, dy = S * 0.30;
-      ctx.fillStyle = '#e8e1d2';
-      ctx.beginPath(); ctx.moveTo(dx - 6, S); ctx.lineTo(dx - 6, dy + dw / 2);
-      ctx.arc(dx + dw / 2, dy + dw / 2, dw / 2 + 6, Math.PI, 0);
-      ctx.lineTo(dx + dw + 6, S); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#39332b';
-      ctx.beginPath(); ctx.moveTo(dx, S); ctx.lineTo(dx, dy + dw / 2);
-      ctx.arc(dx + dw / 2, dy + dw / 2, dw / 2, Math.PI, 0);
-      ctx.lineTo(dx + dw, S); ctx.closePath(); ctx.fill();
-    } else {                                                     // barred window
-      ctx.fillStyle = '#e8e1d2'; ctx.fillRect(x + S * 0.33, S * 0.34, S * 0.34, S * 0.3);
-      ctx.fillStyle = '#2c3138'; ctx.fillRect(x + S * 0.36, S * 0.37, S * 0.28, S * 0.24);
-      ctx.fillStyle = '#7d6b52';
-      for (let b = 0; b < 4; b++) ctx.fillRect(x + S * 0.37 + b * S * 0.075, S * 0.37, 3, S * 0.24);
+    if (i % 2 === 0) {                                  // arched door onto the quay
+      const dw = S * 0.36, dx = x + (S - dw) / 2, dy = S * 0.30;
+      ctx.fillStyle = '#ece5d6'; archPath(ctx, dx, dy, dw, S * 0.58, false, 7); ctx.fill();
+      ctx.fillStyle = '#5b3f2a'; archPath(ctx, dx, dy, dw, S * 0.58, false); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      for (let k = 1; k < 5; k++) ctx.fillRect(dx + k * dw / 5, dy + dw / 2, 1.5, S);
+      ctx.fillStyle = '#c9a44b'; ctx.fillRect(dx + dw * 0.7, dy + S * 0.36, 4, 4);
+    } else {                                            // barred window
+      ctx.fillStyle = '#e8e1d2'; ctx.fillRect(x + S * 0.32, S * 0.30, S * 0.36, S * 0.32);
+      ctx.fillStyle = '#2c3138'; ctx.fillRect(x + S * 0.35, S * 0.33, S * 0.30, S * 0.26);
+      ctx.fillStyle = '#6d5e4a';
+      for (let b = 0; b < 5; b++) ctx.fillRect(x + S * 0.36 + b * S * 0.06, S * 0.33, 3, S * 0.26);
+      ctx.fillRect(x + S * 0.35, S * 0.45, S * 0.3, 3);
     }
-    ctx.fillStyle = '#2b2f22';                                   // algae at the waterline
-    ctx.beginPath(); ctx.moveTo(x, S);
-    for (let k = 0; k <= 8; k++) ctx.lineTo(x + k * S / 8, S * rnd(0.74, 0.84));
-    ctx.lineTo(x + S, S); ctx.closePath(); ctx.fill();
-    ctx.globalAlpha = 0.35; ctx.fillStyle = '#4c5a34';
-    ctx.fillRect(x, S * 0.68, S, S * 0.12); ctx.globalAlpha = 1;
+    ctx.fillStyle = '#d8cfbf'; ctx.fillRect(x, S * 0.86, S, S * 0.14);   // istrian plinth
+    ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect(x, S * 0.86, S, 2);
+    ctx.globalAlpha = 0.35; ctx.fillStyle = '#4c5a34';                   // rising damp
+    ctx.fillRect(x, S * 0.72, S, S * 0.14); ctx.globalAlpha = 1;
   }
-  grain(ctx, c.width, c.height, 22, 6);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  return t;
+  grain(ctx, c.width, c.height, 20, 5);
+  return tex(c);
+}
+
+// Coppi: the half-round terracotta tiles on every Venetian roof.
+function roofTexture() {
+  const c = cv(256, 256), ctx = c.getContext('2d');
+  ctx.fillStyle = '#6d4332'; ctx.fillRect(0, 0, 256, 256);
+  for (let r = 0; r < 8; r++) for (let k = 0; k < 16; k++) {
+    const x = k * 16 + (r % 2) * 8, y = r * 32;
+    const g = ctx.createLinearGradient(x, 0, x + 14, 0);
+    const l = rnd(0.82, 1.12);
+    g.addColorStop(0, `rgb(${120 * l},${70 * l},${50 * l})`);
+    g.addColorStop(0.45, `rgb(${235 * l},${190 * l},${160 * l})`);
+    g.addColorStop(1, `rgb(${110 * l},${62 * l},${44 * l})`);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.roundRect(x + 1, y + 2, 14, 32, 6); ctx.fill();
+    if (Math.random() < 0.12) { ctx.fillStyle = 'rgba(60,70,40,0.35)'; ctx.fillRect(x + 2, y + 4, 12, 26); }
+  }
+  grain(ctx, 256, 256, 18);
+  return tex(c);
+}
+
+// Masegni: the trachyte slabs paving every fondamenta and campo.
+function pavingTexture() {
+  const c = cv(256, 256), ctx = c.getContext('2d');
+  ctx.fillStyle = '#5b5751'; ctx.fillRect(0, 0, 256, 256);
+  for (let r = 0; r < 8; r++) {
+    let x = -(r % 2) * 22;
+    while (x < 256) {
+      const w = rnd(38, 60), l = rnd(0.85, 1.12);
+      ctx.fillStyle = `rgb(${142 * l},${136 * l},${126 * l})`;
+      ctx.fillRect(x + 1.5, r * 32 + 1.5, w - 3, 29);
+      x += w;
+    }
+  }
+  grain(ctx, 256, 256, 26);
+  return tex(c);
+}
+
+// Istrian stone blocks for the quay walls; the algae is vertex colour.
+function wallTexture() {
+  const c = cv(256, 128), ctx = c.getContext('2d');
+  ctx.fillStyle = '#9d968a'; ctx.fillRect(0, 0, 256, 128);
+  for (let r = 0; r < 4; r++) {
+    let x = -(r % 2) * 30;
+    while (x < 256) {
+      const w = rnd(44, 72), l = rnd(0.9, 1.08);
+      ctx.fillStyle = `rgb(${236 * l},${230 * l},${218 * l})`;
+      ctx.fillRect(x + 1.5, r * 32 + 1.5, w - 3, 29);
+      x += w;
+    }
+  }
+  grain(ctx, 256, 128, 22);
+  return tex(c);
+}
+
+function brickTexture() {
+  const c = cv(256, 256), ctx = c.getContext('2d');
+  ctx.fillStyle = '#b8a894'; ctx.fillRect(0, 0, 256, 256);
+  for (let r = 0; r < 32; r++) for (let k = -1; k < 9; k++) {
+    const l = rnd(0.8, 1.12);
+    ctx.fillStyle = `rgb(${196 * l},${96 * l},${70 * l})`;
+    ctx.fillRect(k * 32 + (r % 2) * 16 + 1, r * 8 + 1, 30, 6.5);
+  }
+  grain(ctx, 256, 256, 18);
+  return tex(c);
+}
+
+// Doge's Palace, whole river front in one image: open arcade, gothic loggia with
+// quatrefoils, then the famous pink-and-white lozenge wall with its big windows.
+function dogeTexture() {
+  const W = 1024, H = 512, c = cv(W, H), ctx = c.getContext('2d');
+  ctx.fillStyle = '#f0e6d6'; ctx.fillRect(0, 0, W, H);
+  for (let y = 10, r = 0; y < 300; y += 10, r++)
+    for (let x = (r % 2) * 10 - 10; x < W; x += 20) {
+      ctx.fillStyle = (x / 20 + r) % 4 < 2 ? '#e7b5a2' : '#f4e3d6';
+      ctx.beginPath(); ctx.moveTo(x, y + 5); ctx.lineTo(x + 10, y); ctx.lineTo(x + 20, y + 5); ctx.lineTo(x + 10, y + 10); ctx.fill();
+    }
+  ctx.fillStyle = '#efe7d8'; ctx.fillRect(0, 0, W, 12);
+  for (let i = 0; i < 7; i++) {
+    if (i === 3) continue;
+    const x = 60 + i * 150;
+    glass(ctx, x, 110, 46, 96, true);
+  }
+  ctx.fillStyle = '#efe7d8'; ctx.fillRect(452, 60, 120, 210);   // ceremonial balcony window
+  glass(ctx, 482, 110, 60, 120, true);
+  balcony(ctx, 462, 238, 100);
+  ctx.fillStyle = '#e9e1d2'; ctx.fillRect(0, 296, W, 10);
+  ctx.fillStyle = '#f2ebde'; ctx.fillRect(0, 306, W, 92);         // loggia
+  for (let i = 0; i < 34; i++) {
+    const x = 6 + i * 30;
+    ctx.fillStyle = '#2d333b'; archPath(ctx, x, 334, 20, 50, true); ctx.fill();
+    ctx.fillStyle = '#e4dccd'; ctx.beginPath(); ctx.arc(x + 25, 318, 8, 0, 7); ctx.fill();
+    ctx.fillStyle = '#39414a';
+    for (let q = 0; q < 4; q++) { ctx.beginPath(); ctx.arc(x + 25 + Math.cos(q * 1.57) * 3.5, 318 + Math.sin(q * 1.57) * 3.5, 2.6, 0, 7); ctx.fill(); }
+  }
+  balcony(ctx, 0, 380, W);
+  ctx.fillStyle = '#ede5d6'; ctx.fillRect(0, 398, W, 114);        // ground arcade
+  for (let i = 0; i < 17; i++) {
+    const x = 12 + i * 60;
+    const g = ctx.createLinearGradient(0, 420, 0, 500);
+    g.addColorStop(0, '#20252c'); g.addColorStop(1, '#4a4a46');
+    ctx.fillStyle = g; archPath(ctx, x, 420, 38, 72, true); ctx.fill();
+  }
+  ctx.fillStyle = '#d8cfbf'; ctx.fillRect(0, 494, W, 18);
+  grain(ctx, W, H, 12);
+  return tex(c);
+}
+
+// Two storeys of round-arched arcade: the Libreria, and the Rialto's shops.
+function arcadeTexture() {
+  const c = cv(512, 256), ctx = c.getContext('2d');
+  ctx.fillStyle = '#efe8da'; ctx.fillRect(0, 0, 512, 256);
+  for (let i = 0; i < 4; i++) {
+    const x = i * 128;
+    ctx.fillStyle = '#e6dece'; ctx.fillRect(x + 4, 0, 12, 256); ctx.fillRect(x + 112, 0, 12, 256);
+    ctx.fillStyle = '#2a3038'; archPath(ctx, x + 30, 150, 68, 106, false); ctx.fill();
+    ctx.fillStyle = '#c9a36a'; ctx.fillRect(x + 36, 200, 56, 56);         // lit shop inside
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x + 36, 200, 56, 4);
+    glass(ctx, x + 40, 36, 48, 70, false);
+    balcony(ctx, x + 22, 108, 84);
+  }
+  ctx.fillStyle = '#e4dccb'; ctx.fillRect(0, 128, 512, 10); ctx.fillRect(0, 0, 512, 8);
+  grain(ctx, 512, 256, 12);
+  return tex(c);
 }
 
 function foamTexture() {
@@ -318,50 +516,161 @@ function foamTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-const texUpper = facadeTexture(), texGround = groundTexture(), texFoam = foamTexture();
+// Faint plank seams: multiplies over the boats' vertex colours like varnished wood.
+function plankTexture() {
+  const c = cv(128, 128), ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 8; i++) {
+    ctx.fillStyle = `rgba(90,60,40,${rnd(0.04, 0.12)})`; ctx.fillRect(i * 16, 0, 16, 128);
+    ctx.fillStyle = 'rgba(40,20,10,0.35)'; ctx.fillRect(i * 16, 0, 1.2, 128);
+  }
+  grain(ctx, 128, 128, 10);
+  return tex(c);
+}
+
+// Ramp atlas: left half planks with chevrons, then hazard stripes, then float orange.
+function rampTexture() {
+  const c = cv(256, 256), ctx = c.getContext('2d');
+  ctx.fillStyle = '#8a6440'; ctx.fillRect(0, 0, 128, 256);
+  for (let i = 0; i < 16; i++) {
+    const l = rnd(0.85, 1.12);
+    ctx.fillStyle = `rgb(${160 * l},${118 * l},${78 * l})`; ctx.fillRect(0, i * 16 + 1, 128, 14);
+  }
+  ctx.fillStyle = '#f4c233';
+  for (let k = 0; k < 4; k++) {
+    const y = 30 + k * 60;
+    ctx.beginPath(); ctx.moveTo(18, y + 22); ctx.lineTo(64, y - 6); ctx.lineTo(110, y + 22);
+    ctx.lineTo(110, y + 36); ctx.lineTo(64, y + 8); ctx.lineTo(18, y + 36); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = '#f2efe8'; ctx.fillRect(128, 0, 64, 256);
+  ctx.fillStyle = '#c8242c';
+  for (let k = -4; k < 12; k++) {
+    ctx.beginPath(); ctx.moveTo(128, k * 32); ctx.lineTo(192, k * 32 + 64); ctx.lineTo(192, k * 32 + 80); ctx.lineTo(128, k * 32 + 16); ctx.fill();
+  }
+  ctx.fillStyle = '#ef6c1a'; ctx.fillRect(192, 0, 64, 256);
+  grain(ctx, 256, 256, 14);
+  const t = tex(c); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+
+function stripeTexture(c1, c2, n = 6) {
+  const c = cv(16, 96), x = c.getContext('2d');
+  x.fillStyle = c1; x.fillRect(0, 0, 16, 96);
+  x.fillStyle = c2;
+  for (let i = 0; i < n; i++) x.fillRect(0, i * 96 / n, 16, 48 / n);
+  return tex(c);
+}
+
+// Tileable fbm height field, stored as a normal map (rg = slope, a = height).
+// Periodic value noise on lattices that divide the tile, so it wraps seamlessly.
+function waterNormalTexture() {
+  const S = 256, h = new Float32Array(S * S);
+  for (let o = 0; o < 5; o++) {
+    const P = 4 << o, lat = new Float32Array(P * P).map(() => Math.random()), amp = 1 / (1 << o) ** 0.85;
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const fx = x / S * P, fy = y / S * P, ix = Math.floor(fx), iy = Math.floor(fy);
+      let tx = fx - ix, ty = fy - iy; tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
+      const a = lat[iy * P + ix], b = lat[iy * P + (ix + 1) % P];
+      const c2 = lat[((iy + 1) % P) * P + ix], d = lat[((iy + 1) % P) * P + (ix + 1) % P];
+      const v = (a + (b - a) * tx) + ((c2 + (d - c2) * tx) - (a + (b - a) * tx)) * ty;
+      h[y * S + x] += (1 - Math.abs(v * 2 - 1)) * amp;         // ridged: sharper crests
+    }
+  }
+  let lo = Infinity, hi = -Infinity;
+  for (const v of h) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  const data = new Uint8Array(S * S * 4), str = 5.5;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const at = (i, j) => (h[((j + S) % S) * S + (i + S) % S] - lo) / (hi - lo);
+    let nx = -(at(x + 1, y) - at(x - 1, y)) * str, ny = -(at(x, y + 1) - at(x, y - 1)) * str, nz = 1;
+    const L = Math.hypot(nx, ny, nz); nx /= L; ny /= L; nz /= L;
+    const o = (y * S + x) * 4;
+    data[o] = (nx * 0.5 + 0.5) * 255; data[o + 1] = (ny * 0.5 + 0.5) * 255;
+    data[o + 2] = (nz * 0.5 + 0.5) * 255; data[o + 3] = at(x, y) * 255;
+  }
+  const t = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true; t.anisotropy = MAXANISO; t.needsUpdate = true;
+  return t;
+}
+
+const texUpper = atlas(drawBay, 192), texPalazzo = atlas(drawPalazzoBay, 192);
+const texGround = groundTexture(), texRoof = roofTexture(), texPaving = pavingTexture();
+const texWall = wallTexture(), texBrick = brickTexture(), texDoge = dogeTexture();
+const texArcade = arcadeTexture(), texFoam = foamTexture(), texPlank = plankTexture();
+const texRamp = rampTexture(), texWaterN = waterNormalTexture();
 
 // ═══ SKY ═════════════════════════════════════════════════════════════════════
+// Written in linear light and tone-mapped like everything else, so it also
+// reads correctly when it turns up in the water's reflection.
 scene.add(new THREE.Mesh(
-  new THREE.SphereGeometry(900, 32, 20),
+  new THREE.SphereGeometry(1200, 48, 24),
   new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false,
-    uniforms: { sunDir: { value: sun.position.clone().normalize() } },
+    uniforms: { sunDir: { value: SUN_DIR }, haze: { value: scene.fog.color } },
     vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: `
-      varying vec3 vP; uniform vec3 sunDir;
+      varying vec3 vP; uniform vec3 sunDir; uniform vec3 haze;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+      float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+        return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
+      float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ v += a*noise(p); p *= 2.03; a *= 0.5; } return v; }
       void main(){
         vec3 d = normalize(vP);
-        float h = clamp(d.y * 1.6 + 0.12, 0.0, 1.0);
-        vec3 col = mix(vec3(0.88,0.78,0.62), vec3(0.34,0.52,0.78), pow(h, 0.75));
-        float s = max(dot(d, normalize(sunDir)), 0.0);
-        col += vec3(1.0,0.82,0.52) * pow(s, 14.0) * 0.85;
-        col += vec3(1.0,0.90,0.70) * pow(s, 3.0) * 0.16;
+        float h = d.y;
+        vec3 mid = vec3(0.36, 0.50, 0.72), zen = vec3(0.09, 0.22, 0.50);
+        vec3 col = mix(haze, mid, smoothstep(0.0, 0.28, h));
+        col = mix(col, zen, smoothstep(0.25, 0.95, h));
+        float s = max(dot(d, sunDir), 0.0);
+        col += vec3(1.0, 0.72, 0.42) * pow(s, 6.0) * 0.45;
+        col += vec3(1.0, 0.92, 0.75) * pow(s, 900.0) * 30.0;
+        if (h > 0.0) {
+          vec2 uv = d.xz / (h + 0.1) * 1.3;
+          float c = smoothstep(0.52, 0.86, fbm(uv + vec2(4.0, 1.5))) * smoothstep(0.02, 0.22, h);
+          vec3 cc = mix(vec3(0.96, 0.84, 0.72), vec3(1.25, 1.02, 0.80), pow(s, 3.0));
+          col = mix(col, cc, c * 0.85);
+        }
         gl_FragColor = vec4(col, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, haze, 1.0 - smoothstep(-0.03, 0.16, h));
       }`,
   })
 ));
 
 // ═══ CANAL LAYOUT ════════════════════════════════════════════════════════════
-const CELL = 4, N = 122, WORLD = CELL * N, HALF = WORLD / 2;
+const CELL = 2, N = 244, WORLD = CELL * N, HALF = WORLD / 2;
 const water = new Uint8Array(N * N);
-// Footprints live on a finer grid than the canals so houses can sit shoulder
-// to shoulder the way a Venetian waterfront actually does.
-const TCELL = 2, TN = Math.ceil(WORLD / TCELL);
+const TCELL = CELL, TN = N;                 // house footprints share the canal grid
 const taken = new Uint8Array(TN * TN);
 const tIdx = (i, j) => j * TN + i;
 const tCell = v => Math.floor((v + HALF) / TCELL);
 const gi = (i, j) => j * N + i;
 const toCell = v => Math.floor((v + HALF) / CELL);
-const isWater = (x, z) => {
+const waterCell = (x, z) => {
   const i = toCell(x), j = toCell(z);
   return i >= 0 && j >= 0 && i < N && j < N && water[gi(i, j)] === 1;
 };
+// The lagoon opens off the east edge of the map; past the ring of briccole the
+// grid ends, so columns beyond it copy the last one and read as open water.
+const wv = (i, j) => (j < 0 || j >= N || i < 0) ? 0 : water[gi(Math.min(i, N - 1), j)];
+// Smooth water field: bilinear between cell centres. Its 0.5 contour is exactly
+// where the quay walls are built, so what you see is what you collide with.
+function wetness(x, z) {
+  const fx = (x + HALF) / CELL - 0.5, fz = (z + HALF) / CELL - 0.5;
+  const i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j;
+  const a = wv(i, j), b = wv(i + 1, j), c = wv(i, j + 1), d = wv(i + 1, j + 1);
+  return (a + (b - a) * tx) + ((c + (d - c) * tx) - (a + (b - a) * tx)) * tz;
+}
+const LAGOON_X = 232;
+const isWater = (x, z) => x < LAGOON_X && wetness(x, z) > 0.5;
 
 const V3 = (x, z) => new THREE.Vector3(x, 0, z);
 const curveOf = (pts, closed) =>
   new THREE.CatmullRomCurve3(pts.map(p => V3(p[0], p[1])), !!closed, 'catmullrom', 0.5);
 
-// The racing loop: a broad Grand Canal sweeping east, then narrower water back west.
+// The racing loop: the Grand Canal sweeping east into the Bacino di San Marco,
+// then narrower rii back west.
 const LAP_PTS = [
   [-206, -26], [-150, -48], [-88, -16], [-28, 34], [ 34, 48], [ 96, 20], [148, -26], [192, -44],
   [206, -96], [178, -158], [104, -190], [ 10, -196], [-80, -186], [-156, -166], [-200, -114],
@@ -376,7 +685,7 @@ const lapWidth = t => {
 // Side canals: dead-end rii, the way half of Venice actually is.
 const STUBS = [
   [[-150, -48], [-146, -118]], [[-88, -16], [-70,  60]], [[ 34,  48], [ 46, 120]],
-  [[ 96,  20], [140,  74]],    [[192, -44], [214,  16]], [[-28,  34], [-52,  96]],
+  [[ 96,  20], [140,  74]],    [[-28,  34], [-52,  96]],
   [[148, -26], [116, -96]],    [[ 10, -196], [ -6, -238]], [[-206, -26], [-238, 24]],
   [[104, -190], [120, -238]],  [[-156, -166], [-186, -216]],
 ].map(p => curveOf(p, false));
@@ -392,60 +701,76 @@ function carve(curve, widthFn, steps) {
     }
   }
 }
-carve(lapCurve, lapWidth, 1400);
-for (const s of STUBS) carve(s, () => 11, 90);
+carve(lapCurve, lapWidth, 2400);
+for (const s of STUBS) carve(s, () => 11, 160);
 
-// ═══ WATER ═══════════════════════════════════════════════════════════════════
-const waterMat = new THREE.ShaderMaterial({
-  // fog: true only switches the shader chunks on — a ShaderMaterial still has to
-  // supply fogColor/fogDensity itself, so merge the library uniforms in.
-  uniforms: THREE.UniformsUtils.merge([
-    THREE.UniformsLib.fog,
-    { t: { value: 0 }, sunDir: { value: sun.position.clone().normalize() } },
-  ]),
-  fog: true,
-  vertexShader: `
-    varying vec3 vW; varying vec2 vUv;
-    #include <fog_pars_vertex>
-    void main(){
-      vUv = uv; vec4 wp = modelMatrix * vec4(position,1.0); vW = wp.xyz;
-      vec4 mvPosition = viewMatrix * wp;
-      gl_Position = projectionMatrix * mvPosition;
-      #include <fog_vertex>
-    }`,
-  fragmentShader: `
-    varying vec3 vW; varying vec2 vUv; uniform float t; uniform vec3 sunDir;
-    #include <fog_pars_fragment>
-    float wave(vec2 p){
-      return sin(p.x*0.7 + t*1.7) * 0.5 + sin(p.y*0.9 - t*1.3) * 0.5
-           + sin((p.x+p.y)*0.35 + t*0.9) * 0.7 + sin((p.x-p.y)*1.6 - t*2.3) * 0.25;
-    }
-    void main(){
-      vec2 p = vW.xz;
-      float e = 0.6;
-      vec3 nrm = normalize(vec3(wave(p+vec2(e,0.0)) - wave(p-vec2(e,0.0)), 9.0,
-                                wave(p+vec2(0.0,e)) - wave(p-vec2(0.0,e))));
-      vec3 v = normalize(cameraPosition - vW);
-      float fres = pow(1.0 - max(dot(v, nrm), 0.0), 3.0);
-      vec3 deep = vec3(0.055, 0.156, 0.150);
-      vec3 shal = vec3(0.14, 0.31, 0.28);
-      vec3 col = mix(deep, shal, clamp(wave(p)*0.22 + 0.5, 0.0, 1.0));
-      col = mix(col, vec3(0.62,0.70,0.74), fres * 0.85);
-      vec3 h = normalize(normalize(sunDir) + v);
-      col += vec3(1.0,0.88,0.66) * pow(max(dot(nrm,h),0.0), 90.0) * 1.3;
-      gl_FragColor = vec4(col, 1.0);
-      #include <fog_fragment>
-    }`,
-});
-const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(WORLD * 3, WORLD * 3), waterMat);
-waterMesh.rotation.x = -Math.PI / 2;
-scene.add(waterMesh);
+// The Bacino: the Grand Canal opens into a broad basin, and the basin into the lagoon.
+const BASIN = { x: 216, z: -50, rx: 30, rz: 25 };
+for (let j = 1; j < N - 1; j++) for (let i = 1; i < N; i++) {
+  const x = (i + 0.5) * CELL - HALF, z = (j + 0.5) * CELL - HALF;
+  const e = ((x - BASIN.x) / BASIN.rx) ** 2 + ((z - BASIN.z) / BASIN.rz) ** 2;
+  if (e <= 1 || (x > BASIN.x && Math.abs(z - BASIN.z) < BASIN.rz * 0.8)) water[gi(Math.min(i, N - 1), j)] = 1;
+}
 
-// ═══ BUILDINGS ═══════════════════════════════════════════════════════════════
-const STUCCO = ['#d9a05b','#c2694a','#d8b98a','#b8543f','#e0c9a0','#caa67e','#a8503c','#d9b38c','#bf7f5a','#e6d6b4','#b06a55','#cdb489'];
-const ROOFS  = ['#9c5338','#8d4a34','#a85f3f','#7d4530'];
+// ═══ RACE LINE ═══════════════════════════════════════════════════════════════
+const LAPN = 1200;
+const lapPath = lapCurve.getSpacedPoints(LAPN);          // evenly spaced: index == progress
+const lapStep = lapCurve.getLength() / LAPN;
+const pathAt = i => lapPath[((Math.round(i) % LAPN) + LAPN) % LAPN];
 
-const upperGeos = [], groundGeos = [], trimGeos = [];
+function scan(x, z, dx, dz, max = 60) {
+  for (let d = 0; d < max; d += 0.25) if (!isWater(x + dx * d, z + dz * d)) return d;
+  return max;
+}
+// A frame across the canal at a point on the racing line: f runs downstream,
+// s across it (to the right of travel), and pos/neg are the measured distances
+// to each bank — measured, not assumed, which is what the old gates got wrong.
+function frameAt(idx) {
+  const p = pathAt(idx), a = pathAt(idx - 3), b = pathAt(idx + 3);
+  let fx = b.x - a.x, fz = b.z - a.z; const L = Math.hypot(fx, fz) || 1; fx /= L; fz /= L;
+  const sx = fz, sz = -fx;
+  // Take the nearest bank over a short stretch, so a side canal opening up
+  // right here doesn't read as the canal suddenly being fifty metres wide.
+  let pos = Infinity, neg = Infinity;
+  for (const k of [-8, -4, 0, 4, 8]) {
+    const q = pathAt(idx + k);
+    pos = Math.min(pos, scan(q.x, q.z, sx, sz) + (q.x - p.x) * sx + (q.z - p.z) * sz);
+    neg = Math.min(neg, scan(q.x, q.z, -sx, -sz) - (q.x - p.x) * sx - (q.z - p.z) * sz);
+  }
+  return { p, fx, fz, sx, sz, a: Math.atan2(fx, fz), pos, neg };
+}
+function frameOnCurve(curve, t) {
+  const p = curve.getPoint(t), tan = curve.getTangent(t);
+  const fx = tan.x, fz = tan.z, sx = fz, sz = -fx;
+  return { p, fx, fz, sx, sz, a: Math.atan2(fx, fz), pos: scan(p.x, p.z, sx, sz), neg: scan(p.x, p.z, -sx, -sz) };
+}
+
+const GATES = 14;
+const gateIdx = [];
+for (let g = 0; g < GATES; g++) gateIdx.push(Math.round(g * LAPN / GATES));
+const gateAbs = n => Math.floor(n / GATES) * LAPN + gateIdx[n % GATES];
+
+// Everything that sits on the racing line is planned up front by lap index, so
+// bridges, ramps and checkpoints never land on top of one another.
+const RAMP_AT   = [[45, 0], [214, 4], [728, -2.5], [900, 2.5], [1071, 0]];
+const BRIDGE_AT = [[130, 'scalzi'], [300, 'rialto'], [385, 'accademia'], [643, 'stone'],
+                   [814, 'stone'], [986, 'stone']];
+
+// Boats line up behind the first gate rather than on it, so the start line is
+// something you cross instead of a free checkpoint bonus at the green light.
+const START_OFF = -40;
+
+// ═══ CITY BUILD HELPERS ══════════════════════════════════════════════════════
+// Geometry is binned by material and by a 4×4 grid of city blocks, then merged:
+// few enough draw calls for a phone, but chunks off-screen still get culled.
+const CH = 4, bins = new Map();
+function add(key, geo, x, z) {
+  const ci = clamp(Math.floor((x + HALF) / WORLD * CH), 0, CH - 1);
+  const cj = clamp(Math.floor((z + HALF) / WORLD * CH), 0, CH - 1);
+  const k = key + ':' + (cj * CH + ci);
+  if (!bins.has(k)) bins.set(k, []);
+  bins.get(k).push(geo);
+}
 
 // Every mergeable geometry passes through here, so this is also where they are
 // made attribute-compatible: extruded shapes come out unindexed while the box
@@ -453,46 +778,83 @@ const upperGeos = [], groundGeos = [], trimGeos = [];
 function paint(geo, hex) {
   const g = geo.index ? geo.toNonIndexed() : geo;
   if (g !== geo) geo.dispose();
-  const c = new THREE.Color(hex).convertSRGBToLinear();
+  const c = new THREE.Color(hex);
   const n = g.attributes.position.count, arr = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
   g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
   return g;
 }
-function scaleUV(geo, rx, ry) {
+function place(geo, x, y, z, ry) { geo.rotateY(ry); geo.translate(x, y, z); return geo; }
+// BoxGeometry faces come in the order +x, -x, +y, -y, +z, -z, four vertices each.
+function boxUV(geo, uFront, uSide, v, ou = 0, ov = 0) {
   const uv = geo.attributes.uv.array;
-  for (let i = 0; i < uv.length; i += 2) { uv[i] *= rx; uv[i + 1] *= ry; }
+  for (let f = 0; f < 6; f++) {
+    const su = f < 2 ? uSide : f < 4 ? 0 : uFront, sv = f < 2 || f >= 4 ? v : 0;
+    for (let k = 0; k < 4; k++) { const o = (f * 4 + k) * 2; uv[o] = uv[o] * su + ou; uv[o + 1] = uv[o + 1] * sv + ov; }
+  }
   return geo;
 }
-function place(geo, x, y, z, ry) {
-  geo.rotateY(ry); geo.translate(x, y, z); return geo;
+const B = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+// A box whose texture repeats every `tile` world units, for brick and stone.
+const BT = (w, h, d, tile = 2) => boxUV(B(w, h, d), w / tile, d / tile, h / tile);
+// A local frame for building one compound object at (x, z) turned by ry.
+function kit(x, z, ry, y0 = 0) {
+  return (key, geo, col, lx = 0, ly = 0, lz = 0) => {
+    const g = paint(geo, col); g.translate(lx, ly, lz);
+    add(key, place(g, x, y0, z, ry), x, z);
+  };
 }
 
-const BAY = 2.6, FLOOR = 3.4, GROUND_H = 4.2;
-
-// One waterfront house: algae-stained base, storeys of windows, tiled roof.
-function house(x, z, ry, w, h, d) {
-  const bays   = Math.max(2, Math.round(w / BAY));
-  const floors = Math.max(1, Math.round(h / FLOOR));
-  const upH    = floors * FLOOR;
-  const hue    = pick(STUCCO), roof = pick(ROOFS);
-
-  const base = scaleUV(new THREE.BoxGeometry(w, GROUND_H + 1.2, d), bays / 4, 1);
-  groundGeos.push(place(paint(base, hue).translate(0, (GROUND_H + 1.2) / 2 - 1.2, 0), x, 0, z, ry));
-
-  const up = scaleUV(new THREE.BoxGeometry(w, upH, d), bays / 4, floors / 2);
-  upperGeos.push(place(paint(up, hue).translate(0, GROUND_H + upH / 2, 0), x, 0, z, ry));
-
-  const eaves = new THREE.BoxGeometry(w + 1.1, 0.9, d + 1.1);
-  trimGeos.push(place(paint(eaves, roof).translate(0, GROUND_H + upH + 0.45, 0), x, 0, z, ry));
-
-  if (Math.random() < 0.45) {                       // Venetian chimney pot
-    const cx = rnd(-w / 3, w / 3), top = GROUND_H + upH;
-    const stack = new THREE.BoxGeometry(1.1, 3.2, 1.1);
-    trimGeos.push(place(paint(stack, roof).translate(cx, top + 2.4, 0), x, 0, z, ry));
-    const flue = new THREE.BoxGeometry(2.3, 0.9, 1.7);
-    trimGeos.push(place(paint(flue, roof).translate(cx, top + 4.3, 0), x, 0, z, ry));
+// Hand-built triangles with normals, uvs and colours. `hint` is a rough outward
+// direction; each triangle is wound to agree with it, so winding never has to
+// be worked out by hand.
+class Tris {
+  constructor() { this.p = []; this.n = []; this.u = []; this.c = []; }
+  tri(a, b, c, ua, ub, uc, ca, cb, cc, hint) {
+    const e1x = b[0] - a[0], e1y = b[1] - a[1], e1z = b[2] - a[2];
+    const e2x = c[0] - a[0], e2y = c[1] - a[1], e2z = c[2] - a[2];
+    let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+    const L = Math.hypot(nx, ny, nz);
+    if (L < 1e-9) return;
+    nx /= L; ny /= L; nz /= L;
+    if (hint && nx * hint[0] + ny * hint[1] + nz * hint[2] < 0) {
+      [b, c] = [c, b]; [ub, uc] = [uc, ub]; [cb, cc] = [cc, cb]; nx = -nx; ny = -ny; nz = -nz;
+    }
+    for (const [v, uv, col] of [[a, ua, ca], [b, ub, cb], [c, uc, cc]]) {
+      this.p.push(v[0], v[1], v[2]); this.n.push(nx, ny, nz);
+      this.u.push(uv[0], uv[1]); this.c.push(col.r, col.g, col.b);
+    }
   }
+  quad(a, b, c, d, ua, ub, uc, ud, ca, cb, cc, cd, hint) {
+    this.tri(a, b, c, ua, ub, uc, ca, cb, cc, hint);
+    this.tri(a, c, d, ua, uc, ud, ca, cc, cd, hint);
+  }
+  get empty() { return this.p.length === 0; }
+  build() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.u, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    return g;
+  }
+}
+const WHITE = new THREE.Color(1, 1, 1);
+
+// Low hipped roof with the ridge along the longer side, uv'd so the tile rows
+// run parallel to the eaves.
+function hipRoof(W, D, H) {
+  if (D > W) return hipRoof(D, W, H).rotateY(Math.PI / 2);
+  const T = new Tris(), w = W / 2, d = D / 2, rl = Math.max(0, w - d);
+  const e1 = [-w, 0, -d], e2 = [w, 0, -d], e3 = [w, 0, d], e4 = [-w, 0, d], r1 = [-rl, H, 0], r2 = [rl, H, 0];
+  const s = Math.hypot(d, H) / d * 0.5;
+  const uF = v => [v[0] * 0.5, (d - Math.abs(v[2])) * s];
+  const uS = v => [v[2] * 0.5, (w - Math.abs(v[0])) * s * (d / Math.max(w - rl, 0.01))];
+  T.quad(e4, e3, r2, r1, uF(e4), uF(e3), uF(r2), uF(r1), WHITE, WHITE, WHITE, WHITE, [0, 1, 1]);
+  T.quad(e2, e1, r1, r2, uF(e2), uF(e1), uF(r1), uF(r2), WHITE, WHITE, WHITE, WHITE, [0, 1, -1]);
+  T.tri(e3, e2, r2, uS(e3), uS(e2), uS(r2), WHITE, WHITE, WHITE, [1, 1, 0]);
+  T.tri(e1, e4, r1, uS(e1), uS(e4), uS(r1), WHITE, WHITE, WHITE, [-1, 1, 0]);
+  return T.build();
 }
 
 // Walk the cells under a rotated rectangle; `visit` may veto by returning false.
@@ -509,70 +871,328 @@ function footprint(x, z, w, d, ry, visit) {
   return true;
 }
 const fits  = (x, z, w, d, ry) => footprint(x, z, w, d, ry, (i, j) =>
-  !taken[tIdx(i, j)] && !isWater((i + 0.5) * TCELL - HALF, (j + 0.5) * TCELL - HALF));
+  !taken[tIdx(i, j)] && !waterCell((i + 0.5) * TCELL - HALF, (j + 0.5) * TCELL - HALF));
 const claim = (x, z, w, d, ry) => footprint(x, z, w, d, ry, (i, j) => { taken[tIdx(i, j)] = 1; });
 
-// Walk each canal and line both banks with houses, leaving gaps at junctions.
-const bridgeSpots = [], poleSpots = [];
-function lineBank(curve, widthFn, samples) {
+// A site facing the canal: `side` +1 is the bank to the right of travel.
+// Returns the centre and the rotation that turns the box's +z face to the water.
+function siteOn(fr, side, w, d, gap = 1) {
+  const bank = side > 0 ? fr.pos : fr.neg;
+  const off = bank + gap + d / 2;
+  const x = fr.p.x + fr.sx * side * off, z = fr.p.z + fr.sz * side * off;
+  return { x, z, ry: Math.atan2(-fr.sx * side, -fr.sz * side) };
+}
+
+// ═══ HOUSES ══════════════════════════════════════════════════════════════════
+const STUCCO = ['#d9a05b','#c2694a','#d8b98a','#b8543f','#e0c9a0','#caa67e','#a8503c','#d9b38c','#bf7f5a','#e6d6b4','#b06a55','#cdb489','#d98f6a','#c9b28f'];
+const PALAZZI = ['#f1e6d4','#ecd2c2','#e9dcc6','#f0d9b8','#e3c4b0','#f3ece0','#dcb89a'];
+const ROOFS  = ['#e2a288','#d8967c','#eab29a','#cf8e74'];
+const STONE = '#ece5d6';
+const shade = (hex, k) => '#' + new THREE.Color(hex).multiplyScalar(k).getHexString();
+
+const BAY = 2.6, FLOOR = 3.4, GROUND_H = 4.2, QY = 0.55;
+
+function chimney(k, cx, top, cz, col) {
+  k('trim', B(0.9, 2.6, 0.9), col, cx, top + 1.3, cz);
+  k('trim', new THREE.CylinderGeometry(0.95, 0.42, 1.2, 8), col, cx, top + 3.1, cz);   // funnel pot
+  k('trim', new THREE.CylinderGeometry(1.0, 1.0, 0.18, 8), shade(col, 0.8), cx, top + 3.75, cz);
+}
+function altana(k, top, w, d) {                   // wooden rooftop terrace
+  const aw = Math.min(4, w * 0.4), ad = Math.min(3.2, d * 0.4), ax = rnd(-w / 5, w / 5), y = top + 1.4;
+  const wood = '#7b5a3c';
+  k('trim', B(aw, 0.18, ad), wood, ax, y, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) k('trim', B(0.14, 2.2, 0.14), wood, ax + sx * aw / 2, y - 0.2, sz * ad / 2);
+  for (const sz of [-1, 1]) k('trim', B(aw, 0.08, 0.08), wood, ax, y + 0.95, sz * ad / 2);
+  for (const sx of [-1, 1]) k('trim', B(0.08, 0.08, ad), wood, ax + sx * aw / 2, y + 0.95, 0);
+}
+
+// One house: ground storey on the quay, storeys of windows, cornice, tiled roof.
+function house(x, z, ry, w, h, d, o = {}) {
+  const grand = !!o.grand;
+  const bw = grand ? 3.2 : BAY, fh = grand ? 4.2 : FLOOR;
+  const bays = Math.max(2, Math.round(w / bw)), sb = Math.max(1, Math.round(d / bw));
+  const floors = Math.max(1, Math.round(h / fh)), upH = floors * fh;
+  const hue = o.hue || (grand ? pick(PALAZZI) : pick(STUCCO)), roof = pick(ROOFS);
+  const ou = ((Math.random() * 4) | 0) / 4, ov = Math.random() < 0.5 ? 0 : 0.5;
+  const k = kit(x, z, ry);
+
+  k('ground', boxUV(B(w, GROUND_H + 1.2, d), bays / 4, sb / 4, 1, ou, 0), grand ? shade(hue, 0.96) : hue, 0, (GROUND_H + 1.2) / 2 - 1.2, 0);
+  k(grand ? 'palazzo' : 'upper', boxUV(B(w, upH, d), bays / 4, sb / 4, floors / 2, ou, ov), hue, 0, GROUND_H + upH / 2, 0);
+  k('trim', B(w + 0.24, 0.3, d + 0.24), STONE, 0, GROUND_H, 0);                     // string course
+  const top = GROUND_H + upH;
+  k('trim', B(w + 0.7, 0.5, d + 0.7), grand ? STONE : shade(hue, 0.86), 0, top + 0.2, 0);   // cornice
+  const rise = Math.min(w, d) / 2 * 0.42;
+  k('roof', hipRoof(w + 0.9, d + 0.9, rise), roof, 0, top + 0.45, 0);
+  const nc = Math.random() < 0.65 ? 1 + (Math.random() < 0.4) : 0;
+  for (let c = 0; c < nc; c++) chimney(k, rnd(-w / 2.6, w / 2.6), top + rise * 0.3, rnd(-d / 4, d / 4), shade(hue, 0.9));
+  if (!grand && Math.random() < 0.14 && w > 8) altana(k, top + rise * 0.5, w, d);
+  return top;
+}
+
+// ═══ PLAN THE WATERFRONT ═════════════════════════════════════════════════════
+const bridges = [];            // { fr, kind }
+const rampFrames = [];
+const landmarks = {};
+
+// Bridge landings are claimed before any house goes up, so each bridge comes
+// down into a calle between buildings rather than into someone's front room.
+function claimLandings(fr, reach = 7, width = 7) {
+  for (const side of [1, -1]) {
+    const s = siteOn(fr, side, width, reach, 0);
+    claim(s.x, s.z, width, reach, s.ry);
+  }
+}
+for (const [idx, kind] of BRIDGE_AT) {
+  const fr = frameAt(idx);
+  bridges.push({ fr, kind });
+  claimLandings(fr, kind === 'rialto' ? 12 : 8, kind === 'rialto' ? 18 : 7);
+}
+for (const s of STUBS) {
+  if (Math.random() < 0.55) {
+    const fr = frameOnCurve(s, rnd(0.45, 0.75));
+    bridges.push({ fr, kind: 'stone' });
+    claimLandings(fr);
+  }
+}
+
+{
+  // Bridge of Sighs: on the rio that leaves the basin northwards, a little way up.
+  let best = null;
+  for (let i = 556; i < 600; i += 2) {
+    const fr = frameAt(i);
+    if (fr.pos + fr.neg < 22) { best = fr; break; }
+  }
+  if (best) {
+    bridgeOfSighs(best);
+    for (const side of [1, -1]) {                 // the palace wing and the prison, tall on either bank
+      const s = siteOn(best, side, 16, 12, 0.3);
+      claim(s.x, s.z, 16, 12, s.ry);
+      house(s.x, s.z, s.ry, 16, 17, 12, { hue: side > 0 ? '#ddd6c8' : '#efd9c9', grand: true });
+    }
+    landmarks.sighs = best;
+  }
+}
+
+// Find the first site along a stretch of bank that is actually free.
+function siteSearch(i0, i1, side, w, d, gap) {
+  const step = i1 > i0 ? 2 : -2;
+  for (let i = i0; step > 0 ? i <= i1 : i >= i1; i += step) {
+    const fr = frameAt(i), s = siteOn(fr, side, w, d, gap);
+    if (fits(s.x, s.z, w, d, s.ry)) return Object.assign(s, { fr, i });
+  }
+  return null;
+}
+
+// ═══ LANDMARKS ═══════════════════════════════════════════════════════════════
+// Scaled down from life so they sit in a city of 15 m houses, but in their true
+// arrangement: palace on the basin, Piazzetta and its columns beside it,
+// campanile and basilica behind, the Salute on the far point.
+function dogesPalace(s) {
+  const W = 50, D = 22, H = 22, k = kit(s.x, s.z, s.ry);
+  k('doge', boxUV(B(W, H + 1.2, D), 1, D / W, 1), '#ffffff', 0, (H + 1.2) / 2 - 1.2, 0);
+  k('trim', B(W + 0.4, 0.6, D + 0.4), '#efe6d6', 0, H + 0.3, 0);
+  for (let x = -W / 2 + 1; x <= W / 2 - 1; x += 2.2)
+    for (const zz of [-1, 1]) k('trim', B(0.8, 1.3, 0.35), '#f3e9da', x, H + 1.2, zz * (D / 2 + 0.05));
+  for (let z2 = -D / 2 + 1; z2 <= D / 2 - 1; z2 += 2.2)
+    for (const xx of [-1, 1]) k('trim', B(0.35, 1.3, 0.8), '#f3e9da', xx * (W / 2 + 0.05), H + 1.2, z2);
+  k('roof', hipRoof(W - 0.5, D - 0.5, 3.4), '#a6a29a', 0, H + 0.5, 0);
+  for (const xx of [-1, 1]) {
+    k('trim', new THREE.CylinderGeometry(0.1, 0.7, 3.2, 6), STONE, xx * (W / 2 - 0.4), H + 2.2, D / 2 - 0.4);
+  }
+  claim(s.x, s.z, W + 1, D + 1, s.ry);
+}
+
+function campanileSanMarco(x, z) {
+  const k = kit(x, z, 0), S = 8.4, H = 44;
+  k('brick', BT(S, H, S), '#ffffff', 0, H / 2 - 1, 0);
+  for (let i = -1; i <= 1; i++) for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]])   // pilaster strips
+    k('brick', BT(ax ? 0.4 : 1.1, H - 2, az ? 0.4 : 1.1), '#e8d4c4', ax * (S / 2 + 0.2) + (az ? i * 2.6 : 0), H / 2 - 2, az * (S / 2 + 0.2) + (ax ? i * 2.6 : 0));
+  k('trim', B(S + 0.8, 0.8, S + 0.8), STONE, 0, H - 0.6, 0);
+  // belfry: four stone piers per face, open arches between
+  k('trim', B(S - 1.4, 6, S - 1.4), '#3a3530', 0, H + 3, 0);
+  for (const a of [-1, 1]) for (const b of [-1, 1]) k('trim', B(1.3, 6, 1.3), STONE, a * (S / 2 - 0.65), H + 3, b * (S / 2 - 0.65));
+  for (const a of [-1, 1]) for (const c of [-1.35, 1.35]) {
+    k('trim', B(0.45, 6, 0.45), STONE, c, H + 3, a * (S / 2 - 0.3));
+    k('trim', B(0.45, 6, 0.45), STONE, a * (S / 2 - 0.3), H + 3, c);
+  }
+  k('trim', B(S + 0.6, 0.9, S + 0.6), STONE, 0, H + 6.4, 0);
+  k('trim', B(S - 0.6, 4.6, S - 0.6), '#e6dccb', 0, H + 9.1, 0);                  // attic
+  k('trim', B(S, 0.6, S), STONE, 0, H + 11.6, 0);
+  const spire = new THREE.ConeGeometry(S * 0.62, 12, 4, 1).rotateY(Math.PI / 4);
+  k('trim', spire, '#5f9480', 0, H + 17.9, 0);
+  k('gold', new THREE.CylinderGeometry(0.12, 0.3, 1.8, 6), '#ffffff', 0, H + 24.6, 0);   // the golden angel
+  k('gold', new THREE.SphereGeometry(0.4, 8, 6), '#ffffff', 0, H + 25.8, 0);
+  k('gold', B(1.8, 0.12, 0.35), '#ffffff', 0, H + 25.1, 0);
+  claim(x, z, S + 3, S + 3, 0);
+}
+
+function basilica(x, z, ry) {
+  const k = kit(x, z, ry);
+  k('trim', B(30, 12, 26), '#e3d6bd', 0, 5, 0);
+  // five portals with gilded lunettes on the west front (local +z)
+  for (let i = -2; i <= 2; i++) {
+    const w = i === 0 ? 4.2 : 3.2;
+    k('trim', B(w, 6.5, 0.8), '#2e2a26', i * 5.6, 3.3, 13.1);
+    k('gold', B(w - 0.4, 2.2, 0.3), '#ffffff', i * 5.6, 8.3, 13.2);
+    k('trim', new THREE.ConeGeometry(0.5, 2.4, 4), STONE, i * 5.6 + 2.8, 12.4, 12.4);
+  }
+  for (const [dx, dz, r] of [[0, 0, 5.8], [-8.5, 0, 4.2], [8.5, 0, 4.2], [0, -8.5, 4.2], [0, 8.5, 4.2]]) {
+    k('trim', new THREE.CylinderGeometry(r * 0.92, r * 0.92, 2.2, 16), '#e3d6bd', dx, 12, dz);
+    k('dome', new THREE.SphereGeometry(r, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1.18, 1), '#8fa39a', dx, 13, dz);
+    k('dome', new THREE.SphereGeometry(r * 0.22, 10, 8).scale(1, 1.6, 1), '#8fa39a', dx, 13 + r * 1.18 + 0.4, dz);
+    k('gold', new THREE.SphereGeometry(0.35, 8, 6), '#ffffff', dx, 13 + r * 1.18 + 1.4, dz);
+  }
+  claim(x, z, 34, 30, ry);
+}
+
+function salute(x, z, ry) {
+  const k = kit(x, z, ry), W = '#efe8da';
+  k('trim', new THREE.CylinderGeometry(11, 11, 15, 8).rotateY(Math.PI / 8), W, 0, 6.5, 0);
+  k('trim', new THREE.CylinderGeometry(11.6, 11.6, 0.8, 8).rotateY(Math.PI / 8), STONE, 0, 14.2, 0);
+  for (let i = 0; i < 8; i++) {                       // the great scroll buttresses
+    const a = i / 8 * Math.PI * 2;
+    const v = new THREE.TorusGeometry(2.0, 0.8, 8, 14, Math.PI * 1.4).rotateZ(-0.3).rotateY(Math.PI / 2).rotateY(a);
+    k('trim', v, W, Math.sin(a) * 9.2, 15.6, Math.cos(a) * 9.2);
+  }
+  k('trim', new THREE.CylinderGeometry(7.8, 7.8, 6.5, 16), W, 0, 17.8, 0);
+  k('trim', new THREE.CylinderGeometry(8.2, 8.2, 0.6, 16), STONE, 0, 21.1, 0);
+  k('dome', new THREE.SphereGeometry(8, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1.25, 1), '#b9bec0', 0, 21.3, 0);
+  k('trim', new THREE.CylinderGeometry(1.7, 1.9, 3.2, 8), W, 0, 32.6, 0);
+  k('dome', new THREE.SphereGeometry(1.9, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), '#b9bec0', 0, 34.2, 0);
+  k('trim', new THREE.CylinderGeometry(0.25, 0.35, 2.4, 6), W, 0, 37, 0);
+  // portal facing the water, with pediment and steps
+  k('trim', B(9, 13, 3), W, 0, 6, 11.4);
+  k('trim', B(3.4, 6, 0.4), '#3a352f', 0, 3.4, 13);
+  k('trim', pediment(10.4, 2.6, 3.2), W, 0, 12.5, 11.4);
+  for (let st = 0; st < 4; st++) k('trim', B(11 - st, 0.3, 1), STONE, 0, QY + st * 0.3, 13.6 - st * 0.9);
+  // second, smaller dome and its two bell towers behind
+  k('trim', new THREE.CylinderGeometry(5, 5, 4, 12), W, 0, 13, -14);
+  k('dome', new THREE.SphereGeometry(5, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1.2, 1), '#b9bec0', 0, 15, -14);
+  for (const sx of [-1, 1]) {
+    k('trim', B(2.6, 18, 2.6), W, sx * 7.5, 8, -17);
+    k('dome', new THREE.SphereGeometry(1.5, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1.6, 1), '#b9bec0', sx * 7.5, 17, -17);
+  }
+  claim(x, z, 26, 34, ry);
+}
+
+// The columns of San Marco and San Todaro at the Piazzetta's water edge.
+function columns(fr, side) {
+  for (const [k2, top] of [[-1, 'lion'], [1, 'saint']]) {
+    const s = siteOn(fr, side, 1, 1, 3.5);
+    const x = s.x + fr.fx * k2 * 5.5, z = s.z + fr.fz * k2 * 5.5, k = kit(x, z, s.ry);
+    k('trim', B(2.2, 1.6, 2.2), STONE, 0, QY + 0.8, 0);
+    k('trim', new THREE.CylinderGeometry(0.62, 0.72, 13, 12), '#bca79a', 0, QY + 8.1, 0);
+    k('trim', B(1.8, 1.0, 1.8), STONE, 0, QY + 15.1, 0);
+    if (top === 'lion') {
+      k('trim', B(0.9, 1.1, 2.1), '#5a5f52', 0, QY + 16.2, 0);
+      k('trim', B(2.6, 0.12, 0.8), '#5a5f52', 0, QY + 16.9, -0.1);   // wings
+      k('trim', new THREE.SphereGeometry(0.45, 8, 6), '#5a5f52', 0, QY + 16.9, 1.0);
+    } else {
+      k('trim', new THREE.CylinderGeometry(0.35, 0.4, 1.8, 8), '#d8d2c6', 0, QY + 16.5, 0);
+      k('trim', new THREE.SphereGeometry(0.3, 8, 6), '#d8d2c6', 0, QY + 17.6, 0);
+    }
+  }
+}
+
+// A plain parish campanile, for the skyline: brick shaft, stone belfry, and a
+// spire in one of the local styles (cone, pyramid or onion).
+function campanile(x, z, H, style) {
+  const k = kit(x, z, rnd(0, 1.57)), S = 4.6;
+  k('brick', BT(S, H, S), '#ffffff', 0, H / 2 - 1, 0);
+  k('trim', B(S + 0.4, 4.5, S + 0.4), STONE, 0, H + 1.2, 0);
+  for (const a of [-1, 1]) {
+    k('trim', B(S * 0.46, 3, 0.3), '#2f2a25', 0, H + 1.2, a * (S / 2 + 0.06));
+    k('trim', B(0.3, 3, S * 0.46), '#2f2a25', a * (S / 2 + 0.06), H + 1.2, 0);
+  }
+  k('trim', B(S + 0.8, 0.5, S + 0.8), STONE, 0, H + 3.7, 0);
+  if (style === 0) k('trim', new THREE.ConeGeometry(2.4, 8, 8), '#b04e36', 0, H + 8, 0);
+  else if (style === 1) k('trim', new THREE.ConeGeometry(3.2, 6, 4).rotateY(Math.PI / 4), '#5f9480', 0, H + 7, 0);
+  else {
+    k('dome', new THREE.SphereGeometry(2.3, 12, 10).scale(1, 1.3, 1), '#8fa39a', 0, H + 6.3, 0);
+    k('dome', new THREE.ConeGeometry(0.9, 2.6, 8), '#8fa39a', 0, H + 9.8, 0);
+  }
+  claim(x, z, S + 3, S + 3, 0);
+}
+
+function libreria(s, W) {
+  const k = kit(s.x, s.z, s.ry), H = 11, D = 12;
+  k('arcade', boxUV(B(W, H + 1.2, D), W / 11, D / 11, 1), '#ffffff', 0, (H + 1.2) / 2 - 1.2, 0);
+  k('trim', B(W + 0.6, 0.8, D + 0.6), STONE, 0, H + 0.4, 0);
+  for (let x = -W / 2 + 1.4; x <= W / 2; x += 2.8) k('trim', new THREE.CylinderGeometry(0.22, 0.3, 1.8, 6), '#f4eee2', x, H + 1.7, D / 2);
+  k('roof', hipRoof(W, D, 2.4), '#9f9a92', 0, H + 0.6, 0);
+  claim(s.x, s.z, W, D, s.ry);
+}
+
+{
+  // Doge's Palace: on the Grand Canal's left bank just before it meets the basin.
+  const pal = siteSearch(492, 440, -1, 50, 22, 3.5);
+  if (pal) {
+    dogesPalace(pal);
+    landmarks.palace = pal;
+    // The Piazzetta opens beside it: leave it clear, stand the columns in it,
+    // put the Libreria on its far side and the campanile at its back corner.
+    const fr = frameAt(pal.i - 30);
+    const pz = siteOn(fr, -1, 18, 30, 1);
+    claim(pz.x, pz.z, 18, 30, pz.ry);
+    columns(fr, -1);
+    const lib = siteSearch(pal.i - 52, pal.i - 90, -1, 34, 12, 3);
+    if (lib) libreria(lib, 34);
+    const back = siteOn(fr, -1, 1, 1, 30);
+    const cx = back.x + fr.fx * 8, cz = back.z + fr.fz * 8;
+    if (fits(cx, cz, 11, 11, 0)) campanileSanMarco(cx, cz);
+    const bas = siteOn(frameAt(pal.i), -1, 34, 30, 30);
+    if (fits(bas.x, bas.z, 34, 30, bas.ry)) basilica(bas.x, bas.z, bas.ry + Math.PI / 2);
+  }
+  // Santa Maria della Salute on the opposite point.
+  const sal = siteSearch(470, 420, 1, 26, 34, 5);
+  if (sal) { salute(sal.x, sal.z, sal.ry); landmarks.salute = sal; }
+}
+
+// ═══ LINE THE CANALS ═════════════════════════════════════════════════════════
+const poleSpots = [];
+function lineBank(curve, widthFn, samples, isLap) {
   const tan = new THREE.Vector3();
   const nextAt = [0, 0];                       // arc length at which each bank is free again
-  let run = 0, bridgeAt = 70, poleAt = 14;
+  let run = 0, poleAt = 14;
   let prev = curve.getPoint(0);
   for (let s = 1; s <= samples; s++) {
     const t = s / samples, p = curve.getPoint(t);
     run += p.distanceTo(prev); prev = p;
     curve.getTangent(t, tan);
     const nx = -tan.z, nz = tan.x, w = widthFn(t) / 2, ang = Math.atan2(tan.x, tan.z);
+    const grand = isLap && w > 11.5;
 
     for (let k = 0; k < 2; k++) {
       if (run < nextAt[k]) continue;
       const side = k ? -1 : 1;
-      const wide = rnd(8, 15), dep = rnd(8, 11);
-      const bx = p.x + nx * side * (w + dep / 2 + 0.5);
-      const bz = p.z + nz * side * (w + dep / 2 + 0.5);
+      const wide = grand ? rnd(11, 18) : rnd(8, 15), dep = grand ? rnd(11, 15) : rnd(8, 11);
+      const setback = Math.random() < 0.3 ? rnd(1.5, 3) : 0.5;        // room for a fondamenta
+      const bx = p.x + nx * side * (w + dep / 2 + setback);
+      const bz = p.z + nz * side * (w + dep / 2 + setback);
       const ry = ang + (side > 0 ? 0 : Math.PI);
       if (fits(bx, bz, wide - 0.7, dep - 0.7, ry)) {
         claim(bx, bz, wide - 0.7, dep - 0.7, ry);
-        house(bx, bz, ry, wide, rnd(9, 20), dep);
+        house(bx, bz, ry, wide, grand ? rnd(14, 22) : rnd(9, 20), dep, { grand });
         nextAt[k] = run + wide;                // next one butts straight up against it
       } else {
         nextAt[k] = run + 2.5;                 // junction or another canal: try further on
       }
     }
-    if (run > bridgeAt) { bridgeAt = run + rnd(95, 150); bridgeSpots.push({ p: p.clone(), a: ang, w: widthFn(t) }); }
-    if (run > poleAt)   { poleAt   = run + rnd(16, 30);  poleSpots.push({ p: p.clone(), nx, nz, w }); }
+    if (run > poleAt) { poleAt = run + rnd(16, 30); poleSpots.push({ p: p.clone(), nx, nz }); }
   }
 }
-lineBank(lapCurve, lapWidth, 1100);
-for (const s of STUBS) lineBank(s, () => 11, 70);
+lineBank(lapCurve, lapWidth, 1400, true);
+for (const s of STUBS) lineBank(s, () => 11, 90, false);
 
-// ═══ LANDMARKS ═══════════════════════════════════════════════════════════════
-// A campanile and a domed church, so the skyline has something to steer by.
-function campanile(x, z) {
-  const H = 44;
-  trimGeos.push(paint(new THREE.BoxGeometry(11, H, 11).translate(x, H / 2, z), '#a85a40'));
-  trimGeos.push(paint(new THREE.BoxGeometry(12.6, 9, 12.6).translate(x, H + 4.5, z), '#e4dac6'));
-  trimGeos.push(paint(new THREE.BoxGeometry(9.5, 4, 9.5).translate(x, H + 11, z), '#e4dac6'));
-  const spire = new THREE.ConeGeometry(6.6, 13, 4).translate(x, H + 19.5, z);
-  spire.rotateY(Math.PI / 4);
-  trimGeos.push(paint(spire, '#5f8f7d'));
-  claim(x, z, 26, 26, 0);
+// A few parish campanili scattered through the city, for the skyline.
+for (let n = 0, a = 0; n < 6 && a < 400; a++) {
+  const x = rnd(-HALF + 30, HALF - 30), z = rnd(-HALF + 30, HALF - 30);
+  if (!fits(x, z, 8, 8, 0)) continue;
+  campanile(x, z, rnd(24, 34), n % 3); n++;
 }
-function basilica(x, z) {
-  trimGeos.push(paint(new THREE.BoxGeometry(34, 15, 24).translate(x, 7.5, z), '#ded2b6'));
-  for (const dx of [-9, 9]) {
-    trimGeos.push(paint(new THREE.SphereGeometry(6.4, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2)
-      .translate(x + dx, 15, z), '#6d9585'));
-    trimGeos.push(paint(new THREE.SphereGeometry(1.1, 8, 6).translate(x + dx, 22, z), '#d9b451'));
-  }
-  claim(x, z, 40, 30, 0);
-}
-campanile(-14, -94);
-basilica(52, -108);
 
 // Fill the interiors so the skyline keeps going behind the waterfront.
-for (let a = 0; a < 5000; a++) {
+for (let a = 0; a < 6000; a++) {
   const x = rnd(-HALF + 14, HALF - 14), z = rnd(-HALF + 14, HALF - 14);
   const w = rnd(9, 15), d = rnd(8, 12), ry = Math.round(rnd(0, 4)) * Math.PI / 2;
   if (!fits(x, z, w, d, ry)) continue;
@@ -580,64 +1200,495 @@ for (let a = 0; a < 5000; a++) {
   house(x, z, ry, w, rnd(8, 18), d);
 }
 
+// ═══ QUAYS ═══════════════════════════════════════════════════════════════════
+// Marching squares over the canal grid: paved fondamente on top, Istrian stone
+// walls with an algae line down to the water. Built on the same field the
+// boats collide with.
+{
+  const tops = new Map(), walls = new Map();
+  const T = (m, x, z) => {
+    const k = clamp(Math.floor((x + HALF) / WORLD * CH), 0, CH - 1) + CH * clamp(Math.floor((z + HALF) / WORLD * CH), 0, CH - 1);
+    if (!m.has(k)) m.set(k, { t: new Tris(), x, z });
+    return m.get(k).t;
+  };
+  const cx = i => (i + 0.5) * CELL - HALF;
+  const land = (i, j) => 1 - wv(i, j);
+  const puv = (x, z) => [x / 4, z / 4];
+  const up = [0, 1, 0];
+  const cAlg = new THREE.Color('#2a3322'), cAlg2 = new THREE.Color('#4d5a3a');
+  const cSt = new THREE.Color('#c9c0ad'), cSt2 = new THREE.Color('#e2dbcc');
+  const ROWS = [[-1.4, cAlg], [0.12, cAlg2], [0.24, cSt], [QY, cSt2]];
+
+  function wall(a, b) {
+    const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+    let nx = -(b[1] - a[1]), nz = b[0] - a[0];
+    const L = Math.hypot(nx, nz) || 1; nx /= L; nz /= L;
+    if (wetness(mx + nx * 0.3, mz + nz * 0.3) < 0.5) { nx = -nx; nz = -nz; }
+    const dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+    const ua = (a[0] * dx + a[1] * dz) / 2.5, ub = ua + L / 2.5;
+    const t = T(walls, mx, mz);
+    for (let r = 0; r < 3; r++) {
+      const [y0, c0] = ROWS[r], [y1, c1] = ROWS[r + 1];
+      t.quad([a[0], y0, a[1]], [b[0], y0, b[1]], [b[0], y1, b[1]], [a[0], y1, a[1]],
+             [ua, y0 / 2.5], [ub, y0 / 2.5], [ub, y1 / 2.5], [ua, y1 / 2.5], c0, c0, c1, c1, [nx, 0, nz]);
+    }
+  }
+
+  for (let j = 0; j < N - 1; j++) {
+    let run = -1;
+    for (let i = 0; i <= N - 1; i++) {
+      const full = i < N - 1 && land(i, j) && land(i + 1, j) && land(i, j + 1) && land(i + 1, j + 1);
+      if (full) { if (run < 0) run = i; continue; }
+      if (run >= 0) {                                 // one quad for a whole run of solid land
+        const x0 = cx(run), x1 = cx(i), z0 = cx(j), z1 = cx(j + 1);
+        T(tops, (x0 + x1) / 2, (z0 + z1) / 2).quad([x0, QY, z0], [x1, QY, z0], [x1, QY, z1], [x0, QY, z1],
+          puv(x0, z0), puv(x1, z0), puv(x1, z1), puv(x0, z1), WHITE, WHITE, WHITE, WHITE, up);
+        run = -1;
+      }
+      if (i >= N - 1) break;
+      const corners = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]];
+      const L = corners.map(([a, b]) => land(a, b));
+      const n = L[0] + L[1] + L[2] + L[3];
+      if (n === 0 || n === 4) continue;
+      const poly = [];                                 // walk the square, keeping land corners and crossings
+      for (let c = 0; c < 4; c++) {
+        const [a0, b0] = corners[c], [a1, b1] = corners[(c + 1) % 4];
+        if (L[c]) poly.push({ x: cx(a0), z: cx(b0), cross: false });
+        if (L[c] !== L[(c + 1) % 4]) poly.push({ x: (cx(a0) + cx(a1)) / 2, z: (cx(b0) + cx(b1)) / 2, cross: true });
+      }
+      const t = T(tops, cx(i), cx(j));
+      for (let k = 1; k < poly.length - 1; k++) {
+        const A = poly[0], Bp = poly[k], C = poly[k + 1];
+        t.tri([A.x, QY, A.z], [Bp.x, QY, Bp.z], [C.x, QY, C.z], puv(A.x, A.z), puv(Bp.x, Bp.z), puv(C.x, C.z), WHITE, WHITE, WHITE, up);
+      }
+      for (let k = 0; k < poly.length; k++) {
+        const A = poly[k], Bp = poly[(k + 1) % poly.length];
+        if (A.cross && Bp.cross) wall([A.x, A.z], [Bp.x, Bp.z]);
+      }
+    }
+  }
+  for (const { t, x, z } of tops.values()) if (!t.empty) add('paving', t.build(), x, z);
+  for (const { t, x, z } of walls.values()) if (!t.empty) add('quaywall', t.build(), x, z);
+}
+
 // ═══ BRIDGES ═════════════════════════════════════════════════════════════════
-for (const b of bridgeSpots) {
-  const a = b.w / 2 + 2.5, r = a - 1.2;
-  const outer = new THREE.Shape();
-  outer.moveTo(-a, 0); outer.lineTo(-a, 2.2);
-  outer.quadraticCurveTo(0, r + 5.2, a, 2.2);
-  outer.lineTo(a, 0); outer.closePath();
-  const hole = new THREE.Path();
-  hole.moveTo(-r, 0); hole.absarc(0, 0, r, Math.PI, 0, true); hole.closePath();
-  outer.holes.push(hole);
-  const g = new THREE.ExtrudeGeometry(outer, { depth: 4.6, bevelEnabled: false });
-  g.translate(0, 0, -2.3); g.rotateY(b.a + Math.PI / 2); g.translate(b.p.x, 0, b.p.z);
-  trimGeos.push(paint(g, '#ddd2bb'));
+// Local frame for every bridge: x runs across the canal, z along it, centred on
+// the middle of the actual water (the racing line is rarely dead centre).
+function bridgeFrame(fr) {
+  const mid = (fr.pos - fr.neg) / 2;
+  const x = fr.p.x + fr.sx * mid, z = fr.p.z + fr.sz * mid;
+  return { x, z, ry: Math.atan2(fr.sx, fr.sz) - Math.PI / 2, hs: (fr.pos + fr.neg) / 2 + 0.4 };
+}
+// Segmental arch: `rise` above the springing at ±hs.
+function arcY(x, hs, rise) {
+  const R = (hs * hs + rise * rise) / (2 * rise);
+  return Math.sqrt(Math.max(0, R * R - x * x)) - (R - rise);
+}
+// An extruded x-y outline of `depth` in z, centred on z = 0.
+function pediment(w, h, depth) { return slab([[-w / 2, 0], [w / 2, 0], [0, h]], depth); }
+function slab(pts, depth, tile = 2) {
+  const sh = new THREE.Shape(pts.map(p => new THREE.Vector2(p[0], p[1])));
+  const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false, curveSegments: 1 });
+  g.translate(0, 0, -depth / 2);
+  const uv = g.attributes.uv.array;
+  for (let i = 0; i < uv.length; i++) uv[i] /= tile;
+  return g;
+}
+// Outline of a stepped hump-backed bridge: stairs up from each quay to a short
+// level top, with the arch cut out beneath.
+function humpOutline(hs, rise, land, topY, flat, stepH = 0.2) {
+  const pts = [], n = Math.max(3, Math.ceil((topY - QY) / stepH)), run = hs + land - flat;
+  pts.push([-hs - land, -1.4], [-hs - land, QY]);
+  for (let s = 1; s <= n; s++) {
+    const x = -hs - land + run * s / n, y1 = QY + (topY - QY) * s / n;
+    pts.push([x - run / n, y1], [x, y1]);
+  }
+  for (let s = n; s >= 1; s--) {
+    const x = hs + land - run * s / n, y1 = QY + (topY - QY) * s / n;
+    pts.push([x, y1], [x + run / n, y1]);
+  }
+  pts.push([hs + land, QY], [hs + land, -1.4], [hs, -1.4]);
+  const A = 18;
+  for (let k = 0; k <= A; k++) { const x = hs - 2 * hs * k / A; pts.push([x, 0.3 + arcY(x, hs, rise)]); }
+  pts.push([-hs, -1.4]);
+  return pts;
+}
+// Parapet: a sloped stone wall following the stairs.
+function parapetOutline(hs, land, topY, flat, h) {
+  return [[-hs - land, QY], [-flat, topY], [flat, topY], [hs + land, QY],
+          [hs + land, QY + h], [flat, topY + h], [-flat, topY + h], [-hs - land, QY + h]];
+}
+function archRing(hs, rise, t) {                  // Istrian stone band round the arch
+  const pts = [], A = 18;
+  for (let k = 0; k <= A; k++) { const x = -hs + 2 * hs * k / A; pts.push([x, 0.3 + arcY(x, hs, rise)]); }
+  for (let k = A; k >= 0; k--) {
+    const x = -hs + 2 * hs * k / A, y = 0.3 + arcY(x, hs, rise);
+    const R = (hs * hs + rise * rise) / (2 * rise), cy = 0.3 - (R - rise);
+    const L = Math.hypot(x, y - cy);
+    pts.push([x + x / L * t, y + (y - cy) / L * t]);
+  }
+  return pts;
+}
+
+function stoneBridge(fr, grand) {
+  const f = bridgeFrame(fr), hs = f.hs, k = kit(f.x, f.z, f.ry);
+  const rise = grand ? Math.min(hs * 0.42, 7.5) : Math.min(hs * 0.55, 5.4);
+  const topY = 0.3 + rise + 1.1, land = grand ? 6 : 4.5, flat = grand ? 3 : 1.6, D = grand ? 7 : 4.4;
+  k(grand ? 'trim' : 'brick', slab(humpOutline(hs, rise, land, topY, flat), D), grand ? '#e9e2d3' : '#ffffff');
+  for (const zz of [-1, 1]) {
+    k('trim', slab(archRing(hs, rise, 0.55), 0.3), STONE, 0, 0, zz * (D / 2 + 0.1));
+    const par = slab(parapetOutline(hs, land, topY, flat, grand ? 1.1 : 0.9), 0.3);
+    k('trim', par, STONE, 0, 0, zz * (D / 2 - 0.15));
+  }
+  if (grand) for (const sx of [-1, 1]) {           // lamps on the crown
+    k('trim', new THREE.CylinderGeometry(0.08, 0.1, 2.4, 6), '#2b2b2b', sx * (flat + 0.2), topY + 2.2, D / 2 - 0.15);
+    k('lamp', new THREE.SphereGeometry(0.3, 8, 6), '#ffffff', sx * (flat + 0.2), topY + 3.5, D / 2 - 0.15);
+  }
+}
+
+// Rialto: one great stone span carrying two rows of shops and a central arch.
+function rialto(fr) {
+  const f = bridgeFrame(fr), hs = f.hs, k = kit(f.x, f.z, f.ry);
+  const rise = Math.min(hs * 0.45, 7.2), land = 9, flat = 3.2, D = 14, topY = 0.3 + rise + 1.6;
+  k('trim', slab(humpOutline(hs, rise, land, topY, flat, 0.25), D), '#ede6d8');
+  for (const zz of [-1, 1]) k('trim', slab(archRing(hs, rise, 0.7), 0.3), '#f4eee2', 0, 0, zz * (D / 2 + 0.1));
+  // shop rows: stepped blocks following the ramp, arcaded on both faces
+  const steps = 6;
+  for (const zz of [-1, 1]) for (const sx of [-1, 1]) for (let s = 0; s < steps; s++) {
+    const x0 = flat + 0.4 + (hs + land - flat - 1.2) * s / steps, x1 = flat + 0.4 + (hs + land - flat - 1.2) * (s + 1) / steps;
+    const cxm = (x0 + x1) / 2, yb = topY - (topY - QY) * (cxm - flat) / (hs + land - flat);
+    const w = x1 - x0 - 0.1;
+    k('arcade', boxUV(B(w, 3.4, 3.6), w / 5, 3.6 / 5, 0.5, 0, 0), '#ffffff', sx * cxm, yb + 1.7, zz * 3.1);
+    k('roof', hipRoof(w + 0.3, 4.2, 1.1), '#a9a49c', sx * cxm, yb + 3.4, zz * 3.1);
+  }
+  // central portico over the crown, with its pediment
+  const por = [[-3.3, 0], [-1.7, 0], [-1.7, 3.3]];
+  for (let a = 1; a < 12; a++) por.push([-1.7 * Math.cos(a / 12 * Math.PI), 3.3 + 1.7 * Math.sin(a / 12 * Math.PI)]);
+  por.push([1.7, 3.3], [1.7, 0], [3.3, 0], [3.3, 6.4], [-3.3, 6.4]);
+  k('trim', slab(por, D - 1), '#f1ebde', 0, topY, 0);
+  for (const zz of [-1, 1]) for (const px of [-2.6, 2.6]) k('trim', B(0.5, 6, 0.3), '#f8f4ea', px, topY + 3, zz * (D / 2 - 0.35));
+  k('trim', B(7.2, 0.45, D - 0.4), '#f8f4ea', 0, topY + 6.5, 0);
+  k('trim', pediment(7.2, 2.0, D - 0.6), '#f1ebde', 0, topY + 6.7, 0);
+  for (const zz of [-1, 1]) {                       // balustrades along the outer walks
+    k('trim', slab(parapetOutline(hs, land, topY, flat, 1.0), 0.3), STONE, 0, 0, zz * (D / 2 - 0.15));
+  }
+}
+
+// Accademia: the wooden bridge — a timber arch truss with a planked deck.
+function accademia(fr) {
+  const f = bridgeFrame(fr), hs = f.hs, k = kit(f.x, f.z, f.ry);
+  const rise = Math.min(hs * 0.42, 7), D = 5.2, wood = '#6d4c30', deck = '#8a6a48';
+  const A = 16, land = 5;
+  const archAt = x => 0.4 + arcY(x, hs + 1, rise + 0.5);
+  for (const zz of [-1, 1]) for (let s = 0; s < A; s++) {
+    const x0 = -hs - 1 + (2 * hs + 2) * s / A, x1 = -hs - 1 + (2 * hs + 2) * (s + 1) / A;
+    const y0 = archAt(x0), y1 = archAt(x1), L = Math.hypot(x1 - x0, y1 - y0);
+    const beam = B(L + 0.1, 0.7, 0.45).rotateZ(Math.atan2(y1 - y0, x1 - x0));
+    k('trim', beam, wood, (x0 + x1) / 2, (y0 + y1) / 2, zz * (D / 2 - 0.25));
+  }
+  const deckY = x => archAt(x) + 1.3;
+  for (let s = 0; s < A; s++) {                  // deck and verticals
+    const x0 = -hs - 1 + (2 * hs + 2) * s / A, x1 = -hs - 1 + (2 * hs + 2) * (s + 1) / A;
+    const y0 = deckY(x0), y1 = deckY(x1), L = Math.hypot(x1 - x0, y1 - y0);
+    k('trim', B(L + 0.1, 0.25, D).rotateZ(Math.atan2(y1 - y0, x1 - x0)), deck, (x0 + x1) / 2, (y0 + y1) / 2, 0);
+    for (const zz of [-1, 1]) {
+      k('trim', B(0.18, 1.3, 0.3), wood, x0, (archAt(x0) + y0) / 2, zz * (D / 2 - 0.25));
+      k('trim', B(0.12, 1.0, 0.12), wood, x0, y0 + 0.6, zz * (D / 2 - 0.1));
+      k('trim', B(L + 0.1, 0.12, 0.14).rotateZ(Math.atan2(y1 - y0, x1 - x0)), wood, (x0 + x1) / 2, (y0 + y1) / 2 + 1.1, zz * (D / 2 - 0.1));
+    }
+  }
+  for (const sx of [-1, 1]) {                    // stairs down to the quays
+    const yTop = deckY(sx * (hs + 1));
+    const n = Math.max(2, Math.ceil((yTop - QY) / 0.3));
+    for (let s = 0; s < n; s++) k('trim', B(land / n + 0.05, 0.3, D), deck, sx * (hs + 1 + land * (s + 0.5) / n), yTop - (yTop - QY) * (s + 1) / n, 0);
+  }
+}
+
+// Bridge of Sighs: the enclosed white bridge high over the rio behind the palace.
+function bridgeOfSighs(fr) {
+  const f = bridgeFrame(fr), hs = f.hs + 1.2, k = kit(f.x, f.z, f.ry);
+  const y0 = 7.2, D = 3.8, top = y0 + 4.4, cw = hs * 0.55, pts = [];
+  for (let s = 0; s <= 16; s++) { const x = -hs + 2 * hs * s / 16; pts.push([x, y0 + arcY(x, hs, 1.0)]); }
+  pts.push([hs, top]);
+  for (let s = 0; s <= 12; s++) { const x = cw - 2 * cw * s / 12; pts.push([x, top + arcY(x, cw, 1.2)]); }
+  pts.push([-hs, top]);
+  k('trim', slab(pts, D), '#ebe6da');
+  const ring = (w, rise, t, y) => { const g = slab(archRing(w, rise, t), D + 0.35); g.translate(0, y - 0.3, 0); return g; };
+  k('trim', ring(hs, 1.0, 0.45, y0), '#f6f2e8');                         // stone band round the soffit
+  k('trim', ring(cw, 1.2, 0.35, top), '#f6f2e8');                        // the curved crown cornice
+  k('trim', B(2 * hs + 0.2, 0.35, D + 0.4), '#f6f2e8', 0, top - 0.1, 0);
+  for (const zz of [-1, 1]) {
+    for (const px of [-hs + 0.5, -0.45 * hs, 0.45 * hs, hs - 0.5]) k('trim', B(0.55, 4.2, 0.25), '#f6f2e8', px, y0 + 2.4, zz * (D / 2 + 0.05));
+    for (const sx of [-1, 1]) {                                        // the two little grilled windows
+      k('trim', B(1.5, 1.2, 0.2), '#f6f2e8', sx * 1.7, y0 + 2.8, zz * (D / 2 + 0.04));
+      k('trim', B(1.1, 0.85, 0.22), '#23201c', sx * 1.7, y0 + 2.8, zz * (D / 2 + 0.05));
+      for (const gx of [-0.28, 0, 0.28]) k('trim', B(0.07, 0.85, 0.26), '#d8d2c4', sx * 1.7 + gx, y0 + 2.8, zz * (D / 2 + 0.05));
+      for (const gy of [-0.2, 0.2]) k('trim', B(1.1, 0.07, 0.26), '#d8d2c4', sx * 1.7, y0 + 2.8 + gy, zz * (D / 2 + 0.05));
+    }
+    k('trim', new THREE.SphereGeometry(0.4, 10, 8).scale(1, 1.2, 0.5), '#e2dccf', 0, top + 0.6, zz * (D / 2 + 0.1));   // carved mask
+  }
+}
+
+for (const b of bridges) {
+  if (b.kind === 'rialto') rialto(b.fr);
+  else if (b.kind === 'accademia') accademia(b.fr);
+  else if (b.kind === 'scalzi') stoneBridge(b.fr, true);
+  else stoneBridge(b.fr, false);
+}
+// ═══ LAUNDRY ═════════════════════════════════════════════════════════════════
+// Washing strung across the narrow rii, one of the most Venetian sights there is.
+{
+  const CLOTH = ['#f4f1ea', '#f4f1ea', '#9ec3e6', '#e0584f', '#f2cf5b', '#e89bb4', '#7fb07a', '#3b5c9e'];
+  let lines = 0;
+  const tryLine = fr => {
+    if (fr.pos + fr.neg > 22) return;
+    const k = kit(fr.p.x, fr.p.z, Math.atan2(fr.sx, fr.sz) - Math.PI / 2);
+    const x0 = -fr.neg - 1.5, x1 = fr.pos + 1.5, y = rnd(8.5, 11);
+    const inHouse = side => { const d = side > 0 ? fr.pos + 2.5 : fr.neg + 2.5;
+      return taken[tIdx(tCell(fr.p.x + fr.sx * side * d), tCell(fr.p.z + fr.sz * side * d))]; };
+    if (!inHouse(1) || !inHouse(-1)) return;
+    k('trim', B(x1 - x0, 0.05, 0.05), '#3c3a36', (x0 + x1) / 2, y, 0);
+    for (let x = x0 + 1.5; x < x1 - 1.2; x += rnd(0.9, 1.6)) {
+      const w = rnd(0.4, 0.8), h = rnd(0.5, 0.9);
+      k('cloth', new THREE.PlaneGeometry(w, h), pick(CLOTH), x, y - h / 2 - 0.05 - Math.abs(x - (x0 + x1) / 2) * 0.03, 0);
+    }
+    lines++;
+  };
+  for (const s of STUBS) for (let t = 0.2; t < 0.95; t += 0.18) if (Math.random() < 0.6) tryLine(frameOnCurve(s, t));
+  for (let i = 600; i < 1200; i += 23) if (Math.random() < 0.5) tryLine(frameAt(i));
+  landmarks.laundry = lines;
+}
+
+// ═══ SAN GIORGIO AND THE LAGOON ══════════════════════════════════════════════
+// Across the water from the basin mouth: Palladio's church on its own island.
+{
+  const x = 318, z = BASIN.z + 6, k = kit(x, z, -Math.PI / 2);
+  k('paving', BT(70, 1.6, 44, 4), '#ffffff', 0, -0.25, 0);
+  k('trim', B(24, 16, 30), '#efe9dc', 0, 8, 0);
+  k('trim', B(14, 22, 2), '#f4efe4', 0, 11, 15.5);                                  // temple front
+  k('trim', pediment(15, 3.6, 2.2), '#f4efe4', 0, 22, 15.5);
+  for (const c of [-5, -1.7, 1.7, 5]) k('trim', new THREE.CylinderGeometry(0.55, 0.6, 16, 10), '#fbf7ef', c, 9, 16.8);
+  k('trim', new THREE.CylinderGeometry(5.5, 5.5, 4, 16), '#efe9dc', 0, 18, -2);
+  k('dome', new THREE.SphereGeometry(5.5, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1.2, 1), '#b9bec0', 0, 20, -2);
+  k('brick', BT(5, 36, 5), '#ffffff', 14, 18, -10);
+  k('trim', B(5.6, 5, 5.6), STONE, 14, 38, -10);
+  k('trim', new THREE.ConeGeometry(3, 9, 8), '#6f9a86', 14, 45, -10);
+  for (let i = 0; i < 6; i++) k('trim', B(9, rnd(7, 11), 9), pick(STUCCO), -26 + (i % 3) * 10, 4.5, -14 + Math.floor(i / 3) * 10);
+  // Giudecca's long low skyline behind it
+  for (let i = 0; i < 16; i++) {
+    const hx = 250 + i * 13, hz = BASIN.z + 120 + rnd(-4, 4), h = rnd(7, 13);
+    kit(hx, hz, 0)('trim', B(12, h, 10), pick(STUCCO), 0, h / 2, 0);
+  }
 }
 
 // ═══ MERGE THE CITY ══════════════════════════════════════════════════════════
-function mergeInto(list, material) {
-  if (!list.length) return null;
+const lam = o => new THREE.MeshLambertMaterial(Object.assign({ vertexColors: true }, o));
+const MATS = {
+  ground: lam({ map: texGround }), upper: lam({ map: texUpper }), palazzo: lam({ map: texPalazzo }),
+  roof: lam({ map: texRoof }), trim: lam({}), brick: lam({ map: texBrick }), paving: lam({ map: texPaving }),
+  quaywall: lam({ map: texWall }), doge: lam({ map: texDoge }), arcade: lam({ map: texArcade }),
+  cloth: lam({ side: THREE.DoubleSide }),
+  dome: new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30, specular: 0x333333 }),
+  gold: new THREE.MeshPhongMaterial({ color: '#d9ad4a', shininess: 80, specular: 0xffe0a0, emissive: '#3a2a08' }),
+  lamp: new THREE.MeshBasicMaterial({ color: '#ffe7b0' }),
+};
+const cityStats = { meshes: 0, geos: 0 };
+for (const [key, list] of bins) {
+  const mat = MATS[key.split(':')[0]];
   const geo = mergeGeometries(list, false);
+  cityStats.geos += list.length;
   list.forEach(g => g.dispose());
-  const m = new THREE.Mesh(geo, material);
-  m.frustumCulled = false;
+  const m = new THREE.Mesh(geo, mat);
+  m.castShadow = key.split(':')[0] !== 'paving';
+  m.receiveShadow = true;
   scene.add(m);
-  return m;
+  cityStats.meshes++;
 }
-const cityStats = { ground: groundGeos.length, upper: upperGeos.length, trim: trimGeos.length };
-mergeInto(groundGeos, new THREE.MeshLambertMaterial({ map: texGround, vertexColors: true }));
-mergeInto(upperGeos,  new THREE.MeshLambertMaterial({ map: texUpper,  vertexColors: true }));
-mergeInto(trimGeos,   new THREE.MeshLambertMaterial({ vertexColors: true }));
+bins.clear();
 
-// ═══ MOORING POLES ═══════════════════════════════════════════════════════════
-function stripeTexture(c1, c2) {
-  const c = cv(16, 96), x = c.getContext('2d');
-  x.fillStyle = c1; x.fillRect(0, 0, 16, 96);
-  x.fillStyle = c2;
-  for (let i = 0; i < 6; i++) x.fillRect(0, i * 16, 16, 8);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
+// ═══ WATER ═══════════════════════════════════════════════════════════════════
+// Distance to the nearest quay, baked into a texture: drives the foam line that
+// laps at the walls and the murkier, greener water close in.
+function shoreTexture() {
+  const S = 512, inf = 1e9, d = new Float32Array(S * S);
+  for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+    const x = (i + 0.5) / S * WORLD - HALF, z = (j + 0.5) / S * WORLD - HALF;
+    d[j * S + i] = wetness(x, z) > 0.5 ? inf : 0;
+  }
+  const D1 = 1, D2 = Math.SQRT2;
+  for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+    let v = d[j * S + i];
+    if (i > 0) v = Math.min(v, d[j * S + i - 1] + D1);
+    if (j > 0) v = Math.min(v, d[(j - 1) * S + i] + D1);
+    if (i > 0 && j > 0) v = Math.min(v, d[(j - 1) * S + i - 1] + D2);
+    if (i < S - 1 && j > 0) v = Math.min(v, d[(j - 1) * S + i + 1] + D2);
+    d[j * S + i] = v;
+  }
+  for (let j = S - 1; j >= 0; j--) for (let i = S - 1; i >= 0; i--) {
+    let v = d[j * S + i];
+    if (i < S - 1) v = Math.min(v, d[j * S + i + 1] + D1);
+    if (j < S - 1) v = Math.min(v, d[(j + 1) * S + i] + D1);
+    if (i < S - 1 && j < S - 1) v = Math.min(v, d[(j + 1) * S + i + 1] + D2);
+    if (i > 0 && j < S - 1) v = Math.min(v, d[(j + 1) * S + i - 1] + D2);
+    d[j * S + i] = v;
+  }
+  const px = WORLD / S, data = new Uint8Array(S * S * 4);
+  for (let k = 0; k < S * S; k++) {
+    const v = clamp(d[k] * px / 12, 0, 1) * 255;
+    data[k * 4] = v; data[k * 4 + 1] = v; data[k * 4 + 2] = v; data[k * 4 + 3] = 255;
+  }
+  const t = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
   return t;
 }
+const texShore = shoreTexture();
+
+// Planar reflection: the scene is drawn once more from a camera mirrored under
+// the water, into a smaller target, with everything below the surface clipped.
+const reflRT = new THREE.WebGLRenderTarget(4, 4, { type: THREE.UnsignedByteType });
+const mirrorCam = new THREE.PerspectiveCamera();
+const CLIP = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.02)], NOCLIP = [];
+
+const waterMat = new THREE.ShaderMaterial({
+  lights: true, fog: true,
+  uniforms: Object.assign(THREE.UniformsUtils.merge([THREE.UniformsLib.fog, THREE.UniformsLib.lights]), {
+    t: { value: 0 }, sunDir: { value: SUN_DIR }, sunCol: { value: new THREE.Color('#ffe0b0') },
+    nTex: { value: texWaterN }, shoreTex: { value: texShore }, reflTex: { value: reflRT.texture },
+    reflMat: { value: new THREE.Matrix4() }, world: { value: new THREE.Vector2(HALF, WORLD) },
+  }),
+  vertexShader: `
+    #include <common>
+    #include <fog_pars_vertex>
+    #include <shadowmap_pars_vertex>
+    varying vec3 vW;
+    void main(){
+      #include <beginnormal_vertex>
+      #include <defaultnormal_vertex>
+      #include <begin_vertex>
+      #include <project_vertex>
+      #include <worldpos_vertex>
+      #include <shadowmap_vertex>
+      #include <fog_vertex>
+      vW = (modelMatrix * vec4(position, 1.0)).xyz;
+    }`,
+  fragmentShader: `
+    uniform float t; uniform vec3 sunDir; uniform vec3 sunCol;
+    uniform sampler2D nTex; uniform sampler2D shoreTex; uniform sampler2D reflTex;
+    uniform mat4 reflMat; uniform vec2 world;
+    varying vec3 vW;
+    #include <common>
+    #include <packing>
+    #include <fog_pars_fragment>
+    #include <bsdfs>
+    #include <lights_pars_begin>
+    #include <shadowmap_pars_fragment>
+    #include <shadowmask_pars_fragment>
+    void main(){
+      vec2 p = vW.xz;
+      vec4 a = texture2D(nTex, p * 0.030 + vec2(t * 0.011, t * 0.007));
+      vec4 b = texture2D(nTex, p * 0.083 + vec2(-t * 0.019, t * 0.015));
+      vec4 c = texture2D(nTex, p * 0.21  + vec2(t * 0.034, -t * 0.029));
+      vec2 slope = (a.rg * 2.0 - 1.0) * 0.32 + (b.rg * 2.0 - 1.0) * 0.28 + (c.rg * 2.0 - 1.0) * 0.2;
+      float dist = length(cameraPosition - vW);
+      slope *= 1.0 - clamp(dist / 320.0, 0.0, 0.75);            // calmer far off: less shimmer
+      vec3 nrm = normalize(vec3(slope.x, 1.0, slope.y));
+      vec3 v = normalize(cameraPosition - vW);
+      float fres = 0.02 + 0.98 * pow(1.0 - max(dot(v, nrm), 0.0), 5.0);
+
+      float shore = texture2D(shoreTex, (p + world.x) / world.y).r;     // 0 at a wall .. 1 at 12 m
+      float shadow = getShadowMask();
+
+      // Venetian water: opaque jade, greener and murkier against the walls.
+      vec3 deep = vec3(0.020, 0.080, 0.070), near = vec3(0.045, 0.105, 0.060);
+      vec3 body = mix(near, deep, smoothstep(0.0, 0.6, shore));
+      body *= 0.9 + 0.35 * (a.a - 0.5);
+      body *= 0.45 + 0.55 * shadow;
+      body += sunCol * 0.035 * shadow;
+
+      vec4 rc = reflMat * vec4(vW.x, 0.0, vW.z, 1.0);
+      vec2 ruv = rc.xy / rc.w * 0.5 + 0.5 + slope * 0.025;
+      vec3 refl = texture2D(reflTex, ruv).rgb;
+
+      vec3 col = mix(body, refl, clamp(0.16 + fres * 0.95, 0.0, 0.9));
+      vec3 h = normalize(sunDir + v);
+      float nh = max(dot(nrm, h), 0.0);
+      col += sunCol * (pow(nh, 350.0) * 9.0 + pow(nh, 60.0) * 0.18) * shadow;
+
+      // lapping foam along the quays
+      float lap = 0.5 + 0.5 * sin(shore * 60.0 - t * 2.4 + b.a * 5.0);
+      float foam = (1.0 - smoothstep(0.0, 0.07, shore)) * (0.55 + 0.45 * lap);
+      foam *= smoothstep(0.35, 0.65, c.a + 0.2);
+      col = mix(col, vec3(0.72, 0.76, 0.72) * (0.55 + 0.45 * shadow), foam * 0.55);
+
+      gl_FragColor = vec4(col, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+      #include <fog_fragment>
+    }`,
+});
+const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(WORLD * 3, WORLD * 3).rotateX(-Math.PI / 2), waterMat);
+waterMesh.receiveShadow = true;
+scene.add(waterMesh);
+
+// ═══ MOORING POLES AND BRICCOLE ══════════════════════════════════════════════
+const obstacles = [];         // oriented boxes in the water the boats bounce off
 {
-  const geo = new THREE.CylinderGeometry(0.22, 0.26, 6, 6);
-  const mesh = new THREE.InstancedMesh(geo,
-    new THREE.MeshLambertMaterial({ map: stripeTexture('#f0e7d6', '#2d4f8a') }), poleSpots.length * 2);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(1, 1, 1);
-  let n = 0;
+  const geo = new THREE.CylinderGeometry(0.2, 0.24, 6.4, 8);
+  const cap = new THREE.SphereGeometry(0.3, 8, 6);
+  const pts = [];
   for (const p of poleSpots) for (const side of [1, -1]) {
     if (Math.random() < 0.35) continue;
-    const px = p.p.x + p.nx * side * (p.w - rnd(0.6, 1.6));
-    const pz = p.p.z + p.nz * side * (p.w - rnd(0.6, 1.6));
-    if (!isWater(px, pz)) continue;
-    e.set(rnd(-0.09, 0.09), rnd(0, 6.28), rnd(-0.09, 0.09));
-    m.compose(new THREE.Vector3(px, 1.4, pz), q.setFromEuler(e), sc);
-    mesh.setMatrixAt(n++, m);
+    const bank = scan(p.p.x, p.p.z, p.nx * side, p.nz * side);
+    if (bank < 5) continue;
+    const d = bank - rnd(0.5, 1.0);
+    pts.push([p.p.x + p.nx * side * d, p.p.z + p.nz * side * d]);
   }
-  mesh.count = n;
-  mesh.instanceMatrix.needsUpdate = true;
-  scene.add(mesh);
+  const STRIPES = [['#f0e7d6', '#2d4f8a'], ['#f0e7d6', '#b0302c'], ['#e9d9a8', '#2e6b4f']];
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(1, 1, 1);
+  STRIPES.forEach((st, si) => {
+    const mine = pts.filter((_, i) => i % 3 === si);
+    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ map: stripeTexture(st[0], st[1]) }), mine.length);
+    const caps = new THREE.InstancedMesh(cap, new THREE.MeshLambertMaterial({ color: st[1] }), mine.length);
+    mine.forEach(([px, pz], n) => {
+      e.set(rnd(-0.07, 0.07), rnd(0, 6.28), rnd(-0.07, 0.07));
+      m.compose(new THREE.Vector3(px, 1.8, pz), q.setFromEuler(e), sc); mesh.setMatrixAt(n, m);
+      m.compose(new THREE.Vector3(px, 5.05, pz), q, sc); caps.setMatrixAt(n, m);
+    });
+    mesh.castShadow = true;
+    scene.add(mesh, caps);
+  });
+  // The briccole: bundles of oak piles that mark the lagoon's channels. A row of
+  // them closes off the basin mouth, which is where the race track ends.
+  const pile = new THREE.CylinderGeometry(0.28, 0.32, 7, 7);
+  const bm = new THREE.InstancedMesh(pile, new THREE.MeshLambertMaterial({ color: '#5a4834' }), 60);
+  let n = 0;
+  for (let z = BASIN.z - BASIN.rz; z <= BASIN.z + BASIN.rz && n < 57; z += 7) {
+    for (let k = 0; k < 3; k++) {
+      e.set(rnd(-0.08, 0.08) + (k - 1) * 0.06, 0, rnd(-0.08, 0.08));
+      m.compose(new THREE.Vector3(LAGOON_X + 1.2 + (k - 1) * 0.45, 2, z + (k === 1 ? 0.4 : -0.2)), q.setFromEuler(e), sc);
+      bm.setMatrixAt(n++, m);
+    }
+  }
+  bm.count = n; bm.castShadow = true;
+  scene.add(bm);
+}
+
+// ═══ VAPORETTO STOPS ═════════════════════════════════════════════════════════
+{
+  const k0 = (x, z, ry) => kit(x, z, ry);
+  for (const [idx, side] of [[165, 1], [258, -1], [455, 1]]) {
+    const fr = frameAt(idx), bank = side > 0 ? fr.pos : fr.neg;
+    if (bank < 9) continue;
+    const off = bank - 1.9, x = fr.p.x + fr.sx * side * off, z = fr.p.z + fr.sz * side * off;
+    const ry = fr.a, k = k0(x, z, ry);
+    k('trim', B(3.2, 1.1, 11), '#e6e3dc', 0, 0.15, 0);
+    k('trim', B(3.24, 0.25, 11.04), '#2d3a4e', 0, 0.3, 0);
+    for (const a of [-1, 1]) for (const b of [-1, 1]) k('trim', B(0.12, 2.6, 0.12), '#dfe2e4', a * 1.3, 2, b * 4.8);
+    k('trim', B(3.4, 0.2, 10.4), '#e8ebed', 0, 3.35, 0);
+    k('trim', B(3.45, 0.55, 10.45), '#f1c232', 0, 3.0, 0);                  // the yellow ACTV band
+    k('trim', B(1.4, 0.2, 2.4), '#8a8a86', side * 1.9, QY, 0);
+    obstacles.push({ x, z, a: ry, hw: 1.6, hl: 5.5 });
+  }
 }
 
 // ═══ GONDOLAS ════════════════════════════════════════════════════════════════
@@ -648,46 +1699,73 @@ function gondolaGeometry() {
   s.bezierCurveTo(0.18, -4.1, 0.10, -4.4, 0, -4.7);
   s.bezierCurveTo(-0.10, -4.4, -0.18, -4.1, -0.30, -3.4);
   s.bezierCurveTo(-0.62, -1.0, -0.66, 2.2, 0, 4.6);
-  const hull = new THREE.ExtrudeGeometry(s, { depth: 0.62, bevelEnabled: false });
-  hull.rotateX(-Math.PI / 2); hull.translate(0, 0.30, 0);
-  const parts = [paint(hull, '#15161a')];
+  const hull = new THREE.ExtrudeGeometry(s, { depth: 0.62, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.05, bevelSegments: 1, curveSegments: 10 });
+  hull.rotateX(-Math.PI / 2); hull.translate(0, 0.05, 0);
+  const parts = [paint(hull, '#141519')];
   const bow = new THREE.BoxGeometry(0.16, 1.5, 0.5); bow.rotateX(0.26);
-  parts.push(paint(bow.translate(0, 0.95, 4.5), '#15161a'));
+  parts.push(paint(bow.translate(0, 0.72, 4.5), '#141519'));
   const stern = new THREE.BoxGeometry(0.16, 1.15, 0.5); stern.rotateX(-0.3);
-  parts.push(paint(stern.translate(0, 0.78, -4.6), '#15161a'));
+  parts.push(paint(stern.translate(0, 0.55, -4.6), '#141519'));
   // the ferro: the steel comb on the prow
-  parts.push(paint(new THREE.BoxGeometry(0.1, 0.95, 0.42).translate(0, 1.9, 4.75), '#b9c0c6'));
-  for (let i = 0; i < 4; i++)
-    parts.push(paint(new THREE.BoxGeometry(0.09, 0.14, 0.52).translate(0, 1.55 - i * 0.3, 4.98), '#b9c0c6'));
-  parts.push(paint(new THREE.BoxGeometry(0.95, 0.16, 1.5).translate(0, 0.66, -1.1), '#7d1f27'));
-  parts.push(paint(new THREE.BoxGeometry(1.24, 0.09, 7.4).translate(0, 0.62, 0.2), '#c8a23e'));
-  const oar = new THREE.BoxGeometry(0.1, 0.1, 3.9); oar.rotateX(0.2);
-  parts.push(paint(oar.translate(0.66, 1.0, -2.6), '#c9a97a'));
+  parts.push(paint(new THREE.BoxGeometry(0.1, 0.95, 0.42).translate(0, 1.67, 4.75), '#c9d0d6'));
+  for (let i = 0; i < 6; i++)
+    parts.push(paint(new THREE.BoxGeometry(0.08, 0.1, 0.5).translate(0, 1.4 - i * 0.2, 4.97), '#c9d0d6'));
+  parts.push(paint(new THREE.BoxGeometry(0.95, 0.16, 1.5).translate(0, 0.43, -1.1), '#7d1f27'));   // seat
+  parts.push(paint(new THREE.BoxGeometry(0.9, 0.5, 0.12).translate(0, 0.7, -1.8), '#7d1f27'));
+  parts.push(paint(new THREE.BoxGeometry(1.24, 0.08, 7.2).translate(0, 0.69, 0.2), '#c8a23e'));
+  parts.push(paint(new THREE.BoxGeometry(0.14, 0.7, 0.14).translate(0.5, 0.95, -3.2), '#6a4a2c'));  // forcola
+  return mergeGeometries(parts, false);
+}
+// The gondolier: striped shirt, straw boater, and the long oar.
+function gondolierGeometry() {
+  const parts = [];
+  const P = (g, col, x, y, z) => parts.push(paint(g, col).translate(x, y, z));
+  const X = 0.25, Z = -3.5, Y = 0.7;
+  P(B(0.2, 0.9, 0.24), '#1d2331', X - 0.13, Y + 0.45, Z); P(B(0.2, 0.9, 0.24), '#1d2331', X + 0.13, Y + 0.45, Z);
+  for (let i = 0; i < 6; i++) P(B(0.52, 0.11, 0.3), i % 2 ? '#1f3e7a' : '#f2f0ea', X, Y + 0.97 + i * 0.11, Z);
+  P(new THREE.SphereGeometry(0.15, 10, 8), '#d6a47e', X, Y + 1.8, Z);
+  P(new THREE.CylinderGeometry(0.32, 0.32, 0.03, 14), '#e3c46a', X, Y + 1.93, Z);
+  P(new THREE.CylinderGeometry(0.16, 0.17, 0.14, 12), '#e3c46a', X, Y + 2.0, Z);
+  P(new THREE.CylinderGeometry(0.17, 0.17, 0.05, 12), '#9c1d24', X, Y + 1.97, Z);
+  const arm = B(0.1, 0.55, 0.1).rotateX(-0.9);
+  P(arm.clone(), '#f2f0ea', X - 0.3, Y + 1.4, Z + 0.25); P(arm, '#f2f0ea', X + 0.3, Y + 1.4, Z + 0.25);
+  const oar = B(0.07, 0.07, 4.2).rotateX(0.42).rotateY(0.18);
+  P(oar, '#c9a97a', X + 0.45, Y + 0.8, Z + 1.2);
   return mergeGeometries(parts, false);
 }
 
-const GONDOLA_MAX = 110;
-const gondolaMesh = new THREE.InstancedMesh(gondolaGeometry(),
-  new THREE.MeshLambertMaterial({ vertexColors: true }), GONDOLA_MAX);
-scene.add(gondolaMesh);
+const GONDOLA_MAX = 120;
+const glossy = (o = {}) => new THREE.MeshPhongMaterial(Object.assign({ vertexColors: true, shininess: 70, specular: 0x444444 }, o));
+const gondolaMesh = new THREE.InstancedMesh(gondolaGeometry(), glossy(), GONDOLA_MAX);
+const gondolierMesh = new THREE.InstancedMesh(gondolierGeometry(), glossy({ shininess: 10, specular: 0x111111 }), GONDOLA_MAX);
+gondolaMesh.castShadow = gondolierMesh.castShadow = true;
+scene.add(gondolaMesh, gondolierMesh);
 
+const rampSpots = RAMP_AT.map(([idx, lane]) => ({ idx, lane }));
 const gondolas = [];
 {
+  const nearRamp = (x, z, r) => rampSpots.some(({ idx }) => { const p = pathAt(idx); return Math.hypot(p.x - x, p.z - z) < r; });
+  const nearObs = (x, z) => obstacles.some(o => Math.hypot(o.x - x, o.z - z) < 9);
   const spots = poleSpots.slice().sort(() => Math.random() - 0.5);
   for (const p of spots) {
     if (gondolas.length >= GONDOLA_MAX) break;
-    if (Math.random() < 0.35) continue;
+    if (Math.random() < 0.3) continue;
     const side = Math.random() < 0.5 ? 1 : -1;
-    const drift = Math.random() < 0.22;                       // a few crossing the canal
-    const off = drift ? 0 : p.w - rnd(2.4, 3.6);
+    const bank = scan(p.p.x, p.p.z, p.nx * side, p.nz * side);
+    const drift = Math.random() < 0.24 && bank > 6;          // a few rowing across the canal
+    const off = drift ? 0 : bank - 1.35;
     const x = p.p.x + p.nx * side * off, z = p.p.z + p.nz * side * off;
-    if (!isWater(x, z)) continue;
+    if (!isWater(x, z) || nearObs(x, z) || (drift && nearRamp(x, z, 16))) continue;
+    const w = drift ? Math.min(scan(p.p.x, p.p.z, p.nx, p.nz), scan(p.p.x, p.p.z, -p.nx, -p.nz)) : 0;
     gondolas.push({
-      x, z, a: Math.atan2(p.nx, p.nz) + (drift ? 0 : Math.PI / 2) + rnd(-0.14, 0.14),
-      alive: true, drift, base: { x, z }, nx: p.nx, nz: p.nz, w: p.w,
+      x, z, a: Math.atan2(p.nx, p.nz) + (drift ? 0 : Math.PI / 2) + rnd(-0.1, 0.1),
+      alive: true, drift, base: { x, z }, nx: p.nx, nz: p.nz, w,
       phase: rnd(0, 6.3),
     });
   }
+  const s0 = pathAt(START_OFF);
+  for (let i = gondolas.length - 1; i >= 0; i--)
+    if (Math.hypot(gondolas[i].x - s0.x, gondolas[i].z - s0.z) < 30) gondolas.splice(i, 1);
 }
 
 const DEBRIS_MAX = 60;
@@ -698,88 +1776,290 @@ scene.add(debrisMesh);
 const debris = [];
 
 // ═══ SPRAY ═══════════════════════════════════════════════════════════════════
-const SPRAY_MAX = 420;
-const sprayPos = new Float32Array(SPRAY_MAX * 3);
+const SPRAY_MAX = 600;
+const sprayPos = new Float32Array(SPRAY_MAX * 3), spraySize = new Float32Array(SPRAY_MAX), sprayA = new Float32Array(SPRAY_MAX);
 const sprayGeo = new THREE.BufferGeometry();
 sprayGeo.setAttribute('position', new THREE.BufferAttribute(sprayPos, 3));
-const sprayMesh = new THREE.Points(sprayGeo, new THREE.PointsMaterial({
-  map: texFoam, size: 1.5, transparent: true, depthWrite: false, sizeAttenuation: true, opacity: 0.62,
-}));
+sprayGeo.setAttribute('aSize', new THREE.BufferAttribute(spraySize, 1));
+sprayGeo.setAttribute('aA', new THREE.BufferAttribute(sprayA, 1));
+const sprayMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, fog: true,
+  uniforms: Object.assign(THREE.UniformsUtils.merge([THREE.UniformsLib.fog]), { map: { value: texFoam }, scale: { value: 400 } }),
+  vertexShader: `
+    attribute float aSize; attribute float aA; varying float vA; uniform float scale;
+    #include <fog_pars_vertex>
+    void main(){ vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); vA = aA;
+      gl_PointSize = aSize * scale / -mvPosition.z; gl_Position = projectionMatrix * mvPosition;
+      #include <fog_vertex>
+    }`,
+  fragmentShader: `
+    uniform sampler2D map; varying float vA;
+    #include <fog_pars_fragment>
+    void main(){ float a = texture2D(map, gl_PointCoord).a * vA;
+      gl_FragColor = vec4(vec3(0.93, 0.97, 0.96), a);
+      #include <colorspace_fragment>
+      #include <fog_fragment>
+    }`,
+});
+const sprayMesh = new THREE.Points(sprayGeo, sprayMat);
 sprayMesh.frustumCulled = false;
 scene.add(sprayMesh);
 const spray = [];
-function puff(x, y, z, n, spd) {
-  for (let i = 0; i < n && spray.length < SPRAY_MAX; i++)
-    spray.push({ x, y, z, vx: rnd(-spd, spd), vy: rnd(0.5, spd), vz: rnd(-spd, spd), life: rnd(0.4, 1.1) });
-}
-
-// ═══ RACE LINE ═══════════════════════════════════════════════════════════════
-const LAPN = 1200;
-const lapPath = lapCurve.getSpacedPoints(LAPN);          // evenly spaced: index == progress
-const lapStep = lapCurve.getLength() / LAPN;
-const pathAt = i => lapPath[((i % LAPN) + LAPN) % LAPN];
-
-const GATES = 14;
-const gateIdx = [];
-for (let g = 0; g < GATES; g++) gateIdx.push(Math.round(g * LAPN / GATES));
-
-// Boats line up behind the first gate rather than on it, so the start line is
-// something you cross instead of a free checkpoint bonus at the green light.
-const START_OFF = -40;
-{
-  const s0 = pathAt(START_OFF);
-  for (let i = gondolas.length - 1; i >= 0; i--)
-    if (Math.hypot(gondolas[i].x - s0.x, gondolas[i].z - s0.z) < 26) gondolas.splice(i, 1);
-}
-
-const gateMats = [];
-for (const gidx of gateIdx) {
-  const p = pathAt(gidx), nxt = pathAt(gidx + 6);
-  const dir = new THREE.Vector3().subVectors(nxt, p).normalize();
-  const w = lapWidth(gidx / LAPN) / 2 - 0.8;
-  const grp = new THREE.Group();
-  const mat = new THREE.MeshBasicMaterial({ color: '#ffb02e', transparent: true, opacity: 0.55 });
-  gateMats.push(mat);
-  for (const side of [1, -1]) {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 9, 8), mat);
-    pole.position.set(-dir.z * side * w, 4.5, dir.x * side * w);
-    grp.add(pole);
+function puff(x, y, z, n, spd, size = 1.5) {
+  for (let i = 0; i < n && spray.length < SPRAY_MAX; i++) {
+    const life = rnd(0.4, 1.1);
+    spray.push({ x, y, z, vx: rnd(-spd, spd), vy: rnd(0.5, spd), vz: rnd(-spd, spd), life, max: life, size: size * rnd(0.7, 1.4) });
   }
-  const bar = new THREE.Mesh(new THREE.BoxGeometry(w * 2, 0.45, 0.45), mat);
-  bar.position.y = 8.6;
-  bar.rotation.y = Math.atan2(dir.x, dir.z) + Math.PI / 2;
-  grp.add(bar);
-  grp.position.copy(p);
+}
+
+// ═══ WAKES ═══════════════════════════════════════════════════════════════════
+// Each boat trails a ribbon of foam that spreads and fades behind it.
+const WAKE_PTS = 56, WAKE_LIFE = 3.4;
+const wakeCap = 4 * WAKE_PTS * 6;
+const wakePos = new Float32Array(wakeCap * 3), wakeUV = new Float32Array(wakeCap * 2), wakeA = new Float32Array(wakeCap);
+const wakeGeo = new THREE.BufferGeometry();
+wakeGeo.setAttribute('position', new THREE.BufferAttribute(wakePos, 3));
+wakeGeo.setAttribute('uv', new THREE.BufferAttribute(wakeUV, 2));
+wakeGeo.setAttribute('aA', new THREE.BufferAttribute(wakeA, 1));
+const wakeMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, fog: true,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  uniforms: Object.assign(THREE.UniformsUtils.merge([THREE.UniformsLib.fog]), { nTex: { value: texWaterN }, t: { value: 0 } }),
+  vertexShader: `
+    attribute float aA; varying float vA; varying vec2 vUv; varying vec2 vP;
+    #include <fog_pars_vertex>
+    void main(){ vA = aA; vUv = uv; vP = position.xz;
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;
+      #include <fog_vertex>
+    }`,
+  fragmentShader: `
+    uniform sampler2D nTex; uniform float t; varying float vA; varying vec2 vUv; varying vec2 vP;
+    #include <fog_pars_fragment>
+    void main(){
+      float u = abs(vUv.x - 0.5) * 2.0;
+      float n = texture2D(nTex, vP * 0.22 + vec2(t * 0.02, 0.0)).a;
+      float arms = smoothstep(0.55, 0.9, u) * (1.0 - smoothstep(0.9, 1.0, u));
+      float churn = (1.0 - smoothstep(0.0, 0.55, u)) * (1.0 - smoothstep(0.0, 0.45, vUv.y));
+      float f = max(arms * 0.85, churn) * smoothstep(0.25, 0.75, n + 0.25 - vUv.y * 0.2);
+      gl_FragColor = vec4(vec3(0.9, 0.95, 0.93), f * vA * 0.85);
+      #include <colorspace_fragment>
+      #include <fog_fragment>
+    }`,
+});
+const wakeMesh = new THREE.Mesh(wakeGeo, wakeMat);
+wakeMesh.frustumCulled = false;
+scene.add(wakeMesh);
+
+// ═══ CHECKPOINTS ═════════════════════════════════════════════════════════════
+// Each gate: two regatta posts at the real banks, a banner slung across the
+// canal facing oncoming boats, and a line of buoys on the water. The next
+// gate glows. Posts are placed from the measured canal width, and the whole
+// gate is built in a frame turned to the canal, so nothing ends up in a wall
+// or at right angles to the water.
+function bannerTexture(label, sub) {
+  const c = cv(1024, 160), ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 1024, 160);
+  ctx.fillStyle = '#1b1e24'; ctx.fillRect(0, 0, 1024, 12); ctx.fillRect(0, 148, 1024, 12);
+  if (sub === 'finish') {
+    for (let i = 0; i < 64; i++) for (let j = 0; j < 2; j++) if ((i + j) % 2) ctx.fillRect(i * 16, 12 + j * 16, 16, 16);
+    for (let i = 0; i < 64; i++) for (let j = 0; j < 2; j++) if ((i + j) % 2) ctx.fillRect(i * 16, 116 + j * 16, 16, 16);
+  }
+  ctx.font = 'bold 76px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#1b1e24'; ctx.fillText(label, 512, 82);
+  ctx.fillStyle = '#c8242c';
+  for (const x of [70, 954]) { ctx.beginPath(); ctx.moveTo(x - 24, 56); ctx.lineTo(x + 18, 80); ctx.lineTo(x - 24, 104); ctx.closePath(); ctx.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAXANISO;
+  return t;
+}
+const texPost = stripeTexture('#f4f0e6', '#c8242c', 8);
+const postGeo = new THREE.CylinderGeometry(0.26, 0.32, 9.5, 12);
+const finialGeo = new THREE.SphereGeometry(0.42, 12, 8);
+const buoyGeo = new THREE.SphereGeometry(0.34, 10, 8);
+const postMat = new THREE.MeshLambertMaterial({ map: texPost });
+const goldMat = MATS.gold;
+const gates = [];
+const buoyList = [];
+for (let g = 0; g < GATES; g++) {
+  const fr = frameAt(gateIdx[g]);
+  const right = fr.pos - 1.0, left = -(fr.neg - 1.0);
+  const grp = new THREE.Group();
+  grp.position.set(fr.p.x, 0, fr.p.z);
+  grp.rotation.y = fr.a;                      // local +z downstream, local +x across
+  for (const x of [left, right]) {
+    const post = new THREE.Mesh(postGeo, postMat); post.position.set(x, 4.1, 0); post.castShadow = true;
+    const fin = new THREE.Mesh(finialGeo, goldMat); fin.position.set(x, 9.0, 0);
+    grp.add(post, fin);
+  }
+  const span = right - left, cx = (left + right) / 2;
+  const mat = new THREE.MeshLambertMaterial({ map: bannerTexture(g === 0 ? 'START · FINISH' : 'CHECKPOINT ' + g, g === 0 ? 'finish' : ''),
+                                              side: THREE.DoubleSide, emissive: '#000000' });
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(span - 0.5, 1.5), mat);
+  banner.position.set(cx, 7.6, 0); banner.rotation.y = Math.PI;     // printed side faces the oncoming boats
+  banner.castShadow = true;
+  grp.add(banner);
+  for (const y of [6.8, 8.4]) {
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, span, 6).rotateZ(Math.PI / 2), MATS.trim);
+    rod.position.set(cx, y, 0); grp.add(rod);
+  }
+  for (let x = left + 1.6; x < right - 1.2; x += 2.4) buoyList.push([grp, x]);
   scene.add(grp);
+  gates.push({ grp, mat, span, cx, fr, reach: Math.max(fr.pos, fr.neg) + 4 });
+}
+const buoys = new THREE.InstancedMesh(buoyGeo, new THREE.MeshLambertMaterial(), buoyList.length);
+{
+  const m = new THREE.Matrix4(), v = new THREE.Vector3(), col = new THREE.Color();
+  buoyList.forEach(([grp, x], i) => {
+    v.set(x, 0.12, 0).applyMatrix4(grp.matrix.compose(grp.position, grp.quaternion, grp.scale));
+    buoys.setMatrixAt(i, m.makeTranslation(v.x, v.y, v.z));
+    buoys.setColorAt(i, col.set(i % 2 ? '#f2efe8' : '#d8262e'));
+  });
+  scene.add(buoys);
+}
+// The glowing curtain hangs in whichever gate is next.
+const curtainMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  uniforms: { t: { value: 0 }, col: { value: new THREE.Color('#5ce08a') } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    varying vec2 vUv; uniform float t; uniform vec3 col;
+    void main(){
+      float fall = pow(1.0 - vUv.y, 1.6);
+      float band = 0.65 + 0.35 * sin(vUv.y * 22.0 - t * 5.0);
+      float edge = smoothstep(0.0, 0.06, vUv.x) * smoothstep(0.0, 0.06, 1.0 - vUv.x);
+      gl_FragColor = vec4(col * fall * band * edge * (0.55 + 0.15 * sin(t * 4.0)), 1.0);
+    }`,
+});
+const curtain = new THREE.Mesh(new THREE.PlaneGeometry(1, 6.4), curtainMat);
+curtain.position.y = 3.2;
+scene.add(curtain);
+function markGate(n) {
+  gates.forEach((g, i) => {
+    g.mat.color.set(i === n ? '#b9ffcf' : '#ffe2b0');
+    g.mat.emissive.set(i === n ? '#1c5a30' : '#000000');
+  });
+  const g = gates[n];
+  g.grp.add(curtain);
+  curtain.position.set(g.cx, 3.2, 0);
+  curtain.scale.x = g.span - 0.8;
+}
+
+// ═══ RAMPS ═══════════════════════════════════════════════════════════════════
+// Floating timber kickers with chevrons. Hit one straight and fast and the boat
+// flies — far enough to clear a gondola, and worth a little time.
+const RAMP_L = 8, RAMP_W = 4.4, RAMP_H = 1.9;
+function rampGeometry() {
+  const T = new Tris(), w = RAMP_W / 2, L = RAMP_L, H = RAMP_H;
+  const top = u => [u[0] * 0.5, u[1]], side = u => [0.5 + u[0] * 0.25, u[1]], fl = u => [0.75 + u[0] * 0.25, u[1]];
+  const a = [-w, 0.02, 0], b = [w, 0.02, 0], c = [w, H, L], d = [-w, H, L];
+  T.quad(a, b, c, d, top([0, 0]), top([1, 0]), top([1, 1]), top([0, 1]), WHITE, WHITE, WHITE, WHITE, [0, 1, -0.3]);
+  for (const sx of [-1, 1]) {
+    const p0 = [sx * w, -0.6, 0], p1 = [sx * w, -0.6, L], p2 = [sx * w, H, L], p3 = [sx * w, 0.02, 0];
+    T.quad(p0, p1, p2, p3, side([0, 0]), side([1, 0]), side([1, 1]), side([0, 0.2]), WHITE, WHITE, WHITE, WHITE, [sx, 0, 0]);
+  }
+  T.quad([-w, -0.6, L], [w, -0.6, L], [w, H, L], [-w, H, L], side([0, 0]), side([1, 0]), side([1, 1]), side([0, 1]), WHITE, WHITE, WHITE, WHITE, [0, 0, 1]);
+  const g = T.build();
+  const parts = [g];
+  for (const sx of [-1, 1]) {                    // pontoon floats
+    const f = new THREE.CylinderGeometry(0.55, 0.55, L + 0.4, 12).rotateX(Math.PI / 2).toNonIndexed();
+    const uv = f.attributes.uv.array;
+    for (let i = 0; i < uv.length; i += 2) uv[i] = 0.75 + uv[i] * 0.25;
+    f.translate(sx * (w + 0.2), 0.05, L / 2);
+    f.setAttribute('color', new THREE.Float32BufferAttribute(new Array(f.attributes.position.count * 3).fill(1), 3));
+    parts.push(f);
+  }
+  return mergeGeometries(parts, false);
+}
+const rampGeo = rampGeometry(), rampMat = new THREE.MeshLambertMaterial({ map: texRamp, vertexColors: true });
+const ramps = [];
+for (const r of rampSpots) {
+  const fr = frameAt(r.idx);
+  let lane = r.lane;
+  // keep the whole kicker in open water with a boat's width to spare each side
+  for (let k = 0; k < 6; k++) {
+    const ok = [-1, 1].every(sd => lane * sd + RAMP_W / 2 + 3 < (sd > 0 ? fr.pos : fr.neg));
+    if (ok) break;
+    lane *= 0.5;
+  }
+  const cx = fr.p.x + fr.sx * lane - fr.fx * RAMP_L / 2, cz = fr.p.z + fr.sz * lane - fr.fz * RAMP_L / 2;
+  const m = new THREE.Mesh(rampGeo, rampMat);
+  m.position.set(cx, 0, cz); m.rotation.y = fr.a;
+  m.castShadow = m.receiveShadow = true;
+  scene.add(m);
+  ramps.push({ x: cx, z: cz, fx: fr.fx, fz: fr.fz, a: fr.a });
+}
+function onRamp(x, z) {
+  for (const r of ramps) {
+    const dx = x - r.x, dz = z - r.z;
+    const u = dx * r.fx + dz * r.fz, v = dx * r.fz - dz * r.fx;
+    if (u >= -0.2 && u <= RAMP_L && Math.abs(v) <= RAMP_W / 2 + 0.25) return { r, u };
+  }
+  return null;
 }
 
 // ═══ BOATS ═══════════════════════════════════════════════════════════════════
-function speedboatGeometry(hullCol, deckCol) {
-  const s = new THREE.Shape();
-  s.moveTo(0, 3.5);
-  s.bezierCurveTo(1.05, 1.9, 1.15, -0.6, 1.1, -2.6);
-  s.lineTo(-1.1, -2.6);
-  s.bezierCurveTo(-1.15, -0.6, -1.05, 1.9, 0, 3.5);
-  const hull = new THREE.ExtrudeGeometry(s, { depth: 1.15, bevelEnabled: false });
-  hull.rotateX(-Math.PI / 2); hull.translate(0, 0.25, 0);
-  const parts = [paint(hull, hullCol)];
-  parts.push(paint(new THREE.BoxGeometry(1.9, 0.16, 4.4).translate(0, 1.42, 0.5), deckCol));
-  parts.push(paint(new THREE.BoxGeometry(2.24, 0.14, 6.1).translate(0, 1.36, 0.1), '#d8dade'));
-  parts.push(paint(new THREE.BoxGeometry(1.55, 0.5, 1.5).translate(0, 1.1, -0.55), '#2a2118'));
-  const shield = new THREE.BoxGeometry(1.7, 0.62, 0.1); shield.rotateX(-0.32);
-  parts.push(paint(shield.translate(0, 1.76, 0.75), '#9fc6d8'));
-  parts.push(paint(new THREE.BoxGeometry(1.4, 0.3, 0.9).translate(0, 1.62, -1.5), deckCol));
-  parts.push(paint(new THREE.BoxGeometry(0.1, 0.9, 0.1).translate(0, 1.95, -2.4), '#d8dade'));
+// A Riva-style runabout: lofted hull with a vee bottom, a white boot stripe and
+// varnished decks, a windscreen, two bench seats and a driver.
+function speedboatGeometry(hullCol, deckCol, shirt) {
+  const T = new Tris(), NS = 16, Z0 = -2.7, Z1 = 3.7;
+  const hw = u => u < 0.42 ? 1.03 + 0.09 * Math.sin(u / 0.42 * Math.PI / 2) : 1.12 * Math.sqrt(Math.max(0, 1 - ((u - 0.42) / 0.58) ** 2.2));
+  const keel = u => -0.34 + (u > 0.55 ? ((u - 0.55) / 0.45) ** 2 * 1.0 : 0);
+  const gun = u => 0.92 + 0.16 * u * u;
+  const sec = u => {
+    const w = hw(u), ky = keel(u), cy = Math.min(ky + 0.26 + 0.12 * u, gun(u) - 0.1);
+    return [[0, ky], [w * 0.86, cy], [w * 0.95, cy + 0.2], [w * 0.975, cy + 0.33], [w, gun(u)]];
+  };
+  const C = h => new THREE.Color(h);
+  const bands = [C('#1f2329'), C(hullCol), C('#f3efe4'), C(hullCol)];
+  const deck = C(deckCol);
+  const zAt = u => Z0 + (Z1 - Z0) * u;
+  for (let i = 0; i < NS; i++) {
+    const u0 = i / NS, u1 = (i + 1) / NS, s0 = sec(u0), s1 = sec(u1), z0 = zAt(u0), z1 = zAt(u1);
+    for (const sg of [1, -1]) for (let b = 0; b < 4; b++) {
+      const A = [sg * s0[b][0], s0[b][1], z0], Bq = [sg * s0[b + 1][0], s0[b + 1][1], z0];
+      const Cq = [sg * s1[b + 1][0], s1[b + 1][1], z1], D = [sg * s1[b][0], s1[b][1], z1];
+      const hint = b === 0 ? [sg * 0.4, -1, 0] : [sg, 0, 0];
+      T.quad(A, Bq, Cq, D, [z0 * 0.3, s0[b][1]], [z0 * 0.3, s0[b + 1][1]], [z1 * 0.3, s1[b + 1][1]], [z1 * 0.3, s1[b][1]],
+             bands[b], bands[b], bands[b], bands[b], hint);
+    }
+    const g0 = s0[4], g1 = s1[4];
+    T.quad([-g0[0], g0[1], z0], [g0[0], g0[1], z0], [g1[0], g1[1], z1], [-g1[0], g1[1], z1],
+           [-g0[0] * 0.5, z0 * 0.3], [g0[0] * 0.5, z0 * 0.3], [g1[0] * 0.5, z1 * 0.3], [-g1[0] * 0.5, z1 * 0.3],
+           deck, deck, deck, deck, [0, 1, 0]);
+  }
+  const s0 = sec(0), O = [0, s0[0][1], Z0];
+  for (const sg of [1, -1]) for (let b = 0; b < 4; b++) {         // transom
+    const P1 = [sg * s0[b][0], s0[b][1], Z0], P2 = [sg * s0[b + 1][0], s0[b + 1][1], Z0];
+    T.tri(O, P1, P2, [0, 0], [0, 0], [0, 0], bands[b], bands[b], bands[b], [0, 0, -1]);
+  }
+  const parts = [T.build()];
+  const P = (g, col, x, y, z) => parts.push(paint(g, col).translate(x, y, z));
+  P(B(1.7, 0.36, 2.3), '#2a2118', 0, 1.02, -0.65);                          // cockpit well
+  P(B(1.6, 0.34, 0.5), '#ece0c6', 0, 1.18, -0.2);  P(B(1.6, 0.5, 0.14), '#ece0c6', 0, 1.42, -0.46);  // front bench
+  P(B(1.6, 0.34, 0.5), '#ece0c6', 0, 1.18, -1.4);  P(B(1.6, 0.5, 0.14), '#ece0c6', 0, 1.42, -1.66);  // rear bench
+  const shield = B(1.9, 0.55, 0.06).rotateX(-0.45);
+  P(shield, '#bcd9e6', 0, 1.33, 0.52);
+  P(B(1.92, 0.05, 0.08), '#dfe3e6', 0, 1.58, 0.42);
+  P(B(0.05, 0.05, 5.4), '#dfe3e6', 1.0, 1.02, 0.3); P(B(0.05, 0.05, 5.4), '#dfe3e6', -1.0, 1.02, 0.3);   // chrome rubbing strips
+  P(B(0.06, 1.0, 0.06), '#dfe3e6', 0, 1.45, -2.55);                          // flagstaff
+  P(B(0.02, 0.36, 0.55), '#c8242c', 0, 1.78, -2.85); P(B(0.022, 0.12, 0.2), '#e8c24a', 0, 1.78, -2.8);
+  P(B(0.52, 0.52, 0.36), shirt, 0.42, 1.56, -0.3);                           // driver
+  P(new THREE.SphereGeometry(0.17, 10, 8), '#d6a47e', 0.42, 2.0, -0.3);
+  P(B(0.36, 0.1, 0.38), '#1c1d22', 0.42, 2.15, -0.28);
+  P(new THREE.TorusGeometry(0.17, 0.03, 6, 14).rotateX(-0.5), '#1c1d22', 0.42, 1.5, 0.08);   // wheel
+  P(B(0.9, 0.06, 0.6), '#cfd3d6', 0, 1.13, -2.15);                           // engine vent
   return mergeGeometries(parts, false);
 }
-const boatMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-const HULLS = [['#7b3a1e', '#e8dcc0'], ['#1f4f6e', '#dfe6ea'], ['#5d1f28', '#e6d3c4'], ['#20503a', '#dde8dc']];
+const boatMat = new THREE.MeshPhongMaterial({ vertexColors: true, map: texPlank, shininess: 85, specular: 0x555555 });
+const HULLS = [['#6e2f18', '#b7743f', '#e2e0da'], ['#16415e', '#a8703c', '#d8563a'],
+               ['#5b1824', '#b57b47', '#2e5f9c'], ['#1d4a34', '#a6703f', '#e9c34e']];
 
-function makeRacer(colors) {
-  const mesh = new THREE.Mesh(speedboatGeometry(colors[0], colors[1]), boatMat);
+function makeRacer(c) {
+  const mesh = new THREE.Mesh(speedboatGeometry(c[0], c[1], c[2]), boatMat);
   mesh.rotation.order = 'YXZ';
+  mesh.castShadow = true;
   scene.add(mesh);
-  return { mesh, x: 0, z: 0, a: 0, spd: 0, vx: 0, vz: 0, lap: 0, idx: 0, roll: 0, gate: 0, finishT: null };
+  return { mesh, x: 0, z: 0, a: 0, spd: 0, vx: 0, vz: 0, y: 0, vy: 0, air: false, ramp: null, airT: 0,
+           pitch: 0, lap: 0, idx: 0, roll: 0, gate: 0, finishT: null, trail: [] };
 }
 const player = makeRacer(HULLS[0]);
 const ais = [1, 2, 3].map(i => Object.assign(makeRacer(HULLS[i]), { skill: 0.9 + i * 0.045, lane: (i - 2) * 3.4 }));
@@ -787,11 +2067,10 @@ const racers = [player, ...ais];
 
 // A floating chevron pointing at the next gate — essential in a maze of canals.
 const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.46, 1.35, 4).rotateX(Math.PI / 2),
-  new THREE.MeshBasicMaterial({ color: '#ffc861', transparent: true, opacity: 0.7 }));
+  new THREE.MeshBasicMaterial({ color: '#ffc861', transparent: true, opacity: 0.8 }));
 scene.add(arrow);
 
 // ═══ INPUT ═══════════════════════════════════════════════════════════════════
-const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
@@ -826,13 +2105,16 @@ for (const ev of ['pointerup', 'pointercancel', 'pointerleave'])
 
 document.getElementById('howto').innerHTML = isTouch
   ? 'Touch anywhere and slide your finger <b>left / right</b> to steer.<br>The throttle looks after itself — tap <b>BRAKE</b> for the tight ones.'
-  : '<kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd> to steer &middot; <kbd>Space</kbd> to brake<br><span style="opacity:.7">The throttle is automatic.</span>';
+  : '<kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd> to steer &middot; <kbd>Space</kbd> to brake<br><span style="opacity:.7">The throttle is automatic. Hit the ramps straight to jump.</span>';
 
 // ═══ RACE STATE ══════════════════════════════════════════════════════════════
 // A clean lap is about 55 s and a scrappy one nearer 75 s, so 14 checkpoints at
 // 5.5 s (77 s a lap) leaves room to make mistakes but not to dawdle.
-const LAPS = 3, START_TIME = 45, GATE_BONUS = 5.5, MAXV = 26;
-let mode = 'title', clock = START_TIME, raced = 0, smashed = 0, shake = 0, countdown = 0;
+const LAPS = 3, START_TIME = 45, GATE_BONUS = 5.5, JUMP_BONUS = 1, MAXV = 26, GRAV = 17;
+// Crossing the start line is gate 1, so the race ends on the start line after
+// three full laps rather than at the last checkpoint before it.
+const FINISH_GATES = GATES * LAPS + 1;
+let mode = 'title', clock = START_TIME, raced = 0, smashed = 0, shake = 0, countdown = 0, jumps = 0;
 
 const el = id => document.getElementById(id);
 const hud = el('hud'), toastEl = el('toast');
@@ -840,7 +2122,7 @@ let toastT = 0;
 function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); toastT = 1.4; }
 
 function resetRace() {
-  clock = START_TIME; raced = 0; smashed = 0; shake = 0;
+  clock = START_TIME; raced = 0; smashed = 0; shake = 0; jumps = 0;
   for (const g of gondolas) g.alive = true;
   debris.length = 0; spray.length = 0;
   racers.forEach((r, i) => {
@@ -854,10 +2136,12 @@ function resetRace() {
       if (!blocked(r.x, r.z, a)) break;
       lane *= 0.6;
     }
-    r.a = a; r.spd = 0; r.vx = 0; r.vz = 0; r.roll = 0;
-    r.idx = ((idx % LAPN) + LAPN) % LAPN; r.gate = 0; r.finishT = null;
+    r.a = a; r.spd = 0; r.vx = 0; r.vz = 0; r.roll = 0; r.pitch = 0;
+    r.y = 0; r.vy = 0; r.air = false; r.ramp = null; r.airT = 0;
+    r.idx = idx; r.gate = 0; r.finishT = null; r.trail.length = 0;
   });
-  gateMats.forEach((m, i) => m.color.set(i === 0 ? '#5ce08a' : '#ffb02e'));
+  snapCam = true;
+  markGate(0);
 }
 
 const gateTarget = r => pathAt(gateIdx[r.gate % GATES]);
@@ -865,32 +2149,42 @@ function distToGate(r) { const g = gateTarget(r); return Math.hypot(g.x - r.x, g
 const progressOf = r => r.gate * 100000 - distToGate(r);
 
 // ═══ MOVEMENT ════════════════════════════════════════════════════════════════
-const landAt = (x, z) => !isWater(x, z);
+function inObstacle(x, z) {
+  for (const o of obstacles) {
+    const dx = x - o.x, dz = z - o.z, s = Math.sin(o.a), c = Math.cos(o.a);
+    if (Math.abs(dx * s + dz * c) < o.hl && Math.abs(dx * c - dz * s) < o.hw) return true;
+  }
+  return false;
+}
+const landAt = (x, z) => !isWater(x, z) || inObstacle(x, z);
 function blocked(x, z, a) {
   const fx = Math.sin(a), fz = Math.cos(a);
-  return landAt(x + fx * 3.1, z + fz * 3.1) ||
-         landAt(x + fz * 1.25, z - fx * 1.25) ||
-         landAt(x - fz * 1.25, z + fx * 1.25) ||
+  return landAt(x + fx * 3.3, z + fz * 3.3) ||
+         landAt(x + fz * 1.2, z - fx * 1.2) ||
+         landAt(x - fz * 1.2, z + fx * 1.2) ||
+         landAt(x - fx * 2.4, z - fz * 2.4) ||
          landAt(x, z);
 }
 
 function drive(r, dt, steer, throttle, brake) {
+  const grip = r.air ? 0.25 : 1;
   const turn = 2.15 * (0.32 + 0.68 * clamp(r.spd / 9, 0, 1)) * (1 - 0.32 * clamp(r.spd / MAXV, 0, 1));
-  r.a += steer * turn * dt;
-  const want = brake ? 0 : MAXV * throttle;
-  const rate = brake ? 2.6 : (want > r.spd ? 1.15 : 1.9);
-  r.spd += (want - r.spd) * (1 - Math.exp(-dt * rate));
-
-  const fx = Math.sin(r.a), fz = Math.cos(r.a), k = 1 - Math.exp(-dt * 3.4);
-  r.vx += (fx * r.spd - r.vx) * k;
-  r.vz += (fz * r.spd - r.vz) * k;
+  r.a += steer * turn * dt * grip;
+  if (!r.air) {
+    const want = brake ? 0 : MAXV * throttle;
+    const rate = brake ? 2.6 : (want > r.spd ? 1.15 : 1.9);
+    r.spd += (want - r.spd) * (1 - Math.exp(-dt * rate));
+    const fx = Math.sin(r.a), fz = Math.cos(r.a), k = 1 - Math.exp(-dt * 3.4);
+    r.vx += (fx * r.spd - r.vx) * k;
+    r.vz += (fz * r.spd - r.vz) * k;
+  }
 
   let nx = r.x + r.vx * dt, nz = r.z + r.vz * dt, hit = false;
   if (blocked(nx, r.z, r.a)) { nx = r.x; r.vx *= -0.18; hit = true; }
   if (blocked(r.x, nz, r.a)) { nz = r.z; r.vz *= -0.18; hit = true; }
   r.x = nx; r.z = nz;
   if (hit) {
-    if (r === player && r.spd > 9) { shake = Math.min(1, shake + r.spd / MAXV * 0.55); puff(r.x, 0.7, r.z, 7, 4); }
+    if (r === player && r.spd > 9) { shake = Math.min(1, shake + r.spd / MAXV * 0.55); puff(r.x, 0.7 + r.y, r.z, 7, 4); }
     r.spd *= 0.62;
   }
   // Wedged bow-first into a wall there is no way out — the throttle only goes
@@ -906,12 +2200,55 @@ function drive(r, dt, steer, throttle, brake) {
       r.a += clamp(da, -1, 1) * 2.2 * dt;
     }
   } else r.stuck = 0;
-  r.roll += (-steer * clamp(r.spd / MAXV, 0, 1) * 0.30 - r.roll) * (1 - Math.exp(-dt * 6));
+  r.roll += (-steer * clamp(r.spd / MAXV, 0, 1) * 0.30 * grip - r.roll) * (1 - Math.exp(-dt * 6));
+  vertical(r, dt);
   return hit;
 }
 
-// Keep a racer's place on the racing line up to date; used for steering, and
-// for digging anyone who wedges themselves into a wall back out again.
+// Ramps and flight. On a ramp the hull rides its surface; leaving the top edge
+// launches it with the ramp's slope; gravity brings it down with a splash.
+function vertical(r, dt) {
+  const slope = RAMP_H / RAMP_L;
+  if (r.air) {
+    r.vy -= GRAV * dt; r.y += r.vy * dt; r.airT += dt;
+    r.pitch += (clamp(-Math.atan2(r.vy, Math.max(r.spd, 4)) * 0.8, -0.45, 0.4) - r.pitch) * (1 - Math.exp(-dt * 5));
+    if (r.y <= 0) land(r);
+    return;
+  }
+  const on = onRamp(r.x, r.z);
+  const along = on ? r.vx * on.r.fx + r.vz * on.r.fz : 0;
+  if (on && along > 3) {
+    r.ramp = on.r;
+    r.y = clamp(on.u, 0, RAMP_L) * slope;
+    r.pitch += (-Math.atan(slope) - r.pitch) * (1 - Math.exp(-dt * 14));
+  } else if (r.ramp) {
+    // Off the ramp: over the top edge is a launch, off the side is a drop.
+    const top = r.y > RAMP_H * 0.75;
+    const sp = r.vx * r.ramp.fx + r.vz * r.ramp.fz;
+    r.air = true; r.airT = 0; r.ramp = null;
+    r.vy = top ? Math.max(0, sp) * slope * 1.3 + 1.2 : 0;
+    if (top && r === player) puff(r.x, r.y, r.z, 10, 3);
+  } else {
+    r.y = 0;
+    r.pitch += (-clamp(r.spd / MAXV, 0, 1) * 0.07 - r.pitch) * (1 - Math.exp(-dt * 6));
+  }
+}
+function land(r) {
+  const hard = -r.vy;
+  r.y = 0; r.vy = 0; r.air = false;
+  r.spd *= hard > 6 ? 0.9 : 0.97;
+  puff(r.x, 0.3, r.z, Math.min(40, 8 + hard * 3), 2 + hard * 0.35, 2.2);
+  if (r === player) {
+    shake = Math.min(1.1, shake + hard * 0.06);
+    if (r.airT > 0.45 && mode === 'race') {
+      jumps++; clock += JUMP_BONUS;
+      toast(pick(['Salto!', 'Che volo!', 'Bravo!']) + '  +' + JUMP_BONUS.toFixed(1) + 's');
+    }
+  }
+}
+
+// Keep a racer's place on the racing line up to date; used for steering, for
+// checkpoints, and for digging anyone who wedges themselves into a wall back out.
 function syncIdx(r) {
   let best = r.idx, bd = Infinity;
   for (let k = -8; k <= 40; k++) {
@@ -966,21 +2303,24 @@ function drawMap() {
   mctx.clearRect(0, 0, MS, MS);
   mctx.imageSmoothingEnabled = false;
   mctx.globalAlpha = 0.92; mctx.drawImage(mapBase, 0, 0, MS, MS); mctx.globalAlpha = 1;
+  mctx.fillStyle = '#f0a33a';
+  for (const r of ramps) { mctx.beginPath(); mctx.arc(mx(r.x), mz(r.z), 3, 0, 7); mctx.fill(); }
   const g = gateTarget(player);
-  mctx.fillStyle = '#ffc861';
+  mctx.fillStyle = '#5ce08a';
   mctx.beginPath(); mctx.arc(mx(g.x), mz(g.z), 7, 0, 7); mctx.fill();
   mctx.fillStyle = '#ff7a6a';
   for (const r of ais) { mctx.beginPath(); mctx.arc(mx(r.x), mz(r.z), 4, 0, 7); mctx.fill(); }
   mctx.save();
   mctx.translate(mx(player.x), mz(player.z)); mctx.rotate(-player.a);
   mctx.fillStyle = '#fff';
-  mctx.beginPath(); mctx.moveTo(0, -8); mctx.lineTo(5.5, 6); mctx.lineTo(-5.5, 6); mctx.closePath(); mctx.fill();
+  mctx.beginPath(); mctx.moveTo(0, 8); mctx.lineTo(5.5, -6); mctx.lineTo(-5.5, -6); mctx.closePath(); mctx.fill();
   mctx.restore();
 }
 
 // ═══ SCREENS ═════════════════════════════════════════════════════════════════
 const NAMES = ['You', 'Rialto', 'Dorsoduro', 'Cannaregio'];
 const ordinal = n => n + (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th');
+const lapOf = r => Math.min(LAPS, Math.floor(Math.max(0, r.gate - 1) / GATES) + 1);
 const timeEl = el('time'), clockEl = el('clock'), posEl = el('pos'), lapEl = el('lap'),
       gEl = el('gcount'), kmhEl = el('kmh'), countEl = el('count'),
       startScreen = el('start'), endScreen = el('end');
@@ -1004,42 +2344,147 @@ function finish(reason) {
     ? 'Out of<b>time</b>'
     : p === 1 ? 'Vincitore!<b>First place</b>' : `Finished<b>${ordinal(p)} place</b>`;
   el('results').innerHTML = order.map(r => {
-    const detail = r.finishT != null ? r.finishT.toFixed(1) + ' s'
-      : 'Lap ' + Math.min(LAPS, Math.floor(r.gate / GATES) + 1) + '/' + LAPS;
+    const detail = r.finishT != null ? r.finishT.toFixed(1) + ' s' : 'Lap ' + lapOf(r) + '/' + LAPS;
     return `<li class="${r === player ? 'you' : ''}"><span>${NAMES[racers.indexOf(r)]}</span><span>${detail}</span></li>`;
   }).join('');
-  el('endnote').textContent = smashed
+  const bits = [smashed
     ? `${smashed} gondola${smashed === 1 ? '' : 's'} met the bow. Venice will send an invoice.`
-    : 'Not one gondola harmed. The gondoliers are baffled.';
+    : 'Not one gondola harmed. The gondoliers are baffled.'];
+  if (jumps) bits.push(`${jumps} jump${jumps === 1 ? '' : 's'} landed.`);
+  el('endnote').textContent = bits.join(' ');
   endScreen.hidden = false;
 }
 
+// A checkpoint counts once the racer has passed its line on the racing line and
+// is actually in that stretch of canal — not merely within some radius of it.
 function checkGate(r) {
-  if (r.finishT != null || distToGate(r) > 15) return;
+  if (r.finishT != null) return;
+  const g = gates[r.gate % GATES];
+  if (r.idx < gateAbs(r.gate) || distToGate(r) > g.reach) return;
   r.gate++;
   if (r === player) {
-    clock += GATE_BONUS;
-    toast('Checkpoint  +' + GATE_BONUS.toFixed(1) + 's');
-    const nxt = r.gate % GATES;
-    gateMats.forEach((m, i) => m.color.set(i === nxt ? '#5ce08a' : '#ffb02e'));
+    if (r.gate > 1) { clock += GATE_BONUS; toast('Checkpoint  +' + GATE_BONUS.toFixed(1) + 's'); }
+    if (r.gate === GATES * (LAPS - 1) + 1) toast('Final lap!');
+    markGate(r.gate % GATES);
   }
-  if (r.gate >= GATES * LAPS) {
+  if (r.gate >= FINISH_GATES) {
     r.finishT = raced;
     if (r === player) finish('done');
   }
 }
 
+// ═══ QUALITY / RESIZE ════════════════════════════════════════════════════════
+function applyQuality() {
+  const q = QUALITY[qi];
+  renderer.setPixelRatio(Math.min(devicePixelRatio, q.dpr));
+  renderer.setSize(innerWidth, innerHeight);
+  const pr = renderer.getPixelRatio();
+  reflRT.setSize(Math.max(64, Math.round(innerWidth * pr * q.refl)), Math.max(64, Math.round(innerHeight * pr * q.refl)));
+  if (sun.shadow.mapSize.x !== q.shadow) {
+    sun.shadow.mapSize.set(q.shadow, q.shadow);
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  }
+  sprayMat.uniforms.scale.value = innerHeight * pr / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+}
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  applyQuality();
+});
+applyQuality();
+let perfT = 0, perfN = 0, perfWait = 2;
+
+// ═══ RENDER ══════════════════════════════════════════════════════════════════
+const mirrorLook = new THREE.Vector3(), camDir = new THREE.Vector3();
+function render() {
+  // shadows follow the player, snapped to the shadow-map texel grid so they don't swim
+  const snap = (sun.shadow.camera.right - sun.shadow.camera.left) / sun.shadow.mapSize.x;
+  const fx = camera.position.x + Math.sin(player.a) * 30, fz = camera.position.z + Math.cos(player.a) * 30;
+  sun.target.position.set(Math.round(fx / snap) * snap, 0, Math.round(fz / snap) * snap);
+  sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 380);
+  sun.target.updateMatrixWorld();
+  renderer.shadowMap.needsUpdate = true;
+
+  // reflection pass
+  camera.updateMatrixWorld();
+  camera.getWorldDirection(camDir);
+  mirrorCam.copy(camera, false);
+  mirrorCam.position.set(camera.position.x, -camera.position.y, camera.position.z);
+  mirrorLook.copy(camera.position).addScaledVector(camDir, 10); mirrorLook.y *= -1;
+  mirrorCam.up.set(0, -1, 0);
+  mirrorCam.lookAt(mirrorLook);
+  mirrorCam.updateMatrixWorld();
+  mirrorCam.projectionMatrix.copy(camera.projectionMatrix);
+  waterMat.uniforms.reflMat.value.multiplyMatrices(mirrorCam.projectionMatrix, mirrorCam.matrixWorldInverse);
+  waterMesh.visible = wakeMesh.visible = sprayMesh.visible = curtain.visible = false;
+  const arrowWas = arrow.visible; arrow.visible = false;
+  renderer.setRenderTarget(reflRT);
+  renderer.clippingPlanes = CLIP;
+  renderer.render(scene, mirrorCam);
+  renderer.setRenderTarget(null);
+  renderer.clippingPlanes = NOCLIP;
+  waterMesh.visible = wakeMesh.visible = sprayMesh.visible = curtain.visible = true;
+  arrow.visible = arrowWas;
+
+  renderer.render(scene, camera);
+}
+
 // ═══ MAIN LOOP ═══════════════════════════════════════════════════════════════
 const tmpV = new THREE.Vector3(), camWant = new THREE.Vector3(), lookAt = new THREE.Vector3();
 const iM = new THREE.Matrix4(), iQ = new THREE.Quaternion(), iE = new THREE.Euler(), iS = new THREE.Vector3();
-let last = performance.now() / 1000, hudT = 0, camDist = 12;
+let last = performance.now() / 1000, hudT = 0, camDist = 12, freeCam = null, snapCam = true;
+
+function updateWakes(dt) {
+  let v = 0;
+  for (const r of racers) {
+    const tr = r.trail;
+    for (const p of tr) p.age += dt;
+    while (tr.length && tr[0].age > WAKE_LIFE) tr.shift();
+    const sx = r.x - Math.sin(r.a) * 2.6, sz = r.z - Math.cos(r.a) * 2.6;
+    const lastP = tr[tr.length - 1];
+    if (!lastP || Math.hypot(lastP.x - sx, lastP.z - sz) > 0.9) {
+      tr.push({ x: sx, z: sz, px: Math.cos(r.a), pz: -Math.sin(r.a), age: 0,
+                str: r.air || r.y > 0.2 ? 0 : clamp((r.spd - 2) / (MAXV * 0.7), 0, 1) });
+      if (tr.length > WAKE_PTS) tr.shift();
+    }
+    for (let i = 0; i < tr.length - 1; i++) {
+      const A = tr[i], Bq = tr[i + 1];
+      const wa = 0.9 + A.age * 2.4, wb = 0.9 + Bq.age * 2.4;
+      const aa = A.str * (1 - A.age / WAKE_LIFE), ab = Bq.str * (1 - Bq.age / WAKE_LIFE);
+      if (aa <= 0.01 && ab <= 0.01) continue;
+      const q = [[A.x - A.px * wa, A.z - A.pz * wa, 0, A.age / WAKE_LIFE, aa], [A.x + A.px * wa, A.z + A.pz * wa, 1, A.age / WAKE_LIFE, aa],
+                 [Bq.x + Bq.px * wb, Bq.z + Bq.pz * wb, 1, Bq.age / WAKE_LIFE, ab], [Bq.x - Bq.px * wb, Bq.z - Bq.pz * wb, 0, Bq.age / WAKE_LIFE, ab]];
+      for (const k of [0, 1, 2, 0, 2, 3]) {
+        if (v >= wakeCap) break;
+        wakePos[v * 3] = q[k][0]; wakePos[v * 3 + 1] = 0.04; wakePos[v * 3 + 2] = q[k][1];
+        wakeUV[v * 2] = q[k][2]; wakeUV[v * 2 + 1] = q[k][3]; wakeA[v] = q[k][4];
+        v++;
+      }
+    }
+  }
+  wakeGeo.setDrawRange(0, v);
+  wakeGeo.attributes.position.needsUpdate = wakeGeo.attributes.uv.needsUpdate = wakeGeo.attributes.aA.needsUpdate = true;
+}
 
 function frame(now) {
   requestAnimationFrame(frame);
   const t = now / 1000;
   const dt = Math.min(0.05, Math.max(0.0005, t - last));
   last = t;
-  waterMat.uniforms.t.value = t;
+  waterMat.uniforms.t.value = t; wakeMat.uniforms.t.value = t; curtainMat.uniforms.t.value = t;
+
+  // step the quality down if frames are running long (checked once things settle)
+  if (!document.hidden) {
+    perfWait -= dt;
+    if (perfWait < 0) {
+      perfT += t - (frame.prev || t); perfN++;
+      if (perfN >= 90) {
+        if (perfT / perfN > 1 / 38 && qi > 0) { qi--; applyQuality(); perfWait = 2; }
+        perfT = 0; perfN = 0;
+      }
+    }
+  }
+  frame.prev = t;
 
   if (mode === 'count') {
     countdown -= dt;
@@ -1063,15 +2508,19 @@ function frame(now) {
     for (const r of racers) checkGate(r);
 
     clock -= dt;
-    if (clock <= 0) { clock = 0; finish('timeup'); }
+    if (clock <= 0 && mode === 'race') { clock = 0; finish('timeup'); }
 
-    for (const g of gondolas) {
+    // Gondolas are long and thin, so test against the hull, not a circle.
+    // A boat in the air sails clean over them.
+    if (player.y < 1.3) for (const g of gondolas) {
       if (!g.alive) continue;
-      const dx = g.x - player.x, dz = g.z - player.z;
-      if (dx * dx + dz * dz < 19) smash(g);
+      const dx = player.x - g.x, dz = player.z - g.z, s = Math.sin(g.a), c = Math.cos(g.a);
+      if (Math.abs(dx * s + dz * c) < 5.4 && Math.abs(dx * c - dz * s) < 1.9) smash(g);
     }
-    if (player.spd > 4 && Math.random() < player.spd / MAXV)
-      puff(player.x - Math.sin(player.a) * 3.2, 0.25, player.z - Math.cos(player.a) * 3.2, 1, 1.1);
+    if (player.spd > 4 && !player.air && Math.random() < player.spd / MAXV)
+      puff(player.x - Math.sin(player.a) * 3.0, 0.25, player.z - Math.cos(player.a) * 3.0, 1, 1.1);
+    for (const r of ais) if (r.spd > 8 && !r.air && Math.random() < 0.3)
+      puff(r.x - Math.sin(r.a) * 3.0, 0.25, r.z - Math.cos(r.a) * 3.0, 1, 1.0);
   }
 
   // ── gondolas ──────────────────────────────────────────────────────────────
@@ -1083,15 +2532,17 @@ function frame(now) {
     }
     if (g.alive) {
       iS.set(1, 1, 1);
-      iE.set(Math.sin(t * 1.1 + g.phase) * 0.05, g.a, Math.sin(t * 1.6 + g.phase) * 0.06, 'YXZ');
-      iM.compose(tmpV.set(g.x, Math.sin(t * 1.4 + g.phase) * 0.09, g.z), iQ.setFromEuler(iE), iS);
+      iE.set(Math.sin(t * 1.1 + g.phase) * 0.04, g.a, Math.sin(t * 1.6 + g.phase) * 0.05, 'YXZ');
+      iM.compose(tmpV.set(g.x, Math.sin(t * 1.4 + g.phase) * 0.07, g.z), iQ.setFromEuler(iE), iS);
     } else {
       iM.compose(tmpV.set(g.x, -50, g.z), iQ.identity(), iS.setScalar(0.0001));
     }
     gondolaMesh.setMatrixAt(i, iM);
+    if (!g.drift || !g.alive) iM.compose(tmpV.set(g.x, -50, g.z), iQ.identity(), iS.setScalar(0.0001));
+    gondolierMesh.setMatrixAt(i, iM);
   }
-  gondolaMesh.count = gondolas.length;
-  gondolaMesh.instanceMatrix.needsUpdate = true;
+  gondolaMesh.count = gondolierMesh.count = gondolas.length;
+  gondolaMesh.instanceMatrix.needsUpdate = gondolierMesh.instanceMatrix.needsUpdate = true;
 
   // ── debris ────────────────────────────────────────────────────────────────
   for (let i = debris.length - 1; i >= 0; i--) {
@@ -1117,20 +2568,25 @@ function frame(now) {
     const s = spray[i];
     s.life -= dt;
     if (s.life <= 0) { spray.splice(i, 1); continue; }
-    s.vy -= 8 * dt;
+    s.vy -= 9 * dt;
     s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt;
     if (s.y < 0.06) { s.y = 0.06; s.vy = 0; s.vx *= 0.88; s.vz *= 0.88; }
   }
   for (let i = 0; i < spray.length; i++) {
-    sprayPos[i * 3] = spray[i].x; sprayPos[i * 3 + 1] = spray[i].y; sprayPos[i * 3 + 2] = spray[i].z;
+    const s = spray[i];
+    sprayPos[i * 3] = s.x; sprayPos[i * 3 + 1] = s.y; sprayPos[i * 3 + 2] = s.z;
+    spraySize[i] = s.size * (1.6 - 0.6 * s.life / s.max); sprayA[i] = 0.7 * s.life / s.max;
   }
   sprayGeo.setDrawRange(0, spray.length);
-  sprayGeo.attributes.position.needsUpdate = true;
+  sprayGeo.attributes.position.needsUpdate = sprayGeo.attributes.aSize.needsUpdate = sprayGeo.attributes.aA.needsUpdate = true;
+
+  updateWakes(racing ? dt : 0);
 
   // ── boats ─────────────────────────────────────────────────────────────────
   for (const r of racers) {
-    r.mesh.position.set(r.x, 0.35 + Math.sin(t * 2.2 + r.x * 0.1) * 0.07, r.z);
-    r.mesh.rotation.set(-clamp(r.spd / MAXV, 0, 1) * 0.07, r.a, r.roll);
+    const bob = r.air || r.ramp ? 0 : Math.sin(t * 2.2 + r.x * 0.1) * 0.06;
+    r.mesh.position.set(r.x, 0.02 + bob + r.y, r.z);
+    r.mesh.rotation.set(r.pitch, r.a, r.roll);
   }
 
   // ── camera ────────────────────────────────────────────────────────────────
@@ -1141,9 +2597,10 @@ function frame(now) {
     want -= 1.7;
   }
   camDist += (Math.max(4.5, want) - camDist) * (1 - Math.exp(-dt * 5));
-  camWant.set(player.x - fx * camDist, 4.7, player.z - fz * camDist);
-  camera.position.lerp(camWant, 1 - Math.exp(-dt * 7));
-  lookAt.set(player.x + fx * 7, 1.9, player.z + fz * 7);
+  camWant.set(player.x - fx * camDist, 4.7 + player.y * 0.7, player.z - fz * camDist);
+  if (snapCam) { camera.position.copy(camWant); camDist = want; snapCam = false; }
+  else camera.position.lerp(camWant, 1 - Math.exp(-dt * 7));
+  lookAt.set(player.x + fx * 7, 1.9 + player.y * 0.85, player.z + fz * 7);
   camera.lookAt(lookAt);
   if (shake > 0.001) {
     camera.position.x += rnd(-1, 1) * shake * 0.4;
@@ -1153,10 +2610,11 @@ function frame(now) {
   }
   const fov = 62 + clamp(player.spd / MAXV, 0, 1) * 8;
   if (Math.abs(fov - camera.fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  if (freeCam) { camera.position.copy(freeCam.pos); camera.lookAt(freeCam.look); }
 
   const gt = gateTarget(player);
   arrow.visible = racing;
-  arrow.position.set(player.x, 6.4 + Math.sin(t * 3) * 0.22, player.z);
+  arrow.position.set(player.x, 6.4 + player.y + Math.sin(t * 3) * 0.22, player.z);
   arrow.rotation.y = Math.atan2(gt.x - player.x, gt.z - player.z);
 
   // ── hud ───────────────────────────────────────────────────────────────────
@@ -1168,20 +2626,14 @@ function frame(now) {
     clockEl.classList.toggle('low', clock < 8);
     const order = racers.slice().sort((a, b) => progressOf(b) - progressOf(a));
     posEl.innerHTML = (order.indexOf(player) + 1) + '<small>/4</small>';
-    lapEl.innerHTML = Math.min(LAPS, Math.floor(player.gate / GATES) + 1) + `<small>/${LAPS}</small>`;
+    lapEl.innerHTML = lapOf(player) + `<small>/${LAPS}</small>`;
     gEl.textContent = smashed;
     kmhEl.innerHTML = Math.round(player.spd * 3.6) + '<small> km/h</small>';
     drawMap();
   }
 
-  renderer.render(scene, camera);
+  render();
 }
-
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
 
 resetRace();
 drawMap();
@@ -1193,12 +2645,22 @@ window.__venice = {
   get mode()    { return mode; },
   get clock()   { return clock; },  set clock(v) { clock = v; },
   get smashed() { return smashed; },
-  player, ais, racers, gondolas, gateIdx, lapPath, GATES, LAPS, N, water, gi, isWater,
-  stats: () => ({ ...cityStats, gondolas: gondolas.length, gates: gateIdx.length,
-                  calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
+  get jumps()   { return jumps; },
+  get quality() { return qi; },     set quality(v) { qi = clamp(v, 0, 2); applyQuality(); },
+  player, ais, racers, gondolas, gateIdx, gates, lapPath, GATES, LAPS, N, water, gi, isWater,
+  ramps, bridges, landmarks, frameAt,
+  stats: () => ({ ...cityStats, gondolas: gondolas.length, gates: gateIdx.length, ramps: ramps.length,
+                  bridges: bridges.length, calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
   start: startRace,
+  skipCount: () => { countdown = 0.001; },
   setSteer: v => { touchSteer = v; },
-  warpToGate: n => { const p = pathAt(gateIdx[n % GATES]); player.x = p.x; player.z = p.z; player.gate = n; },
+  freeCam: (pos, look) => { freeCam = pos ? { pos: new THREE.Vector3(...pos), look: new THREE.Vector3(...look) } : null; },
+  warpTo: (idx, lane = 0) => {
+    const fr = frameAt(idx);
+    player.x = fr.p.x + fr.sx * lane; player.z = fr.p.z + fr.sz * lane; player.a = fr.a; player.idx = idx;
+    player.vx = fr.fx * player.spd; player.vz = fr.fz * player.spd; snapCam = true;
+  },
+  warpToGate: n => { const p = pathAt(gateIdx[n % GATES]); player.x = p.x; player.z = p.z; player.gate = n; player.idx = gateAbs(n); },
 };
 </script>
 </body>
