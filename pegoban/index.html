@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0e0d22">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Pegoban: a Peggle-meets-Sokoban puzzle game. Bounce marbles to shove crates onto their marks.">
+<title>Pegoban</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='22' width='36' height='36' rx='5' fill='%23d08a3e' stroke='%237a4a1c' stroke-width='4'/%3E%3Ccircle cx='46' cy='16' r='12' fill='%23e8ecff' stroke='%239aa4d8' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0d22; --panel: #1b1a3a; --panel2: #24234d; --line: #3a3970;
+    --text: #f1f0ff; --muted: #a09fcc; --gold: #ffc233; --cyan: #3ef0ff; --pink: #ff4fb4;
+    --green: #45e88a; --red: #ff5a6e; --wood: #d08a3e;
+    --font: 'Fredoka', 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font);
+    touch-action: none; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  button { font-family: inherit; color: inherit; cursor: pointer; border: none; background: none; touch-action: manipulation; }
+  button:disabled { cursor: default; }
+
+  #app {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: radial-gradient(ellipse at 50% 30%, #1d1b45 0%, #0e0d22 70%);
+  }
+
+  /* ── HUD ────────────────────────────────────────────────────────────── */
+  #hud {
+    flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 8px 4px;
+    font-size: 15px; min-height: 46px;
+  }
+  #hud .lvl { flex: 1; min-width: 0; line-height: 1.1; }
+  #hud .lvl b { display: block; font-size: 11px; font-weight: 500; letter-spacing: 0.14em; color: var(--muted); text-transform: uppercase; }
+  #hud .lvl span { display: block; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip {
+    display: flex; align-items: center; gap: 5px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 8px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .chip .ico { font-size: 13px; }
+  #marbles .dot { width: 12px; height: 12px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff 0%, #cfd6ff 30%, #7c86c0 100%); box-shadow: 0 0 6px #b8c4ff88; }
+  #pads { color: var(--cyan); letter-spacing: 1px; }
+  #score { min-width: 52px; justify-content: flex-end; color: var(--gold); }
+  .iconbtn {
+    width: 40px; height: 40px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line);
+    font-size: 20px; display: grid; place-items: center; flex: none;
+  }
+  .iconbtn:active { transform: scale(0.94); }
+
+  /* ── Stage ──────────────────────────────────────────────────────────── */
+  #stage { flex: 1; position: relative; min-height: 0; }
+  body.attract #hud, body.attract #bar { visibility: hidden; }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #toast {
+    position: absolute; left: 50%; top: 10px; transform: translate(-50%, -8px); max-width: 92%;
+    background: #1b1a3aee; border: 1px solid var(--line); border-radius: 14px; padding: 8px 14px;
+    font-size: 14px; text-align: center; opacity: 0; transition: opacity 0.25s, transform 0.25s; pointer-events: none;
+    box-shadow: 0 8px 30px #0008;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.warn { border-color: var(--red); color: #ffd3d9; }
+
+  /* ── Controls ───────────────────────────────────────────────────────── */
+  #bar {
+    flex: none; display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 6px 10px 10px;
+  }
+  .ctl {
+    height: 56px; min-width: 52px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 22px; line-height: 1;
+    box-shadow: inset 0 -3px 0 #0006; position: relative;
+  }
+  .ctl small { font-size: 10px; letter-spacing: 0.08em; color: var(--muted); margin-top: 3px; text-transform: uppercase; }
+  .ctl:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 -1px 0 #0006; }
+  .ctl:disabled { opacity: 0.35; }
+  .ctl.nudge:not(:disabled) { border-color: var(--red); animation: nudge 1s ease-in-out infinite; }
+  @keyframes nudge { 50% { box-shadow: inset 0 -3px 0 #0006, 0 0 18px #ff5a6eaa; transform: translateY(-2px); } }
+  #fire {
+    min-width: 108px; background: linear-gradient(180deg, #ffd35a, #ff9a2e); color: #3a1c00; border-color: #ffe08a;
+    font-weight: 700; font-size: 20px; letter-spacing: 0.08em; box-shadow: inset 0 -4px 0 #c0600a, 0 0 20px #ff9a2e55;
+  }
+  #fire small { color: #7a3c00; }
+  #power.armed { background: linear-gradient(180deg, #5a3cff, #2e1a9a); border-color: #9a8aff; box-shadow: 0 0 18px #7a5aff88; }
+  #power .count {
+    position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; border-radius: 10px; font-size: 12px;
+    background: var(--pink); color: #fff; display: grid; place-items: center; font-weight: 700; padding: 0 5px;
+  }
+  #power .count:empty { display: none; }
+
+  /* ── Screens ────────────────────────────────────────────────────────── */
+  .screen {
+    position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+    background: #0b0a1fcc; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    overflow-y: auto; touch-action: pan-y;
+  }
+  .screen[hidden] { display: none; }
+  .screen.clear { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .card {
+    width: 100%; max-width: 420px; background: linear-gradient(180deg, var(--panel2), var(--panel));
+    border: 1px solid var(--line); border-radius: 22px; padding: 20px; box-shadow: 0 20px 60px #000a;
+    animation: pop 0.35s cubic-bezier(.2,1.4,.4,1);
+  }
+  @keyframes pop { from { transform: scale(0.85) translateY(20px); opacity: 0; } }
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+    padding: 14px 18px; border-radius: 16px; font-size: 18px; font-weight: 600; margin-top: 10px;
+    background: var(--panel2); border: 1px solid var(--line); box-shadow: inset 0 -3px 0 #0006;
+  }
+  .btn:active:not(:disabled) { transform: translateY(2px); }
+  .btn.primary { background: linear-gradient(180deg, #ffd35a, #ff9a2e); color: #3a1c00; border-color: #ffe08a; box-shadow: inset 0 -4px 0 #c0600a; }
+  .btn.small { padding: 10px 14px; font-size: 15px; }
+  .row { display: flex; gap: 10px; }
+  .row .btn { flex: 1; }
+
+  /* title */
+  #title { background: linear-gradient(180deg, #0b0a1f55 0%, #0b0a1fcc 75%); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .logo { text-align: center; margin-top: auto; }
+  .logo h1 {
+    font-size: clamp(44px, 14vw, 92px); font-weight: 700; letter-spacing: 0.02em; line-height: 1.05; white-space: nowrap;
+    filter: drop-shadow(0 4px 0 #7a3000) drop-shadow(0 10px 24px #ff7a2e66);
+  }
+  /* The gradient sits on each letter: background-clip:text on the parent does not paint through transformed children. */
+  .logo h1 span {
+    display: inline-block; animation: bob 2.4s ease-in-out infinite;
+    background: linear-gradient(180deg, #fff3b0 0%, #ffc233 45%, #ff7a2e 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  @keyframes bob { 50% { transform: translateY(-6px); } }
+  .logo p { margin-top: 10px; color: var(--muted); font-size: 16px; letter-spacing: 0.3em; text-transform: uppercase; }
+  .logo .tag { margin-top: 6px; font-size: 13px; letter-spacing: 0.05em; text-transform: none; color: #8d8cc0; }
+  .title-menu { width: 100%; max-width: 340px; margin-top: auto; margin-bottom: 8px; }
+
+  /* dialogue */
+  #intro { justify-content: flex-end; background: linear-gradient(180deg, #0b0a1f00 0%, #0b0a1fdd 60%); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .lvtitle { text-align: center; margin-bottom: auto; margin-top: 8vh; }
+  .lvtitle b { display: block; color: var(--muted); letter-spacing: 0.3em; font-size: 14px; font-weight: 500; }
+  .lvtitle span { display: block; font-size: clamp(32px, 10vw, 48px); font-weight: 700; color: #fff; text-shadow: 0 4px 24px #000; }
+  .speech { display: flex; gap: 12px; align-items: flex-start; min-height: 96px; }
+  .speech .who {
+    flex: none; width: 58px; height: 58px; border-radius: 18px; display: grid; place-items: center; font-size: 34px;
+    background: var(--panel); border: 2px solid var(--line);
+  }
+  .speech .words b { display: block; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold); margin-bottom: 4px; }
+  .speech .words p { font-size: 17px; line-height: 1.4; }
+  .tip { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #3ef0ff14; border: 1px dashed #3ef0ff66; color: #bff8ff; font-size: 14px; line-height: 1.4; }
+  .tip:empty { display: none; }
+  .pips { display: flex; gap: 6px; justify-content: center; margin-top: 12px; }
+  .pips i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+  .pips i.on { background: var(--gold); }
+
+  /* level select */
+  .head { width: 100%; max-width: 460px; display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .head h2 { flex: 1; min-width: 0; font-size: clamp(20px, 6.2vw, 26px); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .grid { width: 100%; max-width: 460px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .lv {
+    aspect-ratio: 1 / 1.08; border-radius: 18px; background: linear-gradient(180deg, var(--panel2), var(--panel));
+    border: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    padding: 6px; box-shadow: inset 0 -4px 0 #0005; position: relative;
+  }
+  .lv .n { font-size: 30px; font-weight: 700; line-height: 1; }
+  .lv .nm { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.15; min-height: 2.3em; display: flex; align-items: center; }
+  .lv .st { font-size: 15px; letter-spacing: 1px; color: #4a4980; }
+  .lv .st .on { color: var(--gold); text-shadow: 0 0 8px #ffc23388; }
+  .lv.locked { opacity: 0.45; }
+  .lv.locked .n { font-size: 24px; }
+  .lv.next { border-color: var(--gold); box-shadow: inset 0 -4px 0 #0005, 0 0 18px #ffc23355; }
+  .lv:active:not(:disabled) { transform: scale(0.96); }
+  .bolts { color: var(--gold); }
+  .foot { width: 100%; max-width: 460px; margin-top: 14px; }
+
+  /* results */
+  .res h2 { text-align: center; font-size: 30px; font-weight: 700; line-height: 1.1; }
+  .res .sub { text-align: center; color: var(--muted); margin-top: 6px; font-size: 15px; }
+  .stars { display: flex; justify-content: center; gap: 8px; margin: 14px 0 8px; font-size: 52px; line-height: 1; }
+  .stars i { font-style: normal; color: #3a3970; transform: scale(0.6); transition: transform 0.35s cubic-bezier(.2,1.8,.4,1), color 0.2s; }
+  .stars i.on { color: var(--gold); transform: scale(1); text-shadow: 0 0 20px #ffc233aa; }
+  .stats { margin: 8px 0 4px; }
+  .stats div { display: flex; justify-content: space-between; padding: 7px 4px; border-bottom: 1px solid #ffffff12; font-size: 16px; }
+  .stats div span:last-child { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stats .hl span:last-child { color: var(--gold); }
+
+  /* workshop */
+  .shop { width: 100%; max-width: 460px; display: flex; flex-direction: column; gap: 10px; }
+  .up { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 18px; background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); }
+  .up .ic { font-size: 34px; width: 52px; text-align: center; flex: none; }
+  .up .tx { flex: 1; min-width: 0; }
+  .up .tx b { font-size: 17px; }
+  .up .tx p { font-size: 13px; color: var(--muted); line-height: 1.35; margin-top: 2px; }
+  .up .tiers { display: flex; gap: 4px; margin-top: 6px; }
+  .up .tiers i { width: 18px; height: 6px; border-radius: 3px; background: var(--line); }
+  .up .tiers i.on { background: var(--cyan); box-shadow: 0 0 6px #3ef0ff99; }
+  .up .buy { flex: none; min-width: 78px; padding: 10px; border-radius: 14px; font-weight: 700; font-size: 15px;
+    background: linear-gradient(180deg, #ffd35a, #ff9a2e); color: #3a1c00; box-shadow: inset 0 -3px 0 #c0600a; }
+  .up .buy:disabled { background: var(--panel2); color: var(--muted); box-shadow: none; border: 1px solid var(--line); }
+
+  /* story */
+  .story { max-width: 440px; text-align: center; }
+  .story .art { font-size: 64px; line-height: 1.2; margin-bottom: 12px; filter: drop-shadow(0 8px 20px #0008); }
+  .story p { font-size: 19px; line-height: 1.5; }
+  .story p em { color: var(--gold); font-style: normal; font-weight: 600; }
+
+  .menu h2 { text-align: center; font-size: 26px; margin-bottom: 6px; }
+  .credits { text-align: center; color: var(--muted); font-size: 13px; margin-top: 14px; line-height: 1.5; }
+
+  #rotate {
+    display: none; position: fixed; inset: 0; z-index: 50; background: var(--bg);
+    align-items: center; justify-content: center; text-align: center; padding: 20px;
+  }
+  #rotate b { display: block; font-size: 44px; margin-bottom: 8px; }
+  #rotate p { font-size: 18px; color: var(--muted); line-height: 1.5; }
+  @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) { #rotate { display: flex; } }
+
+  @media (min-width: 700px) and (min-height: 700px) {
+    #hud { max-width: 640px; width: 100%; margin: 0 auto; }
+    #bar { max-width: 640px; width: 100%; margin: 0 auto; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="hud">
+    <button class="iconbtn" id="menuBtn" aria-label="Menu">☰</button>
+    <div class="lvl"><b id="lvNum">Level 1</b><span id="lvName">Night Shift</span></div>
+    <div class="chip" id="marbles" title="Marbles left"><span class="dot"></span><span id="mCount">6</span></div>
+    <div class="chip" id="pads" title="Crates delivered">◆ 0/3</div>
+    <div class="chip" id="score">0</div>
+  </header>
+  <main id="stage">
+    <canvas id="cv"></canvas>
+    <div id="toast"></div>
+  </main>
+  <footer id="bar">
+    <button class="ctl" id="undo" aria-label="Undo last shot">↶<small>Undo</small></button>
+    <button class="ctl" id="left" aria-label="Aim left">◀<small>Aim</small></button>
+    <button class="ctl" id="fire" aria-label="Fire">FIRE<small id="angle">0.0°</small></button>
+    <button class="ctl" id="right" aria-label="Aim right">▶<small>Aim</small></button>
+    <button class="ctl" id="power" aria-label="Power marble">⚡<small id="powerName">Power</small><span class="count" id="powerCount"></span></button>
+  </footer>
+</div>
+
+<section class="screen" id="title" hidden>
+  <div class="logo">
+    <h1><span>P</span><span style="animation-delay:.1s">E</span><span style="animation-delay:.2s">G</span><span style="animation-delay:.3s">O</span><span style="animation-delay:.4s">B</span><span style="animation-delay:.5s">A</span><span style="animation-delay:.6s">N</span></h1>
+    <p>The Tilted Warehouse</p>
+    <p class="tag">bounce marbles · shove crates · beat the dawn</p>
+  </div>
+  <div class="title-menu">
+    <button class="btn primary" id="playBtn">Play</button>
+    <div class="row">
+      <button class="btn small" id="storyBtn">📜 Story</button>
+      <button class="btn small" id="shopBtn1">🔧 Workshop</button>
+      <button class="btn small" id="soundBtn1" aria-label="Sound">🔊</button>
+    </div>
+  </div>
+</section>
+
+<section class="screen" id="story" hidden>
+  <div class="card story">
+    <div class="art" id="storyArt"></div>
+    <p id="storyText"></p>
+    <div class="pips" id="storyPips"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn small" id="storySkip">Skip</button>
+      <button class="btn small primary" id="storyNext">Next</button>
+    </div>
+  </div>
+</section>
+
+<section class="screen" id="levels" hidden>
+  <div class="head">
+    <button class="iconbtn" id="levelsBack" aria-label="Back">‹</button>
+    <h2>Warehouse No. 8</h2>
+    <div class="chip bolts" id="boltsChip">⚙ 0</div>
+  </div>
+  <div class="grid" id="levelGrid"></div>
+  <div class="foot row">
+    <button class="btn small" id="shopBtn2">🔧 Workshop</button>
+    <button class="btn small" id="storyBtn2">📜 Story</button>
+  </div>
+</section>
+
+<section class="screen" id="intro" hidden>
+  <div class="lvtitle"><b id="introNum">LEVEL 1</b><span id="introName">Night Shift</span></div>
+  <div class="card">
+    <div class="speech"><div class="who" id="introWho">🤖</div><div class="words"><b id="introName2">Soko</b><p id="introText"></p></div></div>
+    <div class="tip" id="introTip"></div>
+    <div class="pips" id="introPips"></div>
+    <button class="btn primary" id="introNext">Next</button>
+  </div>
+</section>
+
+<section class="screen" id="result" hidden>
+  <div class="card res">
+    <h2 id="resTitle">Warehouse sorted!</h2>
+    <p class="sub" id="resSub"></p>
+    <div class="stars" id="resStars"><i>★</i><i>★</i><i>★</i></div>
+    <div class="stats" id="resStats"></div>
+    <div id="resBtns"></div>
+  </div>
+</section>
+
+<section class="screen" id="shop" hidden>
+  <div class="head">
+    <button class="iconbtn" id="shopBack" aria-label="Back">‹</button>
+    <h2>Workshop</h2>
+    <div class="chip bolts" id="boltsChip2">⚙ 0</div>
+  </div>
+  <div class="shop" id="shopList"></div>
+  <p class="credits">Earn bolts (⚙) with stars and gold pegs.<br>Every level can be solved without upgrades.</p>
+</section>
+
+<section class="screen" id="pause" hidden>
+  <div class="card menu">
+    <h2>Paused</h2>
+    <button class="btn primary" id="resumeBtn">▶ Resume</button>
+    <button class="btn" id="hintBtn">💡 Hint</button>
+    <button class="btn" id="restartBtn">↻ Restart level</button>
+    <button class="btn" id="levelsBtn">☰ Level select</button>
+    <div class="row">
+      <button class="btn small" id="soundBtn2">🔊 Sound</button>
+      <button class="btn small" id="helpBtn">❓ How to play</button>
+    </div>
+  </div>
+</section>
+
+<section class="screen" id="help" hidden>
+  <div class="card">
+    <h2 style="text-align:center;margin-bottom:10px">How to play</h2>
+    <div class="stats" style="font-size:15px;line-height:1.45">
+      <p style="margin:6px 0">🎯 <b>Aim</b>: drag across the board to swing Soko's cannon, or tap where you want it pointed. ◀ ▶ nudge a tenth of a degree.</p>
+      <p style="margin:6px 0">👀 The dotted <b>guide</b> follows the marble past walls, chutes and bumpers up to the first thing it changes. A green arrow and dashed box show where a crate will go; ✕ means it's blocked.</p>
+      <p style="margin:6px 0">📦 A marble that hits a crate's side <b>shoves it one tile away</b>. Corner hits and soft hits don't move it. Each marble moves each crate at most once.</p>
+      <p style="margin:6px 0">◆ Crates <b>lock</b> onto the glowing pads. Fill every pad to win.</p>
+      <p style="margin:6px 0">🔵 Pegs light up and vanish after the shot. Crates flatten pegs they slide onto. Gold pegs pay bolts, green pegs charge a power marble.</p>
+      <p style="margin:6px 0">↶ <b>Undo</b> is free and unlimited: experiment!</p>
+    </div>
+    <button class="btn primary" id="helpClose">Got it</button>
+  </div>
+</section>
+
+<div id="rotate"><div><b>📱↻</b><p>Pegoban plays best upright.<br>Turn your phone to portrait.</p></div></div>
+
+<script src="engine.js"></script>
+<script src="levels.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
