@@ -2,6 +2,7 @@
   "name": "@Text Share",
   "short_name": "@TextShare",
   "description": "Collect shared URLs and text in one editable pad",
+  "id": "/publicweb/share/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -9,6 +10,18 @@
   "background_color": "#0f0f1a",
   "theme_color": "#0f0f1a",
   "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "icon.svg",
       "sizes": "any",

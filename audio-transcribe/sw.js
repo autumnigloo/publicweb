@@ -1,9 +1,9 @@
 /* Navigations are network-first so a deploy is picked up on the next open; the
    cache is the offline fallback, not the default answer. Bumping CACHE alone
    never refreshes a page that is already on screen -- see ../CLAUDE.md. */
-const CACHE = 'audio-transcribe-v8';
+const CACHE = 'audio-transcribe-v9';
 const SHARE_CACHE = 'audio-transcribe-shared';
-const ASSETS = ['./', './index.html', './manifest.json', './icon-192.svg', './icon-512.svg'];
+const ASSETS = ['./', './index.html', './manifest.json', './icon-192.svg', './icon-512.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

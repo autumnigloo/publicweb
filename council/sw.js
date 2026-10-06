@@ -4,8 +4,8 @@
    via clients.claim() does not reload the document. So navigations go to the
    network first here, and the page reloads itself when a new worker takes over
    (see the registration block in index.html). */
-const CACHE = 'mc-v5';
-const FILES = ['./', './index.html', './manifest.json', './icon.svg'];
+const CACHE = 'mc-v6';
+const FILES = ['./', './index.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(

@@ -1,8 +1,8 @@
 /* Navigations are network-first so a deploy is picked up on the next open; the
    cache is the offline fallback, not the default answer. Bumping CACHE alone
    never refreshes a page that is already on screen -- see ../CLAUDE.md. */
-const CACHE = 'chat-v9';
-const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
+const CACHE = 'chat-v10';
+const ASSETS = ['./', './index.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

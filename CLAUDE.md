@@ -16,6 +16,14 @@ New projects must always be added as the **first entry** in the `<ul>` in `index
 
 PWA `name` and `short_name` fields in `manifest.json` must always start with `@` (e.g. `"@My App"`). This makes them sort to the top of the Android share-with app list.
 
+All PWAs share one origin (`autumnigloo.github.io`), so each manifest must also
+carry an explicit, absolute-path `id` (`"/publicweb/<dir>/"`) plus
+`"start_url": "./"` and `"scope": "./"`. Do not write `"id": "./"`: `id`
+resolves against the origin, not the manifest, so every app would get the same
+identity. Give each app PNG icons (`icon-192.png`, `icon-512.png`, listed first
+in `icons`) and not only an SVG: Android Chrome needs raster icons to build a
+real installed app (WebAPK). Render them from the SVG with headless Chromium.
+
 ## Privacy
 
 This is a **public repository**. Never commit or push personally identifiable information — no real names, email addresses, phone numbers, API keys, tokens, credentials, or any other private data.

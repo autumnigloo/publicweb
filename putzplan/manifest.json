@@ -2,12 +2,31 @@
   "name": "@Putzplan",
   "short_name": "@Putzplan",
   "description": "Putzplan aus Personen und Tätigkeiten zusammenstellen und von Hand anpassen",
-  "start_url": ".",
+  "id": "/publicweb/putzplan/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0f0f13",
   "theme_color": "#0f0f13",
   "lang": "de",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
   ]
 }

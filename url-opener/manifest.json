@@ -2,12 +2,25 @@
   "name": "@URL Opener",
   "short_name": "@URL Opener",
   "description": "Reads a URL from clipboard or share, strips query args, prepends a prefix, and opens it.",
+  "id": "/publicweb/url-opener/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0f0f13",
   "theme_color": "#0f0f13",
   "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "icon-192.svg",
       "sizes": "192x192",
@@ -25,8 +38,8 @@
     "action": "./",
     "method": "GET",
     "params": {
-      "url":   "url",
-      "text":  "text",
+      "url": "url",
+      "text": "text",
       "title": "title"
     }
   }
