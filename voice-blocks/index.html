@@ -515,8 +515,44 @@ function showCmd(cmd) {
 
 statusEl.addEventListener('click', () => { if (statusEl.className === 'cmd') setStatus(''); });
 
-// sync manual textarea edits (no undo for manual typing)
-editor.addEventListener('input', () => { cb().text = editor.value; persist(); render(); });
+// ── manual edits & undo ───────────────────────────────────────────────────────
+// Paste, drop and keyboard-menu cut are single undo steps of their own, as is
+// any one change of 20+ characters (Gboard's clipboard chip, select-all and
+// type). Ordinary typing and backspacing are grouped: a run of them becomes
+// one undo step once there have been 5 s without input, or as soon as anything
+// else (undo, a button, a recording) touches the block.
+const TYPE_IDLE = 5000, BIG_EDIT = 20;
+const DISCRETE = /^(insertFromPaste|insertFromPasteAsQuotation|insertFromDrop|insertFromYank|deleteByCut|deleteByDrag)$/;
+let typing = null;                       // { b, before, timer } for the open run
+
+function commitTyping() {
+  if (!typing) return;
+  const { b, before } = typing;
+  clearTimeout(typing.timer);
+  typing = null;
+  if (b.text !== before) b.us.push(before);
+  undoBtn.disabled = !cb().us.length;
+}
+
+editor.addEventListener('input', e => {
+  const b = cb(), before = b.text, after = editor.value;
+  if (before === after) return;
+  const discrete = DISCRETE.test(e.inputType || '') || Math.abs(after.length - before.length) >= BIG_EDIT;
+  if (discrete) {
+    commitTyping();
+    b.us.push(before);
+  } else {
+    if (typing && typing.b !== b) commitTyping();
+    if (!typing) typing = { b, before };
+    clearTimeout(typing.timer);
+    typing.timer = setTimeout(commitTyping, TYPE_IDLE);
+  }
+  b.rs = [];
+  b.text = after;
+  persist();
+  render();
+  if (typing) undoBtn.disabled = false;   // the open run can already be undone
+});
 
 // ── navigation & block ops ────────────────────────────────────────────────────
 // Preserve the keyboard state across nav taps. Only when the keyboard is
@@ -528,10 +564,11 @@ document.querySelector('.bottom-controls').addEventListener('mousedown', e => {
   if (document.body.classList.contains('kb-open')) e.preventDefault();
 });
 
-prevBtn.onclick = () => { if (ci > 0) { ci--; persist(); render(); } };
-nextBtn.onclick = () => { if (ci < blocks.length - 1) { ci++; persist(); render(); } };
+prevBtn.onclick = () => { commitTyping(); if (ci > 0) { ci--; persist(); render(); } };
+nextBtn.onclick = () => { commitTyping(); if (ci < blocks.length - 1) { ci++; persist(); render(); } };
 
 addBtn.onclick = () => {
+  commitTyping();
   blocks.splice(ci + 1, 0, mkBlock());
   ci++;
   persist();
@@ -539,6 +576,7 @@ addBtn.onclick = () => {
 };
 
 undoBtn.onclick = () => {
+  commitTyping();
   const b = cb();
   if (!b.us.length) return;
   b.rs.push(b.text);
@@ -549,6 +587,7 @@ undoBtn.onclick = () => {
 };
 
 redoBtn.onclick = () => {
+  commitTyping();
   const b = cb();
   if (!b.rs.length) return;
   b.us.push(b.text);
@@ -559,6 +598,7 @@ redoBtn.onclick = () => {
 };
 
 clearBtn.onclick = async () => {
+  commitTyping();
   const b = cb(), empty = !b.text.trim();
   if (empty && blocks.length > 1) {
     blocks.splice(ci, 1);
@@ -623,6 +663,7 @@ let mr = null, chunks = [], recording = false;
 let lpTimer = null, lpFired = false;
 
 async function cutAll() {
+  commitTyping();
   const all = blocks.map(b => b.text.trim()).filter(Boolean).join('\n\n');
   if (all) { logCut(all, 'all'); try { await navigator.clipboard.writeText(all); } catch {} }
   blocks = [mkBlock()]; ci = 0;
@@ -642,6 +683,7 @@ recBtn.addEventListener('pointercancel', () => { clearTimeout(lpTimer); lpTimer 
 
 recBtn.addEventListener('click', async () => {
   if (lpFired) { lpFired = false; return; }
+  commitTyping();
 
   if (recording) { mr.stop(); return; }
   if (!localStorage.getItem(SK.groq)) {
@@ -670,6 +712,7 @@ recBtn.addEventListener('click', async () => {
       const whisper = await transcribe(blob);
       if (!whisper) { setStatus('No speech detected.'); return; }
 
+      commitTyping();                 // typing during transcription stays undoable
       const b     = cb();
       const empty = !b.text.trim();
       const ctx   = buildContext(ci);

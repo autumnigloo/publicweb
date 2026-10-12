@@ -1,7 +1,7 @@
 /* Navigations are network-first so a deploy is picked up on the next open; the
    cache is the offline fallback, not the default answer. Bumping CACHE alone
    never refreshes a page that is already on screen -- see ../CLAUDE.md. */
-const CACHE = 'vb-v15';
+const CACHE = 'vb-v16';
 const FILES = ['./', './index.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
