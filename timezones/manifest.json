@@ -1,0 +1,16 @@
+{
+  "name": "@Time Zones",
+  "short_name": "@Time Zones",
+  "description": "Pick cities, pick a day, and see every hour side by side with working-hours colouring.",
+  "id": "/publicweb/timezones/",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f0f13",
+  "theme_color": "#0f0f13",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
