@@ -69,9 +69,9 @@ The second cache-first line is the whole point: the new files had already been
 downloaded and cached, and the user still saw the old build. That is what "I
 bumped the version but it didn't update" actually looks like.
 
-All ten PWAs here (`arabic`, `audio-transcribe`, `chat`, `council`,
-`death-jester`, `putzplan`, `share`, `url-opener`, `utilities`, `voice-blocks`)
-were converted to this pattern on 2026-09-02. Copy any of their `sw.js` fetch
+The PWAs here (`arabic`, `audio-transcribe`, `chat`, `council`, `share`,
+`url-opener`, `utilities`, `voice-blocks`) were converted to this pattern on
+2026-09-02, and `timezones` was built with it. Copy any of their `sw.js` fetch
 handlers and registration blocks when adding a new one. `council/` additionally
 consults its own in-flight flag before reloading; the rest use the generic rule
 above (reload at once if the page just loaded or is hidden, otherwise wait until
