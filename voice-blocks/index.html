@@ -436,6 +436,8 @@ g('mclose').onclick = closeModal;
 modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
 
 // ── state ─────────────────────────────────────────────────────────────────────
+// us/rs are undo/redo stacks of { t, sel }: the text and the [start, end]
+// selection it had, or sel null when there was no meaningful cursor.
 function mkBlock(text = '') { return { text, us: [], rs: [] }; }
 
 let blocks = [mkBlock()], ci = 0;
@@ -523,16 +525,21 @@ statusEl.addEventListener('click', () => { if (statusEl.className === 'cmd') set
 // else (undo, a button, a recording) touches the block.
 const TYPE_IDLE = 5000, BIG_EDIT = 20;
 const DISCRETE = /^(insertFromPaste|insertFromPasteAsQuotation|insertFromDrop|insertFromYank|deleteByCut|deleteByDrag)$/;
-let typing = null;                       // { b, before, timer } for the open run
+let typing = null;                       // { b, before, sel, timer } for the open run
+let preSel = null;                       // selection just before the current edit
+
+const curSel = () => [editor.selectionStart, editor.selectionEnd];
 
 function commitTyping() {
   if (!typing) return;
-  const { b, before } = typing;
+  const { b, before, sel } = typing;
   clearTimeout(typing.timer);
   typing = null;
-  if (b.text !== before) b.us.push(before);
+  if (b.text !== before) b.us.push({ t: before, sel });
   undoBtn.disabled = !cb().us.length;
 }
+
+editor.addEventListener('beforeinput', () => { preSel = curSel(); });
 
 editor.addEventListener('input', e => {
   const b = cb(), before = b.text, after = editor.value;
@@ -540,19 +547,75 @@ editor.addEventListener('input', e => {
   const discrete = DISCRETE.test(e.inputType || '') || Math.abs(after.length - before.length) >= BIG_EDIT;
   if (discrete) {
     commitTyping();
-    b.us.push(before);
+    b.us.push({ t: before, sel: preSel });
   } else {
     if (typing && typing.b !== b) commitTyping();
-    if (!typing) typing = { b, before };
+    if (!typing) typing = { b, before, sel: preSel };
     clearTimeout(typing.timer);
     typing.timer = setTimeout(commitTyping, TYPE_IDLE);
   }
+  preSel = null;
   b.rs = [];
   b.text = after;
   persist();
   render();
   if (typing) undoBtn.disabled = false;   // the open run can already be undone
 });
+
+// ── caret restore ─────────────────────────────────────────────────────────────
+// Undo/redo put the cursor back where it was in the restored state (or, when
+// that is unknown, at the end of the changed region) and then scroll only as
+// far as needed to bring it on screen, smoothly. Setting the value and the
+// selection would otherwise jump the textarea to the end / to the caret.
+function changeEnd(from, to) {
+  let p = 0;
+  const max = Math.min(from.length, to.length);
+  while (p < max && from[p] === to[p]) p++;
+  let q = 0;
+  while (q < max - p && from[from.length - 1 - q] === to[to.length - 1 - q]) q++;
+  return to.length - q;
+}
+
+function caretTop(pos) {
+  const cs = getComputedStyle(editor), m = document.createElement('div');
+  for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing',
+                   'lineHeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+                   'tabSize', 'textTransform', 'wordSpacing']) m.style[k] = cs[k];
+  Object.assign(m.style, {
+    position: 'absolute', visibility: 'hidden', top: '0', left: '-9999px',
+    boxSizing: 'border-box', border: '0', width: editor.clientWidth + 'px',
+    whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
+  });
+  m.textContent = editor.value.slice(0, pos);
+  const mark = document.createElement('span');
+  mark.textContent = '\u200b';
+  m.appendChild(mark);
+  document.body.appendChild(m);
+  const top = mark.offsetTop;
+  m.remove();
+  return top;
+}
+
+function showRestored(entry, prevText) {
+  const top = editor.scrollTop;
+  render();
+  const len = editor.value.length;
+  let [s, e] = entry.sel || [];
+  if (s == null || s > len || e > len) s = e = changeEnd(prevText, entry.t);
+  editor.setSelectionRange(s, e);
+  editor.scrollTop = top;
+
+  const cs = getComputedStyle(editor);
+  const lineH = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.65;
+  const padT = parseFloat(cs.paddingTop) || 0, padB = parseFloat(cs.paddingBottom) || 0;
+  const y = caretTop(e), view = editor.clientHeight;
+  let target = null;
+  if (y - padT < top) target = y - padT;
+  else if (y + lineH + padB > top + view) target = y + lineH + padB - view;
+  if (target === null) return;
+  const smooth = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  editor.scrollTo({ top: target, behavior: smooth ? 'smooth' : 'auto' });
+}
 
 // ── navigation & block ops ────────────────────────────────────────────────────
 // Preserve the keyboard state across nav taps. Only when the keyboard is
@@ -579,10 +642,11 @@ undoBtn.onclick = () => {
   commitTyping();
   const b = cb();
   if (!b.us.length) return;
-  b.rs.push(b.text);
-  b.text = b.us.pop();
+  const prev = b.text, entry = b.us.pop();
+  b.rs.push({ t: prev, sel: curSel() });
+  b.text = entry.t;
   persist();
-  render();
+  showRestored(entry, prev);
   setStatus('');
 };
 
@@ -590,10 +654,11 @@ redoBtn.onclick = () => {
   commitTyping();
   const b = cb();
   if (!b.rs.length) return;
-  b.us.push(b.text);
-  b.text = b.rs.pop();
+  const prev = b.text, entry = b.rs.pop();
+  b.us.push({ t: prev, sel: curSel() });
+  b.text = entry.t;
   persist();
-  render();
+  showRestored(entry, prev);
   setStatus('');
 };
 
@@ -606,7 +671,7 @@ clearBtn.onclick = async () => {
   } else if (!empty) {
     logCut(b.text, 'block');
     try { await navigator.clipboard.writeText(b.text); } catch {}
-    b.us.push(b.text); b.rs = [];
+    b.us.push({ t: b.text, sel: curSel() }); b.rs = [];
     b.text = '';
   }
   persist();
@@ -723,7 +788,7 @@ recBtn.addEventListener('click', async () => {
           setStatus('Processing…');
           const userMsg   = ctx ? `${ctx}---\nTranscription to clean up:\n${whisper}` : whisper;
           const processed = await llm(SYS_CLEAN, userMsg);
-          b.us = [whisper]; b.rs = [];
+          b.us = [{ t: whisper, sel: null }]; b.rs = [];
           b.text = processed;
           persist();
         } else {
@@ -738,7 +803,7 @@ recBtn.addEventListener('click', async () => {
         setStatus('Applying edit…');
         const userMsg = `${ctx}---\nCurrent block:\n${b.text}\n\n---\nEdit command: ${whisper}`;
         const edited  = await llm(SYS_EDIT, userMsg);
-        b.us.push(b.text); b.rs = [];
+        b.us.push({ t: b.text, sel: curSel() }); b.rs = [];
         b.text = edited;
         persist();
       }
