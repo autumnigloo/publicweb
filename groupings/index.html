@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Groupings</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0f0f13">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f0f13; --card: #1a1a24; --line: #2a2a3a; --text: #e0e0e0; --muted: #8a8a9c;
+  --tile: #2a2a38; --tile-sel: #5a5a72; --accent: #6c8cff;
+  --c0: #e3c35a; --c1: #8fbf5a; --c2: #6fa3d8; --c3: #a77fd1;
+}
+html, body { background: var(--bg); color: var(--text); }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100dvh; display: flex; justify-content: center;
+  padding: max(0.75rem, env(safe-area-inset-top)) 0.75rem 1.5rem;
+}
+main { width: 100%; max-width: 560px; }
+header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
+header h1 { font-size: 1.15rem; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.9rem; min-height: 1.1em; }
+button {
+  font: inherit; color: var(--text); background: var(--card); border: 1px solid #3a3a4e;
+  border-radius: 999px; padding: 0.55rem 1rem; cursor: pointer; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button:disabled { opacity: 0.4; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #0f0f13; font-weight: 600; }
+button.small { padding: 0.35rem 0.8rem; font-size: 0.85rem; }
+button.ghost { background: transparent; }
+
+/* ── board ── */
+#board { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.solved {
+  border-radius: 8px; padding: 0.7rem 0.5rem; text-align: center; color: #141418;
+  animation: pop 0.35s ease;
+}
+.solved b { display: block; text-transform: uppercase; font-size: 0.95rem; letter-spacing: 0.02em; }
+.solved span { font-size: 0.85rem; text-transform: uppercase; }
+.solved.revealed { opacity: 0.8; }
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.tile {
+  aspect-ratio: 1 / 0.78; min-width: 0; border: none; border-radius: 8px; background: var(--tile);
+  color: var(--text); font-weight: 700; text-transform: uppercase; padding: 0 3px;
+  font-size: clamp(0.62rem, 3.3vw, 1rem); line-height: 1.1; overflow-wrap: anywhere;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  user-select: none; -webkit-user-select: none; transition: background 0.12s, transform 0.12s;
+}
+.tile.long { font-size: clamp(0.55rem, 2.6vw, 0.82rem); }
+.tile.xlong { font-size: clamp(0.5rem, 2.2vw, 0.7rem); }
+.tile.sel { background: var(--tile-sel); color: #fff; }
+.tile:active { transform: scale(0.96); }
+.shake { animation: shake 0.4s; }
+.bump { animation: bump 0.3s; }
+@keyframes shake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-6px); } 40%,80% { transform: translateX(6px); } }
+@keyframes bump { 50% { transform: translateY(-6px); } }
+@keyframes pop { from { transform: scale(0.94); opacity: 0.4; } to { transform: scale(1); opacity: 1; } }
+
+.mistakes { text-align: center; color: var(--muted); font-size: 0.9rem; margin: 0.9rem 0 0.7rem; }
+.controls { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
+.links { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; margin-top: 1.2rem; }
+
+#toast {
+  position: fixed; left: 50%; top: 18%; transform: translateX(-50%);
+  background: #f0f0f4; color: #111; padding: 0.55rem 1rem; border-radius: 8px;
+  font-weight: 600; font-size: 0.9rem; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 10;
+}
+#toast.show { opacity: 1; }
+
+#result { margin-top: 1.2rem; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; text-align: center; }
+#result h2 { font-size: 1.1rem; margin-bottom: 0.4rem; }
+#result .em { font-size: 1.25rem; line-height: 1.25; letter-spacing: 2px; margin: 0.6rem 0; white-space: pre; }
+
+/* ── creator ── */
+.form { display: grid; gap: 0.8rem; }
+label.f { display: grid; gap: 0.3rem; font-size: 0.8rem; color: var(--muted); }
+input[type=text] {
+  font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 0.55rem 0.65rem; width: 100%; min-width: 0;
+}
+input[type=text]:focus { outline: none; border-color: var(--accent); }
+#groups { display: grid; gap: 0.6rem; }
+.gbox { border-radius: 10px; padding: 0.65rem; background: var(--card); border-left: 5px solid; display: grid; gap: 0.45rem; }
+.gbox .words { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.45rem; }
+.gbox .ghead { font-size: 0.75rem; color: var(--muted); }
+input.dup { border-color: #c0392b; }
+#err { color: #e06060; font-size: 0.85rem; min-height: 1.1em; }
+#linkout { display: none; gap: 0.5rem; }
+#linkout.show { display: grid; }
+#linkout input { font-size: 0.8rem; }
+
+#recent { margin-top: 1.6rem; }
+#recent h3 { font-size: 0.8rem; color: var(--muted); font-weight: 500; margin-bottom: 0.4rem; }
+#recent a { display: flex; justify-content: space-between; gap: 0.5rem; color: var(--text); text-decoration: none;
+  padding: 0.5rem 0.65rem; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 0.35rem; font-size: 0.9rem; }
+#recent a span { color: var(--muted); font-size: 0.8rem; flex-shrink: 0; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <!-- play view -->
+  <section id="play" hidden>
+    <header>
+      <h1 id="ptitle">Groupings</h1>
+      <button class="small primary" id="new-btn">+ Create puzzle</button>
+    </header>
+    <p class="sub" id="psub">Make four groups of four.</p>
+    <div id="board"></div>
+    <p class="mistakes" id="mistakes"></p>
+    <div class="controls" id="controls">
+      <button id="shuffle-btn">Shuffle</button>
+      <button id="organize-btn" disabled>Organize</button>
+      <button id="deselect-btn" disabled>Deselect</button>
+      <button class="primary" id="submit-btn" disabled>Submit</button>
+    </div>
+    <div id="result" hidden>
+      <h2 id="rtitle"></h2>
+      <div class="em" id="remoji"></div>
+      <div class="controls">
+        <button class="primary" id="share-res">Share result</button>
+      </div>
+    </div>
+    <div class="links">
+      <button class="small" id="share-puz">Share puzzle link</button>
+      <button class="small" id="restart-btn">Restart</button>
+      <button class="small" id="giveup-btn">Give up</button>
+      <button class="small" id="edit-btn">Edit a copy</button>
+    </div>
+    <div id="recent" hidden><h3>Recently played</h3><div id="recent-list"></div></div>
+  </section>
+
+  <!-- create view -->
+  <section id="create" hidden>
+    <header>
+      <h1>Create a puzzle</h1>
+      <button class="small ghost" id="back-btn">Back</button>
+    </header>
+    <p class="sub">Four categories, four words each, easiest first. Everything lives in the link — nothing is uploaded.</p>
+    <div class="form" id="form">
+      <label class="f">Title (optional)<input type="text" id="f-title" maxlength="60" placeholder="My puzzle"></label>
+      <div id="groups"></div>
+      <div id="err"></div>
+      <div class="controls">
+        <button class="primary" id="make-btn">Create &amp; copy link</button>
+      </div>
+      <div id="linkout">
+        <input type="text" id="link" readonly>
+        <div class="controls">
+          <button id="copy-btn">Copy</button>
+          <button id="share-btn">Share</button>
+          <button class="primary" id="playit-btn">Play it</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const COLORS = ['var(--c0)', 'var(--c1)', 'var(--c2)', 'var(--c3)'];
+const EMOJI = ['🟨', '🟩', '🟦', '🟪'];
+const LEVELS = ['Easiest', 'Medium', 'Hard', 'Trickiest'];
+
+// A built-in puzzle so the app is playable before anyone shares one.
+const SAMPLE = {
+  t: 'Sample puzzle',
+  g: [
+    ['Shades of blue', 'NAVY', 'TEAL', 'COBALT', 'SKY'],
+    ['Coffee drinks', 'LATTE', 'MOCHA', 'ESPRESSO', 'AMERICANO'],
+    ['___ball', 'SNOW', 'FOOT', 'BASKET', 'MEAT'],
+    ['Hidden animals', 'SCATTER', 'BOWLER', 'PRATTLE', 'DOGMA'],
+  ],
+};
+
+// ── link encoding: compact JSON → UTF-8 → base64url ──────────────────────────
+function encode(p) {
+  const bytes = new TextEncoder().encode(JSON.stringify(p));
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function decode(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s);
+  const p = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))));
+  if (!p || !Array.isArray(p.g) || p.g.length !== 4 ||
+      p.g.some(g => !Array.isArray(g) || g.length !== 5 || g.some(x => typeof x !== 'string' || !x.trim())))
+    throw new Error('bad puzzle');
+  const words = p.g.flatMap(g => g.slice(1).map(norm));
+  if (new Set(words).size !== 16) throw new Error('duplicate words');
+  return { t: typeof p.t === 'string' ? p.t : '', g: p.g };
+}
+const norm = w => w.trim().toUpperCase();
+const linkFor = code => location.href.split('#')[0] + '#p=' + code;
+
+// ── storage (wrapped: may be unavailable) ────────────────────────────────────
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+function hashStr(s) { let h = 5381; for (let i = 0; i < s.length; i++) h = (h * 33 ^ s.charCodeAt(i)) >>> 0; return h.toString(36); }
+
+// ── toast ────────────────────────────────────────────────────────────────────
+let toastT;
+function toast(msg, ms = 1600) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+// ── game state ───────────────────────────────────────────────────────────────
+// Words are ids 0–15; id >> 2 is its group (0 = easiest).
+let puzzle, code, key, words, S, selected = new Set();
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+function fresh() { return { order: shuffle([...Array(16).keys()]), solved: [], guesses: [], done: false, gaveUp: false }; }
+function save() { store.set('grp:' + key, S); }
+
+function loadPuzzle(p, c) {
+  puzzle = p; code = c; key = hashStr(c);
+  words = p.g.flatMap(g => g.slice(1).map(norm));
+  S = store.get('grp:' + key, null);
+  if (!S || !Array.isArray(S.order) || S.order.length + S.solved.length * 4 !== 16) S = fresh();
+  selected = new Set();
+  $('ptitle').textContent = p.t || 'Groupings';
+  document.title = (p.t ? p.t + ' · ' : '') + 'Groupings';
+  remember();
+  render();
+}
+
+function remember() {
+  if (code === SAMPLE_CODE) return;
+  const list = store.get('grp-recent', []).filter(r => r.c !== code);
+  list.unshift({ c: code, t: puzzle.t || 'Untitled', at: Date.now() });
+  store.set('grp-recent', list.slice(0, 12));
+}
+
+function tileClass(w) { return w.length > 10 ? 'xlong' : w.length > 7 ? 'long' : ''; }
+
+function render() {
+  const board = $('board');
+  board.replaceChildren();
+  for (const gi of S.solved) board.appendChild(solvedBar(gi, false));
+  if (S.order.length) {
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for (const id of S.order) {
+      const b = document.createElement('button');
+      b.className = 'tile ' + tileClass(words[id]) + (selected.has(id) ? ' sel' : '');
+      b.textContent = words[id];
+      b.dataset.id = id;
+      b.onclick = () => toggle(id);
+      grid.appendChild(b);
+    }
+    board.appendChild(grid);
+  }
+  $('mistakes').textContent = S.done ? '' : `Mistakes: ${mistakes()}`;
+  const n = selected.size;
+  $('submit-btn').disabled = n !== 4;
+  $('deselect-btn').disabled = !n;
+  $('organize-btn').disabled = !n;
+  $('controls').hidden = S.done;
+  $('giveup-btn').hidden = S.done;
+  $('psub').textContent = S.done
+    ? (S.gaveUp ? 'Revealed. Better luck next time.' : 'Solved!')
+    : 'Make four groups of four. No limit on mistakes.';
+  showResult();
+  renderRecent();
+}
+
+function solvedBar(gi, revealed) {
+  const d = document.createElement('div');
+  d.className = 'solved' + (revealed ? ' revealed' : '');
+  d.style.background = COLORS[gi];
+  const b = document.createElement('b'); b.textContent = puzzle.g[gi][0];
+  const s = document.createElement('span'); s.textContent = puzzle.g[gi].slice(1).map(norm).join(', ');
+  d.append(b, s);
+  return d;
+}
+
+const mistakes = () => S.guesses.filter(g => !g.every(id => id >> 2 === g[0] >> 2)).length;
+
+function toggle(id) {
+  if (S.done) return;
+  if (selected.has(id)) selected.delete(id);
+  else if (selected.size < 4) selected.add(id);
+  else return;
+  render();
+}
+
+function tilesFor(ids) { return [...document.querySelectorAll('.tile')].filter(t => ids.includes(+t.dataset.id)); }
+
+function submit() {
+  if (selected.size !== 4) return;
+  const g = [...selected].sort((a, b) => a - b);
+  if (S.guesses.some(p => p.join() === g.join())) { toast('Already guessed!'); return; }
+  S.guesses.push(g);
+  const counts = [0, 0, 0, 0];
+  for (const id of g) counts[id >> 2]++;
+  const best = Math.max(...counts);
+  if (best === 4) {
+    const gi = g[0] >> 2;
+    tilesFor(g).forEach((t, i) => setTimeout(() => t.classList.add('bump'), i * 60));
+    setTimeout(() => {
+      S.solved.push(gi);
+      S.order = S.order.filter(id => id >> 2 !== gi);
+      selected.clear();
+      if (S.solved.length === 4) S.done = true;
+      save(); render();
+    }, 420);
+  } else {
+    tilesFor(g).forEach(t => t.classList.add('shake'));
+    setTimeout(() => tilesFor(g).forEach(t => t.classList.remove('shake')), 450);
+    if (best === 3) toast('One away…');
+    save();
+    $('mistakes').textContent = `Mistakes: ${mistakes()}`;
+  }
+}
+
+// Organize: pull the selected tiles to the front of the grid, in the order
+// they were picked, and clear the selection, so you can park a suspected
+// group in a row of its own and start on the next one. Each organize pushes
+// earlier ones down a row.
+function organize() {
+  if (!selected.size) return;
+  const pick = [...selected];
+  S.order = [...pick, ...S.order.filter(id => !selected.has(id))];
+  selected.clear();
+  save(); render();
+}
+
+function giveUp() {
+  if (!confirm('Reveal all remaining groups?')) return;
+  S.gaveUp = true;
+  for (let gi = 0; gi < 4; gi++) if (!S.solved.includes(gi)) S.solved.push(gi);
+  S.order = []; S.done = true; selected.clear();
+  save(); render();
+}
+
+function restart() {
+  if (S.guesses.length && !confirm('Start this puzzle over?')) return;
+  S = fresh(); selected.clear(); save(); render();
+}
+
+function emojiGrid() { return S.guesses.map(g => g.map(id => EMOJI[id >> 2]).join('')).join('\n'); }
+
+function showResult() {
+  $('result').hidden = !S.done;
+  if (!S.done) return;
+  const m = mistakes();
+  $('rtitle').textContent = S.gaveUp ? 'Gave up' : m === 0 ? 'Perfect!' : `Solved with ${m} mistake${m === 1 ? '' : 's'}`;
+  $('remoji').textContent = emojiGrid();
+}
+
+async function shareText(text, title) {
+  if (navigator.share) { try { await navigator.share({ title, text }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); }
+  catch { prompt('Copy this:', text); }
+}
+
+function renderRecent() {
+  const list = store.get('grp-recent', []).filter(r => r.c !== code);
+  $('recent').hidden = !list.length;
+  const box = $('recent-list'); box.replaceChildren();
+  for (const r of list) {
+    const a = document.createElement('a');
+    a.href = '#p=' + r.c;
+    const st = store.get('grp:' + hashStr(r.c), null);
+    const t = document.createElement('b'); t.style.fontWeight = '500'; t.textContent = r.t;
+    const s = document.createElement('span'); s.textContent = st && st.done ? (st.gaveUp ? 'revealed' : 'solved') : st && st.guesses.length ? 'in progress' : 'new';
+    a.append(t, s);
+    box.appendChild(a);
+  }
+}
+
+$('submit-btn').onclick = submit;
+$('organize-btn').onclick = organize;
+$('deselect-btn').onclick = () => { selected.clear(); render(); };
+$('shuffle-btn').onclick = () => { shuffle(S.order); save(); render(); };
+$('giveup-btn').onclick = giveUp;
+$('restart-btn').onclick = restart;
+$('share-res').onclick = () => {
+  const head = `Groupings${puzzle.t ? ' — ' + puzzle.t : ''}\n${S.gaveUp ? 'Gave up' : 'Mistakes: ' + mistakes()}\n`;
+  shareText(head + emojiGrid() + '\n' + linkFor(code), 'Groupings result');
+};
+$('share-puz').onclick = () => shareText(linkFor(code), puzzle.t || 'Groupings puzzle');
+$('new-btn').onclick = () => { prefill = null; location.hash = 'new'; };
+$('edit-btn').onclick = () => {
+  if (!S.done && !confirm('This shows all the answers. Continue?')) return;
+  prefill = puzzle; location.hash = 'new';
+};
+
+// ── creator ──────────────────────────────────────────────────────────────────
+let prefill = null, lastCode = null;
+
+function buildForm() {
+  const box = $('groups');
+  box.replaceChildren();
+  for (let gi = 0; gi < 4; gi++) {
+    const d = document.createElement('div');
+    d.className = 'gbox'; d.style.borderLeftColor = COLORS[gi];
+    d.innerHTML = `<div class="ghead">${LEVELS[gi]}</div>
+      <input type="text" class="cat" maxlength="60" placeholder="Category name">
+      <div class="words">${'<input type="text" class="w" maxlength="30" autocapitalize="characters" placeholder="Word">'.repeat(4)}</div>`;
+    box.appendChild(d);
+  }
+  const p = prefill;
+  $('f-title').value = p ? p.t : '';
+  [...box.children].forEach((d, gi) => {
+    d.querySelector('.cat').value = p ? p.g[gi][0] : '';
+    d.querySelectorAll('.w').forEach((inp, wi) => { inp.value = p ? p.g[gi][wi + 1] : ''; });
+  });
+  $('err').textContent = '';
+  $('linkout').classList.remove('show');
+}
+
+function readForm() {
+  const g = [...$('groups').children].map(d =>
+    [d.querySelector('.cat').value.trim(), ...[...d.querySelectorAll('.w')].map(i => i.value.trim())]);
+  return { t: $('f-title').value.trim(), g };
+}
+
+function checkDups() {
+  const inputs = [...document.querySelectorAll('#groups .w')];
+  const seen = {};
+  for (const i of inputs) { const v = norm(i.value); if (v) seen[v] = (seen[v] || 0) + 1; }
+  inputs.forEach(i => i.classList.toggle('dup', seen[norm(i.value)] > 1));
+  return Object.values(seen).some(n => n > 1);
+}
+
+$('groups').addEventListener('input', () => { checkDups(); $('linkout').classList.remove('show'); });
+$('f-title').addEventListener('input', () => $('linkout').classList.remove('show'));
+
+$('make-btn').onclick = () => {
+  const p = readForm();
+  const err = $('err');
+  if (p.g.some(g => !g[0])) { err.textContent = 'Every group needs a category name.'; return; }
+  if (p.g.some(g => g.slice(1).some(w => !w))) { err.textContent = 'Fill in all 16 words.'; return; }
+  if (checkDups()) { err.textContent = 'Each word can only appear once.'; return; }
+  err.textContent = '';
+  lastCode = encode(p);
+  $('link').value = linkFor(lastCode);
+  $('linkout').classList.add('show');
+  navigator.clipboard?.writeText($('link').value).then(() => toast('Link copied — send it to anyone'), () => {});
+};
+$('copy-btn').onclick = async () => {
+  try { await navigator.clipboard.writeText($('link').value); toast('Link copied'); }
+  catch { $('link').select(); document.execCommand('copy'); toast('Link copied'); }
+};
+$('share-btn').onclick = () => shareText($('link').value, 'Groupings puzzle');
+$('playit-btn').onclick = () => { location.hash = 'p=' + lastCode; };
+$('back-btn').onclick = () => { history.length > 1 ? history.back() : (location.hash = ''); };
+
+// ── routing ──────────────────────────────────────────────────────────────────
+const SAMPLE_CODE = encode(SAMPLE);
+
+function route() {
+  const h = location.hash.slice(1);
+  if (h === 'new') {
+    $('play').hidden = true; $('create').hidden = false;
+    document.title = 'Create · Groupings';
+    buildForm(); scrollTo(0, 0);
+    return;
+  }
+  $('create').hidden = true; $('play').hidden = false;
+  if (h.startsWith('p=')) {
+    const c = h.slice(2);
+    try { loadPuzzle(decode(c), c); return; }
+    catch { toast('That puzzle link is broken', 2500); }
+  }
+  loadPuzzle(SAMPLE, SAMPLE_CODE);
+}
+addEventListener('hashchange', route);
+route();
+
+// ── service worker ───────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  addEventListener('load', async () => {
+    const t0 = Date.now();
+    const hadController = !!navigator.serviceWorker.controller;
+    let applied = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || applied) return;   // first install: nothing stale to replace
+      applied = true;
+      if (Date.now() - t0 < 10000 || document.visibilityState === 'hidden') location.reload();
+      else document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') location.reload();
+      }, { once: true });
+    });
+    try {
+      const reg = await navigator.serviceWorker.register('sw.js');
+      reg.update().catch(() => {});
+      // Resuming a backgrounded PWA is not a navigation, so check on focus too.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    } catch {}
+  });
+}
+</script>
+</body>
+</html>

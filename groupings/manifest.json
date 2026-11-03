@@ -1,0 +1,16 @@
+{
+  "name": "@Groupings",
+  "short_name": "@Groupings",
+  "description": "Find four groups of four, with unlimited tries, an Organize button, and custom puzzles shared as links.",
+  "id": "/publicweb/groupings/",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f0f13",
+  "theme_color": "#0f0f13",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
