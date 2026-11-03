@@ -275,7 +275,7 @@ label { font-size: 0.75rem; color: #777; }
 <div class="card">
   <button id="clear-btn" disabled>Cut</button>
 
-  <textarea id="editor" placeholder="Press Record to begin…" spellcheck="false"></textarea>
+  <textarea id="editor" placeholder="Press Record to begin…" spellcheck="true"></textarea>
 
   <div class="bottom-controls">
     <button class="icon" id="prev-btn" title="Previous block">←</button>
@@ -561,6 +561,25 @@ editor.addEventListener('input', e => {
   render();
   if (typing) undoBtn.disabled = false;   // the open run can already be undone
 });
+
+// ── no tap pop-ups ────────────────────────────────────────────────────────────
+// Android Chrome opens its own suggestion menu when a tapped word carries a
+// marker: a spelling underline, or the correction/alternatives spans keyboards
+// such as Typeless and Gboard voice attach to text they commit. That menu
+// takes focus from the keyboard. Markers live on the textarea's text node, so
+// rewriting the value just before the tap drops them all; the tap then lands
+// on unmarked text and only moves the caret. The idle spellchecker re-marks
+// the text a moment later, so misspelled words keep their red underline.
+function stripMarkers() {
+  const v = editor.value;
+  if (!v) return;
+  const [s, e] = curSel(), dir = editor.selectionDirection, top = editor.scrollTop;
+  editor.value = v + ' ';                // same value would be a no-op
+  editor.value = v;
+  editor.setSelectionRange(s, e, dir);
+  editor.scrollTop = top;
+}
+editor.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse') stripMarkers(); });
 
 // ── caret restore ─────────────────────────────────────────────────────────────
 // Undo/redo put the cursor back where it was in the restored state (or, when
