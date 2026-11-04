@@ -214,7 +214,21 @@
       margin-bottom: 10px;
     }
 
+    #paste-box {
+      max-width: 800px; margin: 16px auto 0; background: #fff; border-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15); padding: 16px 20px;
+      font-family: Arial, sans-serif; font-size: 10pt; color: #444;
+    }
+    #paste-box[hidden] { display: none; }
+    #paste-box p { margin-bottom: 8px; line-height: 1.5; }
+    #paste-input {
+      width: 100%; height: 160px; font-family: 'Courier New', monospace; font-size: 9pt;
+      border: 1px solid #ccc; border-radius: 4px; padding: 8px; resize: vertical;
+    }
+    #paste-box .row { display: flex; gap: 8px; margin-top: 8px; }
+
     @media (max-width: 840px) {
+      #paste-box { margin: 12px; }
       #page { margin: 12px; padding: 24px 20px; }
     }
   </style>
@@ -226,8 +240,20 @@
   <input id="url-input" type="url"
     placeholder="https://name.substack.com/p/article-slug">
   <button id="fetch-btn">Fetch</button>
+  <button id="paste-btn">Paste HTML</button>
   <button id="copy-btn">Copy</button>
   <span id="status"></span>
+</div>
+
+<div id="paste-box" hidden>
+  <p><strong>Paste the article yourself.</strong> Open the post in your browser (logged in if needed), then either
+    select the article text and copy it, or open the page source (Ctrl+U / view-source:), select all and copy.
+    Paste it below and click <strong>Extract</strong>.</p>
+  <textarea id="paste-input" placeholder="Paste page HTML or the copied article here…" spellcheck="false"></textarea>
+  <div class="row">
+    <button id="extract-btn">Extract</button>
+    <button id="paste-clear">Clear</button>
+  </div>
 </div>
 
 <div id="page">
@@ -295,7 +321,7 @@ function setStatus(msg) {
 
 async function fetchArticle() {
   const rawUrl = document.getElementById('url-input').value.trim();
-  if (!rawUrl) { setStatus('No URL.'); return; }
+  if (!rawUrl) { setStatus('No URL.'); showPasteBox(); return; }
 
   const btn = document.getElementById('fetch-btn');
   btn.disabled = true;
@@ -313,29 +339,86 @@ async function fetchArticle() {
       setStatus('Not found.');
       document.getElementById('placeholder').style.display = 'block';
       document.getElementById('placeholder').innerHTML =
-        '⚠️ Could not extract article content.<br>The page may require a login or is dynamically rendered.';
+        '⚠️ Could not extract article content.<br>The page may require a login or is dynamically rendered.<br>' +
+        'Paste the page HTML into the box above instead.';
+      showPasteBox();
       return;
     }
-
-    const content = document.getElementById('content');
-    content.innerHTML = '';
-    content.appendChild(node);
-    content.style.display = 'block';
-    document.getElementById('copy-btn').style.display = 'inline-block';
-    setStatus('✓ Done');
+    showArticle(node);
   } catch (err) {
     setStatus('Error');
     console.error(err);
     document.getElementById('placeholder').style.display = 'block';
-    document.getElementById('placeholder').textContent = 'Fetch error: ' + err.message;
+    document.getElementById('placeholder').textContent =
+      'Fetch error: ' + err.message + ' Paste the page HTML into the box above instead.';
+    showPasteBox();
   } finally {
     btn.disabled = false;
   }
 }
 
+function showArticle(node) {
+  const content = document.getElementById('content');
+  content.innerHTML = '';
+  content.appendChild(node);
+  content.style.display = 'block';
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('copy-btn').style.display = 'inline-block';
+  setStatus('✓ Done');
+}
+
+// ── Paste HTML fallback ──────────────────────────────────────────────────────
+// For pages the proxies can't get (paywalled, logged-in, bot-blocked): the user
+// pastes either the page source or the article itself, copied from the page.
+// Copying rendered text puts real HTML on the clipboard as text/html, so take
+// that rather than the plain-text flavour the textarea would otherwise insert.
+const pasteBox = document.getElementById('paste-box');
+const pasteInput = document.getElementById('paste-input');
+
+function showPasteBox() {
+  pasteBox.hidden = false;
+  pasteInput.focus();
+}
+
+document.getElementById('paste-btn').addEventListener('click', () => {
+  if (pasteBox.hidden) showPasteBox(); else pasteBox.hidden = true;
+});
+
+pasteInput.addEventListener('paste', e => {
+  const html = e.clipboardData && e.clipboardData.getData('text/html');
+  if (!html) return;                      // plain text (e.g. view-source copy): default paste
+  e.preventDefault();
+  pasteInput.value = html;
+  extractPasted();
+});
+
+document.getElementById('extract-btn').addEventListener('click', extractPasted);
+document.getElementById('paste-clear').addEventListener('click', () => {
+  pasteInput.value = '';
+  pasteInput.focus();
+});
+
+function extractPasted() {
+  let src = pasteInput.value.trim();
+  if (!src) { setStatus('Nothing pasted.'); return; }
+  // Plain text without any markup: keep its paragraphs.
+  if (!/<[a-z!][^>]*>/i.test(src)) {
+    src = src.split(/\n\s*\n/).map(par => {
+      const p = document.createElement('p');
+      p.textContent = par.trim();
+      return p.outerHTML;
+    }).join('');
+  }
+  const doc = new DOMParser().parseFromString(src, 'text/html');
+  const node = extractArticle(doc, urlInput.value.trim(), true);
+  if (!node) { setStatus('Not found.'); return; }
+  showArticle(node);
+  pasteBox.hidden = true;
+}
+
 // ── Main extraction ──────────────────────────────────────────────────────────
 
-function extractArticle(doc, sourceUrl) {
+function extractArticle(doc, sourceUrl, pasted = false) {
   // 1. Locate the article body
   const bodySelectors = [
     '.available-content',
@@ -350,9 +433,18 @@ function extractArticle(doc, sourceUrl) {
     const el = doc.querySelector(sel);
     if (el && el.textContent.trim().length > 150) { root = el; break; }
   }
+  // A pasted fragment is usually just the article, without Substack's wrappers.
+  if (!root && pasted && doc.body.textContent.trim()) root = doc.body;
   if (!root) return null;
 
-  root = root.cloneNode(true);
+  const wholeBody = root === doc.body;
+  if (wholeBody) {                        // a <div>, so no stray <body> lands in the copy
+    const div = document.createElement('div');
+    div.innerHTML = root.innerHTML;
+    root = div;
+  } else root = root.cloneNode(true);
+  // The title block below is built from the page's <h1>; don't repeat it.
+  if (wholeBody) { const h = root.querySelector('h1'); if (h) h.remove(); }
 
   // 2. Strip noisy elements
   const noiseSelectors = [
@@ -372,6 +464,15 @@ function extractArticle(doc, sourceUrl) {
   for (const sel of noiseSelectors) {
     root.querySelectorAll(sel).forEach(el => el.remove());
   }
+
+  // Inline handlers (onerror=…) and javascript: links would run once shown.
+  root.querySelectorAll('*').forEach(el => {
+    for (const at of [...el.attributes]) {
+      if (/^on/i.test(at.name) || (/^(href|src|action|formaction)$/i.test(at.name) && /^\s*javascript:/i.test(at.value)))
+        el.removeAttribute(at.name);
+    }
+  });
+  root.querySelectorAll('iframe, object, embed').forEach(el => el.remove());
 
   // 3. Remove "thanks for reading" and subscribe-prompt blocks
   const thanksPatterns = [
