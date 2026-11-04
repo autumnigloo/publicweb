@@ -77,6 +77,12 @@
       display: none;
     }
     #copy-btn:hover { background: #e8e8e8; }
+    #paste-btn, #paste-box button {
+      padding: 7px 14px; background: #f4f4f4; color: #333; border: 1px solid #ccc;
+      border-radius: 4px; cursor: pointer; font-family: Arial, sans-serif; font-size: 13px; white-space: nowrap;
+    }
+    #paste-btn:hover, #paste-box button:hover { background: #e8e8e8; }
+    #extract-btn { background: #ff6719 !important; border-color: #ff6719 !important; color: #fff !important; font-weight: bold; }
 
     #status {
       color: #888;
@@ -240,16 +246,16 @@
   <input id="url-input" type="url"
     placeholder="https://name.substack.com/p/article-slug">
   <button id="fetch-btn">Fetch</button>
-  <button id="paste-btn">Paste HTML</button>
+  <button id="paste-btn">Paste</button>
   <button id="copy-btn">Copy</button>
   <span id="status"></span>
 </div>
 
 <div id="paste-box" hidden>
-  <p><strong>Paste the article yourself.</strong> Open the post in your browser (logged in if needed), then either
-    select the article text and copy it, or open the page source (Ctrl+U / view-source:), select all and copy.
-    Paste it below and click <strong>Extract</strong>.</p>
-  <textarea id="paste-input" placeholder="Paste page HTML or the copied article here…" spellcheck="false"></textarea>
+  <p><strong>Paste the article yourself.</strong> Open the post in your browser (logged in if needed),
+    press <strong>Select all</strong> (Ctrl+A, or long-press → Select all on a phone), <strong>Copy</strong>,
+    and paste it into the box below. Menus, buttons and comments are stripped automatically.</p>
+  <textarea id="paste-input" placeholder="Paste the copied page here…" spellcheck="false"></textarea>
   <div class="row">
     <button id="extract-btn">Extract</button>
     <button id="paste-clear">Clear</button>
@@ -416,6 +422,27 @@ function extractPasted() {
   pasteBox.hidden = true;
 }
 
+// Text of an element with its pieces separated (textContent runs the author
+// name straight into the date: "Jane DoeMay 08, 2025").
+function spacedText(el) {
+  const parts = [];
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  while (walk.nextNode()) { const t = walk.currentNode.nodeValue.trim(); if (t) parts.push(t); }
+  return [...new Set(parts)].join(' · ');
+}
+
+// The element whose direct children hold the most paragraph text: the
+// article body in almost any page, whatever its class names.
+function densestBlock(doc) {
+  let best = null, bestScore = 0;
+  doc.body.querySelectorAll('*').forEach(el => {
+    let score = 0;
+    for (const c of el.children) if (/^(P|BLOCKQUOTE|UL|OL|H2|H3|H4|PRE|FIGURE)$/.test(c.tagName)) score += c.textContent.trim().length;
+    if (score > bestScore) { bestScore = score; best = el; }
+  });
+  return bestScore > 300 ? best : null;
+}
+
 // ── Main extraction ──────────────────────────────────────────────────────────
 
 function extractArticle(doc, sourceUrl, pasted = false) {
@@ -433,8 +460,9 @@ function extractArticle(doc, sourceUrl, pasted = false) {
     const el = doc.querySelector(sel);
     if (el && el.textContent.trim().length > 150) { root = el; break; }
   }
-  // A pasted fragment is usually just the article, without Substack's wrappers.
-  if (!root && pasted && doc.body.textContent.trim()) root = doc.body;
+  // Pasted HTML that lost Substack's classes: take the block with the most
+  // paragraph text, then (for a short fragment) the whole paste.
+  if (!root && pasted) root = densestBlock(doc) || (doc.body.textContent.trim() ? doc.body : null);
   if (!root) return null;
 
   const wholeBody = root === doc.body;
@@ -567,9 +595,12 @@ function extractArticle(doc, sourceUrl, pasted = false) {
   // 8. Build title block from page <head>
   const wrapper = document.createElement('div');
 
-  const titleEl = doc.querySelector('h1.post-title, [class*="post-title"] h1, h1');
-  const subtitleEl = doc.querySelector('[class*="subtitle"]:not(h1), .post-subtitle');
-  const authorEl = doc.querySelector('[class*="byline"], [class*="author"]');
+  // Selectors in priority order: a plain selector list would return whichever
+  // match comes first in the page, e.g. the publication name in the navbar.
+  const first = (...sels) => { for (const q of sels) { const el = doc.querySelector(q); if (el) return el; } return null; };
+  const titleEl = first('h1.post-title', '[class*="post-title"] h1', '[class*="post-title"]', 'article h1', 'h1');
+  const subtitleEl = first('h3.subtitle', '.post-subtitle', '[class*="subtitle"]:not(h1)');
+  const authorEl = first('.byline-wrapper', '[class*="byline"]', '[class*="author"]');
 
   if (titleEl) {
     const h1 = document.createElement('h1');
@@ -587,13 +618,21 @@ function extractArticle(doc, sourceUrl, pasted = false) {
   if (authorEl) {
     const meta = document.createElement('p');
     meta.className = 'post-meta';
-    meta.textContent = authorEl.textContent.trim();
+    meta.textContent = spacedText(authorEl);
     wrapper.appendChild(meta);
   }
 
   if (titleEl || subtitleEl) {
     wrapper.appendChild(document.createElement('hr'));
   }
+
+  // A pasted page's body can still contain the title (and subtitle) we just
+  // put in the header block.
+  const norm = t => t.replace(/\s+/g, ' ').trim();
+  const dupes = [titleEl, subtitleEl].filter(Boolean).map(el => norm(el.textContent));
+  root.querySelectorAll('h1, h2, h3, h4, p').forEach(el => {
+    if (dupes.includes(norm(el.textContent))) el.remove();
+  });
 
   wrapper.appendChild(root);
   return wrapper;
